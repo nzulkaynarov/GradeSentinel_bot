@@ -13,7 +13,19 @@ jobs:
       - name: Перенос файлов репозитория
         uses: actions/checkout@v4
 
+      - name: Создание конфигурационных файлов из секретов
+        run: |
+          # Создаем .env
+          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
+          
+          # Создаем папку config (если её нет)
+          mkdir -p config
+          
+          # Записываем JSON-ключ Google Sheets в файл напрямую из секрета
+          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > config/credentials.json
+
       - name: Сборка и перезапуск Docker
+
         run: |
           docker compose down || true
           docker compose up -d --build
