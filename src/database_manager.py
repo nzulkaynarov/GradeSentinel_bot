@@ -97,6 +97,25 @@ def init_db():
         )
         ''')
         
+        # 6. Автоматическая регистрация администратора из .env
+        admin_id = os.environ.get("ADMIN_ID")
+        if admin_id:
+            try:
+                admin_id_int = int(admin_id)
+                # Поскольку мы не знаем номер телефона админа заранее при первой авторизации по ID,
+                # создадим заглушку для телефона из ID, чтобы удовлетворить ограничение UNIQUE.
+                # Пользователь потом сможет авторизоваться с любого телефона, либо бот обновит запись.
+                # Но лучше: используем telegram_id сразу как приоритетный ключ.
+                cursor.execute('''
+                INSERT OR IGNORE INTO parents (fio, phone, telegram_id, role) 
+                VALUES ('Super Admin', ?, ?, 'admin')
+                ''', (f"admin_{admin_id_int}", admin_id_int))
+                
+                # Если админ уже был по телефону, но без telegram_id, или роль сбилась:
+                cursor.execute('UPDATE parents SET role = "admin" WHERE telegram_id = ?', (admin_id_int,))
+            except ValueError:
+                logger.error("ADMIN_ID in environment is not a valid integer")
+                
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
     Добавляет новую оценку в БД, если такой еще нет.

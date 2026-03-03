@@ -27,12 +27,25 @@ bot = telebot.TeleBot(BOT_TOKEN)
 # ====================
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    user_id = message.chat.id
+    admin_id_env = os.environ.get("ADMIN_ID")
+    
+    # Автоматическая авторизация админа
+    if admin_id_env and str(user_id) == str(admin_id_env):
+        bot.send_message(
+            user_id,
+            "✅ Авторизация успешна! Здравствуйте, Super Admin.\n👑 Вы авторизованы как *Супер-администратор* по телеграм ID.",
+            reply_markup=types.ReplyKeyboardRemove(),
+            parse_mode='Markdown'
+        )
+        return
+
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     button = types.KeyboardButton("📱 Подтвердить номер телефона", request_contact=True)
     markup.add(button)
     
     bot.send_message(
-        message.chat.id, 
+        user_id, 
         "Привет! Я GradeSentinel. Для работы мне нужно подтвердить, что вы есть в нашей базе.\n\n"
         "Пожалуйста, нажмите кнопку ниже, чтобы поделиться контактом.",
         reply_markup=markup
