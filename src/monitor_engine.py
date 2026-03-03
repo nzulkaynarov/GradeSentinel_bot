@@ -56,10 +56,16 @@ def check_for_new_grades():
         display_name = clean_student_name(sheet_title) if sheet_title else fio
         
         logger.info(f"Checking sheet for student: {display_name} (ID: {student_id})")
-        data = get_sheet_data(spreadsheet_id, RANGE_NAME)
         
-        if not data:
-            logger.warning(f"Could not fetch data for {display_name}. Skipping.")
+        try:
+            data = get_sheet_data(spreadsheet_id, RANGE_NAME)
+        except Exception as e:
+            logger.error(f"Unexpected error fetching data for {display_name}: {e}")
+            continue
+            
+        if data is None:
+            # We treat None as a temporary error (network issue, rate limit)
+            logger.warning(f"Data fetch returned None for {display_name}. Skipping this cycle.")
             continue
             
         # Упрощенная логика парсинга для примера (Предмет в col 0, Оценка в col 1)

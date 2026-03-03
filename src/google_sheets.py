@@ -4,6 +4,8 @@ from typing import List, Optional
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+import socket
+import urllib.error
 
 # Путь к файлу ключа
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
@@ -43,7 +45,13 @@ def get_sheet_data(spreadsheet_id: str, range_name: str) -> Optional[List[List[s
         values = result.get('values', [])
         return values
     except HttpError as err:
-        print(f"Google API Error: {err}")
+        if err.resp.status in [429, 503]:
+            print(f"Google API Rate Limit/Service Unavailable ({err.resp.status}): {err}")
+        else:
+            print(f"Google API Error: {err}")
+        return None
+    except (socket.error, urllib.error.URLError) as e:
+        print(f"Network error while connecting to Google API: {e}")
         return None
 
 def get_spreadsheet_title(spreadsheet_id: str) -> Optional[str]:
@@ -55,5 +63,11 @@ def get_spreadsheet_title(spreadsheet_id: str) -> Optional[str]:
         spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
         return spreadsheet.get('properties', {}).get('title')
     except HttpError as err:
-        print(f"Google API Error: {err}")
+        if err.resp.status in [429, 503]:
+            print(f"Google API Rate Limit/Service Unavailable ({err.resp.status}): {err}")
+        else:
+            print(f"Google API Error: {err}")
+        return None
+    except (socket.error, urllib.error.URLError) as e:
+        print(f"Network error while connecting to Google API: {e}")
         return None
