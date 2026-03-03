@@ -1,0 +1,19 @@
+name: Deploy to Raspberry Pi
+
+on:
+  push:
+    branches:
+      - main # Запуск происходит при пуше в эту ветку
+
+jobs:
+  deploy:
+    runs-on: self-hosted # Команда GitHub'у использовать твою малину
+
+    steps:
+      - name: Перенос файлов репозитория
+        uses: actions/checkout@v4
+
+      - name: Сборка и перезапуск Docker
+        run: |
+          docker-compose down
+          docker-compose up -d --build
