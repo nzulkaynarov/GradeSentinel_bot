@@ -3,7 +3,6 @@ services:
     build: .
     container_name: gradesentinel_bot
     restart: always
-    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
