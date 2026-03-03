@@ -90,9 +90,9 @@ def is_user_admin(user_id):
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute('SELECT is_admin FROM parents WHERE telegram_id = ?', (user_id,))
+        cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (user_id,))
         row = cursor.fetchone()
-        return row and row['is_admin'] == 1
+        return row and row['role'] == 'admin'
 
 @bot.message_handler(commands=['admin_help'])
 def admin_help(message):
