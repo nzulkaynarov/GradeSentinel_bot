@@ -21,16 +21,14 @@ def sanitize_grade(raw_string: str) -> Tuple[Optional[float], str]:
         return None, ""
         
     # Ищем базовую оценку от 1 до 5
-    # Шаблон ловит "5", "5-", "5+", "5=", "5.0", "5,0"
-    match = re.search(r'([1-5])', clean_text)
-    
-    if match:
-        base_grade = float(match.group(1))
-        # Можно добавить логику: если есть '-', вычитать 0.1 и т.д., 
-        # но по ТЗ "5-" это твердая "5.0".
-        return base_grade, clean_text
-        
-    # Если цифра не найдена (например, "н", "болел"), откидываем grade_value
+    # Шаблон ловит только если строка начинается с цифры 1-5 и имеет длину до 2-3 символов (напр "5", "5-", "4+")
+    # Или просто проверяем, что вся строка — это по сути оценка.
+    if len(clean_text) <= 3 and re.match(r'^[1-5][\-+=]?$', clean_text):
+        match = re.search(r'([1-5])', clean_text)
+        if match:
+            return float(match.group(1)), clean_text
+            
+    # Если это "н", "б" и т.д.
     return None, clean_text
 
 # Примеры использования (тесты):

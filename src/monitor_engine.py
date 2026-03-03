@@ -8,11 +8,28 @@ from src.data_cleaner import sanitize_grade
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Placeholder for telegram integration
+# Global bot instance for notifications
+_bot = None
+
+def set_bot_instance(bot):
+    """Устанавливает глобальный экземпляр бота для отправки уведомлений."""
+    global _bot
+    _bot = bot
+
 def send_notification(telegram_ids, message):
-    """Отправляет уведомление в Telegram (заглушка)."""
+    """Отправляет уведомление в Telegram через реальный API."""
+    if not _bot:
+        logger.warning("Bot instance not set. Using logger placeholder.")
+        for tg_id in telegram_ids:
+            logger.info(f"[PLACEHOLDER -> {tg_id}] {message}")
+        return
+
     for tg_id in telegram_ids:
-        logger.info(f"[TELEGRAM API -> {tg_id}] {message}")
+        try:
+            _bot.send_message(tg_id, message, parse_mode='Markdown')
+            logger.info(f"Notification sent to TG:{tg_id}")
+        except Exception as e:
+            logger.error(f"Failed to send notification to {tg_id}: {e}")
 
 def check_for_new_grades():
     """Единичный пробег по всем активным таблицам студентов."""

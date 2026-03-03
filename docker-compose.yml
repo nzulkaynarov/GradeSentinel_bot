@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: gradesentinel_bot
+    restart: always
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -116,6 +116,67 @@ def get_active_spreadsheets() -> List[Dict[str, Any]]:
         cursor = conn.cursor()
         cursor.execute('SELECT id as student_id, fio, spreadsheet_id FROM students WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""')
         return [dict(row) for row in cursor.fetchall()]
+    return []
+
+def get_parent_by_phone(phone: str) -> Optional[Dict[str, Any]]:
+    """Находит родителя по номеру телефона."""
+    # Нормализуем номер (удаляем +)
+    phone = phone.replace("+", "")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM parents WHERE phone = ? OR phone = ?', (phone, "+" + phone))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_parent_telegram_id(phone: str, telegram_id: int):
+    """Привязывает telegram_id к родителю по номеру телефона."""
+    phone = phone.replace("+", "")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE parents SET telegram_id = ? WHERE phone = ? OR phone = ?', (telegram_id, phone, "+" + phone))
+
+def add_family(name: str) -> Optional[int]:
+    """Создает новую семью и возвращает её ID."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO families (family_name) VALUES (?)', (name,))
+        return cursor.lastrowid
+
+def add_parent(fio: str, phone: str, is_admin: bool = False) -> Optional[int]:
+    """Создает нового родителя и возвращает его ID."""
+    phone = phone.replace("+", "")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO parents (fio, phone, is_admin) VALUES (?, ?, ?)', (fio, phone, 1 if is_admin else 0))
+        return cursor.lastrowid
+
+def add_student(fio: str, spreadsheet_id: str) -> Optional[int]:
+    """Создает нового студента и возвращает его ID."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO students (fio, spreadsheet_id) VALUES (?, ?)', (fio, spreadsheet_id))
+        return cursor.lastrowid
+
+def link_family(family_id: int, parent_id: int, student_id: int):
+    """Создает связь между семьей, родителем и студентом."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
+                       (family_id, parent_id, student_id))
+
+def get_students_for_parent(telegram_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список всех студентов {student_id, fio, spreadsheet_id}, привязанных к telegram_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id
+            FROM students s
+            JOIN family_links fl ON s.id = fl.student_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ?
+        ''', (telegram_id,))
+        return [dict(row) for row in cursor.fetchall()]
+    return []
 
 if __name__ == '__main__':
     init_db()
