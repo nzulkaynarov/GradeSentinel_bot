@@ -1,0 +1,27 @@
+# Секретные ключи Google API
+config/credentials.json
+
+# Переменные окружения (Токены бота, пароли)
+.env
+
+# База данных (чтобы не затереть рабочую базу пустой версией из гита)
+data/*.db
+data/*.sqlite3
+
+# Логи
+logs/*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+ENV/
+
+# Docker
+.dockerignore
+
+# OS файлы
+.DS_Store
+Thumbs.db
