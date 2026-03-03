@@ -7,8 +7,6 @@ services:
       - sentinel_data:/app/data
       - ./config:/app/config
 
-volumes:
-  sentinel_data:
     env_file:
       - .env
     logging:
@@ -16,3 +14,6 @@ volumes:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  sentinel_data:
