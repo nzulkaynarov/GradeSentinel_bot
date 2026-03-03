@@ -4,8 +4,11 @@ services:
     container_name: gradesentinel_bot
     restart: always
     volumes:
-      - ./data:/app/data
+      - sentinel_data:/app/data
       - ./config:/app/config
+
+volumes:
+  sentinel_data:
     env_file:
       - .env
     logging:
