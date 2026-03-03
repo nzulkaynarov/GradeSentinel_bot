@@ -1,5 +1,5 @@
 # Секретные ключи Google API
-config/credentials.json
+config/*.json
 
 # Переменные окружения (Токены бота, пароли)
 .env

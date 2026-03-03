@@ -1,7 +1,10 @@
 import sqlite3
 import os
+import logging
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "sentinel.db")
 
@@ -24,6 +27,17 @@ def init_db():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
+        # Миграция: проверяем наличие колонки role в parents
+        cursor.execute("PRAGMA table_info(parents)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'phone' in columns and 'role' not in columns:
+            # Проверяем, был ли старый is_admin
+            is_admin_exists = 'is_admin' in columns
+            cursor.execute("ALTER TABLE parents ADD COLUMN role TEXT DEFAULT 'senior'")
+            if is_admin_exists:
+                cursor.execute("UPDATE parents SET role = 'admin' WHERE is_admin = 1")
+            logger.info("Database migration: role column added.")
+
         # 1. Семьи
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS families (
@@ -33,14 +47,15 @@ def init_db():
         )
         ''')
 
-        # 2. Родители
+        # 2. Родители (пользователи)
+        # role: 'admin' (супер-админ), 'head' (глава семьи), 'senior' (член семьи)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS parents (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fio TEXT NOT NULL,
             phone TEXT UNIQUE NOT NULL,
             telegram_id INTEGER UNIQUE,
-            is_admin BOOLEAN DEFAULT 0
+            role TEXT DEFAULT 'senior'
         )
         ''')
 
@@ -53,7 +68,8 @@ def init_db():
         )
         ''')
 
-        # 4. Связи "Семьи - Родители - Дети" (Многие-ко-многим)
+        # 4. Связи "Семьи - Родители - Дети"
+        # У одного студента может быть несколько родителей (членов семьи)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS family_links (
             family_id INTEGER,
@@ -61,7 +77,8 @@ def init_db():
             student_id INTEGER,
             FOREIGN KEY(family_id) REFERENCES families(id),
             FOREIGN KEY(parent_id) REFERENCES parents(id),
-            FOREIGN KEY(student_id) REFERENCES students(id)
+            FOREIGN KEY(student_id) REFERENCES students(id),
+            UNIQUE(family_id, parent_id, student_id)
         )
         ''')
 
@@ -135,6 +152,28 @@ def update_parent_telegram_id(phone: str, telegram_id: int):
         cursor = conn.cursor()
         cursor.execute('UPDATE parents SET telegram_id = ? WHERE phone = ? OR phone = ?', (telegram_id, phone, "+" + phone))
 
+def get_parent_role(telegram_id: int) -> Optional[str]:
+    """Возвращает роль пользователя по его telegram_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return row['role'] if row else None
+
+def get_family_by_head(head_telegram_id: int) -> Optional[int]:
+    """Возвращает ID семьи, в которой данный пользователь является главой (или он админ и в семье)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT fl.family_id 
+            FROM family_links fl
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ? AND (p.role = 'head' OR p.role = 'admin')
+            LIMIT 1
+        ''', (head_telegram_id,))
+        row = cursor.fetchone()
+        return row['family_id'] if row else None
+
 def add_family(name: str) -> Optional[int]:
     """Создает новую семью и возвращает её ID."""
     with get_db_connection() as conn:
@@ -142,12 +181,15 @@ def add_family(name: str) -> Optional[int]:
         cursor.execute('INSERT INTO families (family_name) VALUES (?)', (name,))
         return cursor.lastrowid
 
-def add_parent(fio: str, phone: str, is_admin: bool = False) -> Optional[int]:
+def add_parent(fio: str, phone: str, role: str = 'senior') -> Optional[int]:
     """Создает нового родителя и возвращает его ID."""
     phone = phone.replace("+", "")
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO parents (fio, phone, is_admin) VALUES (?, ?, ?)', (fio, phone, 1 if is_admin else 0))
+        cursor.execute('INSERT OR IGNORE INTO parents (fio, phone, role) VALUES (?, ?, ?)', (fio, phone, role))
+        if cursor.rowcount == 0:
+            cursor.execute('SELECT id FROM parents WHERE phone = ?', (phone,))
+            return cursor.fetchone()['id']
         return cursor.lastrowid
 
 def add_student(fio: str, spreadsheet_id: str) -> Optional[int]:
@@ -157,12 +199,58 @@ def add_student(fio: str, spreadsheet_id: str) -> Optional[int]:
         cursor.execute('INSERT INTO students (fio, spreadsheet_id) VALUES (?, ?)', (fio, spreadsheet_id))
         return cursor.lastrowid
 
-def link_family(family_id: int, parent_id: int, student_id: int):
-    """Создает связь между семьей, родителем и студентом."""
+def link_parent_to_family(family_id: int, parent_id: int):
+    """Привязывает родителя к семье."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
-                       (family_id, parent_id, student_id))
+        # Привязываем ко всем студентам этой семьи
+        cursor.execute('SELECT DISTINCT student_id FROM family_links WHERE family_id = ? AND student_id IS NOT NULL', (family_id,))
+        students = cursor.fetchall()
+        if students:
+            for s in students:
+                cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
+                               (family_id, parent_id, s['student_id']))
+        else:
+            # Если студентов еще нет, просто создаем запись без студента
+            cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id) VALUES (?, ?)', 
+                           (family_id, parent_id))
+
+def get_child_count(family_id: int) -> int:
+    """Возвращает количество детей в семье."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(DISTINCT student_id) as count FROM family_links WHERE family_id = ? AND student_id IS NOT NULL', (family_id,))
+        return cursor.fetchone()['count']
+
+def link_student_to_family(family_id: int, student_id: int):
+    """Привязывает студента ко всей семье (всем родителям в этой семье)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Получаем всех родителей этой семьи
+        cursor.execute('SELECT DISTINCT parent_id FROM family_links WHERE family_id = ?', (family_id,))
+        parents = cursor.fetchall()
+        if parents:
+            for p in parents:
+                cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
+                               (family_id, p['parent_id'], student_id))
+        else:
+            # Если родителей еще нет (странный случай), просто создаем запись без родителя
+            cursor.execute('INSERT OR IGNORE INTO family_links (family_id, student_id) VALUES (?, ?)', 
+                           (family_id, student_id))
+
+def get_all_families() -> List[Dict[str, Any]]:
+    """Возвращает список всех семей с информацией о главе и количестве детей."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id, f.family_name, p.fio as head_fio, p.phone as head_phone,
+                   (SELECT COUNT(DISTINCT student_id) FROM family_links WHERE family_id = f.id AND student_id IS NOT NULL) as child_count
+            FROM families f
+            LEFT JOIN family_links fl ON f.id = fl.family_id
+            LEFT JOIN parents p ON fl.parent_id = p.id AND (p.role = 'head' OR p.role = 'admin')
+            GROUP BY f.id
+        ''')
+        return [dict(row) for row in cursor.fetchall()]
 
 def get_students_for_parent(telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех студентов {student_id, fio, spreadsheet_id}, привязанных к telegram_id."""
@@ -181,3 +269,50 @@ def get_students_for_parent(telegram_id: int) -> List[Dict[str, Any]]:
 if __name__ == '__main__':
     init_db()
     print("Database initialized successfully at", DB_PATH)
+def get_family_members(family_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список всех взрослых членов семьи."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT p.id, p.fio, p.phone, p.role 
+            FROM parents p
+            JOIN family_links fl ON p.id = fl.parent_id
+            WHERE fl.family_id = ?
+        ''', (family_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_family_students(family_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список всех детей в семье."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
+            FROM students s
+            JOIN family_links fl ON s.id = fl.student_id
+            WHERE fl.family_id = ?
+        ''', (family_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
+    """Удаляет родителя из семьи. Главу семьи удалить нельзя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT role FROM parents WHERE id = ?', (parent_id,))
+        row = cursor.fetchone()
+        if row and row['role'] == 'head':
+            return False
+            
+        cursor.execute('DELETE FROM family_links WHERE family_id = ? AND parent_id = ?', (family_id, parent_id))
+        return True
+
+def delete_student_from_family(family_id: int, student_id: int):
+    """Удаляет ребенка из конкретной семьи."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM family_links WHERE family_id = ? AND student_id = ?', (family_id, student_id))
+        
+        # Если студент больше ни к кому не привязан, можно удалить его совсем
+        cursor.execute('SELECT COUNT(*) as count FROM family_links WHERE student_id = ?', (student_id,))
+        if cursor.fetchone()['count'] == 0:
+            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+            cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))

@@ -45,3 +45,15 @@ def get_sheet_data(spreadsheet_id: str, range_name: str) -> Optional[List[List[s
     except HttpError as err:
         print(f"Google API Error: {err}")
         return None
+
+def get_spreadsheet_title(spreadsheet_id: str) -> Optional[str]:
+    """Получает название (заголовок) Google Таблицы."""
+    service = get_sheets_service()
+    if not service:
+        return None
+    try:
+        spreadsheet = service.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        return spreadsheet.get('properties', {}).get('title')
+    except HttpError as err:
+        print(f"Google API Error: {err}")
+        return None

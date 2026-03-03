@@ -1,7 +1,7 @@
 import re
 from typing import Optional, Tuple
 
-def sanitize_grade(raw_string: str) -> Tuple[Optional[float], str]:
+def sanitize_grade(raw_string: str) -> Tuple[Optional[float], Optional[str]]:
     """
     Очищает строковое значение оценки из Google Таблицы.
     
@@ -28,8 +28,12 @@ def sanitize_grade(raw_string: str) -> Tuple[Optional[float], str]:
         if match:
             return float(match.group(1)), clean_text
             
-    # Если это "н", "б" и т.д.
-    return None, clean_text
+    # Если это "н", "б" и т.д. — возвращаем только текст, считая это "отметкой"
+    if clean_text.lower() in ['н', 'б', 'н/а', 'осв']:
+         return None, clean_text
+    
+    # В остальных случаях (даты, мусор) возвращаем None, None
+    return None, None
 
 # Примеры использования (тесты):
 if __name__ == "__main__":

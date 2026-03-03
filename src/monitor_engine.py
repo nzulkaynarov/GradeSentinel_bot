@@ -2,7 +2,7 @@ import time
 import logging
 import json
 from src.database_manager import get_active_spreadsheets, add_grade, get_parents_for_student
-from src.google_sheets import get_sheet_data
+from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,7 +26,7 @@ def send_notification(telegram_ids, message):
 
     for tg_id in telegram_ids:
         try:
-            _bot.send_message(tg_id, message, parse_mode='Markdown')
+            _bot.send_message(tg_id, message, parse_mode='Markdown', disable_web_page_preview=True)
             logger.info(f"Notification sent to TG:{tg_id}")
         except Exception as e:
             logger.error(f"Failed to send notification to {tg_id}: {e}")
@@ -50,11 +50,16 @@ def check_for_new_grades():
         fio = student['fio']
         spreadsheet_id = student['spreadsheet_id']
         
-        logger.info(f"Checking sheet for student: {fio} (ID: {student_id})")
+        # Получаем реальное имя из заголовка таблицы
+        sheet_title = get_spreadsheet_title(spreadsheet_id)
+        from src.utils import clean_student_name
+        display_name = clean_student_name(sheet_title) if sheet_title else fio
+        
+        logger.info(f"Checking sheet for student: {display_name} (ID: {student_id})")
         data = get_sheet_data(spreadsheet_id, RANGE_NAME)
         
         if not data:
-            logger.warning(f"Could not fetch data for {fio}. Skipping.")
+            logger.warning(f"Could not fetch data for {display_name}. Skipping.")
             continue
             
         # Упрощенная логика парсинга для примера (Предмет в col 0, Оценка в col 1)
@@ -77,16 +82,17 @@ def check_for_new_grades():
             # Пытаемся сохранить в БД (если True, значит новая оценка)
             is_new = add_grade(student_id, subject, grade_value, clean_text, cell_reference)
             
-            if is_new:
-                logger.info(f"[NEW GRADE] {fio} got '{clean_text}' in {subject}")
+            if is_new and clean_text:
+                logger.info(f"[NEW GRADE] {display_name} got '{clean_text}' in {subject}")
                 # Уведомляем родителей
                 parents_ids = get_parents_for_student(student_id)
                 if parents_ids:
                     msg = (
                         f"🔔 *Новая запись в дневнике!*\n"
-                        f"👨‍🎓 Ученик: {fio}\n"
+                        f"👨‍🎓 Ученик: {display_name}\n"
                         f"📚 Предмет: {subject}\n"
-                        f"📝 Значение: {clean_text}"
+                        f"📝 Значение: {clean_text}\n\n"
+                        f"[🔗 Открыть таблицу](https://docs.google.com/spreadsheets/d/{spreadsheet_id})"
                     )
                     if grade_value is not None:
                         msg += f"\n⭐ Оценка для статистики: {grade_value}"
