@@ -50,5 +50,6 @@ docker-compose up -d --build
 # Просмотр логов в реальном времени
 docker-compose logs -f
 
+
 # Остановка проекта
 docker-compose down
