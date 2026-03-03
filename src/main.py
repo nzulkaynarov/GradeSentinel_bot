@@ -65,13 +65,13 @@ def contact_handler(message):
             
             welcome_msg = f"✅ Авторизация успешна! Здравствуйте, {parent['fio']}.\n"
             if role == 'admin':
-                welcome_msg += "👑 Вы авторизованы как *Супер-администратор*."
+                welcome_msg += "👑 Вы авторизованы как <b>Супер-администратор</b>."
             elif role == 'head':
-                welcome_msg += "🏠 Вы авторизованы как *Глава семьи*. Используйте /manage_family для управления."
+                welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>. Используйте /manage_family для управления."
             else:
                 welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
                 
-            bot.send_message(user_id, welcome_msg, reply_markup=types.ReplyKeyboardRemove(), parse_mode='Markdown')
+            bot.send_message(user_id, welcome_msg, reply_markup=types.ReplyKeyboardRemove(), parse_mode='HTML')
             logger.info(f"User {phone} authorized as {role}")
         else:
             bot.send_message(
@@ -100,13 +100,13 @@ def admin_help(message):
         return
         
     help_text = (
-        "🛠 *Панель администратора GradeSentinel*\n\n"
+        "🛠 <b>Панель администратора GradeSentinel</b>\n\n"
         "/add_parent fio phone [admin 0/1] — Добавить родителя\n"
         "/add_student fio spreadsheet_id — Добавить ученика\n"
         "/add_family name — Создать семью\n"
         "/status — Состояние системы"
     )
-    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, help_text, parse_mode='HTML')
 
 @bot.message_handler(commands=['status'])
 def system_status(message):
@@ -209,9 +209,9 @@ def process_head_choice(message, family_name):
             
             bot.send_message(
                 message.chat.id, 
-                f"✅ *Семья '{family_name}' создана!*\n\nВы назначены главой. Теперь вы можете использовать /manage_family для управления.",
+                f"✅ <b>Семья '{family_name}' создана!</b>\n\nВы назначены главой. Теперь вы можете использовать /manage_family для управления.",
                 reply_markup=types.ReplyKeyboardRemove(),
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
         except Exception as e:
             bot.reply_to(message, f"❌ Ошибка: {e}", reply_markup=types.ReplyKeyboardRemove())
@@ -461,8 +461,8 @@ def get_grades_command(message):
         if not grades_found:
             report += "За сегодня записей/оценок пока нет."
             
-        report += f"\n\n[🔗 Открыть таблицу](https://docs.google.com/spreadsheets/d/{spreadsheet_id})"
-        bot.send_message(user_id, report, parse_mode='Markdown', disable_web_page_preview=True)
+        report += f"\n\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>"
+        bot.send_message(user_id, report, parse_mode='HTML', disable_web_page_preview=True)
 
 def start_bot():
     """Запускает Telegram бота в режиме polling."""

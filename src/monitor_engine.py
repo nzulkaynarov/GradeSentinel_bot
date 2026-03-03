@@ -26,7 +26,7 @@ def send_notification(telegram_ids, message):
 
     for tg_id in telegram_ids:
         try:
-            _bot.send_message(tg_id, message, parse_mode='Markdown', disable_web_page_preview=True)
+            _bot.send_message(tg_id, message, parse_mode='HTML', disable_web_page_preview=True)
             logger.info(f"Notification sent to TG:{tg_id}")
         except Exception as e:
             logger.error(f"Failed to send notification to {tg_id}: {e}")
@@ -94,11 +94,11 @@ def check_for_new_grades():
                 parents_ids = get_parents_for_student(student_id)
                 if parents_ids:
                     msg = (
-                        f"🔔 *Новая запись в дневнике!*\n"
+                        f"🔔 <b>Новая запись в дневнике!</b>\n"
                         f"👨‍🎓 Ученик: {display_name}\n"
                         f"📚 Предмет: {subject}\n"
                         f"📝 Значение: {clean_text}\n\n"
-                        f"[🔗 Открыть таблицу](https://docs.google.com/spreadsheets/d/{spreadsheet_id})"
+                        f"<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>"
                     )
                     if grade_value is not None:
                         msg += f"\n⭐ Оценка для статистики: {grade_value}"
