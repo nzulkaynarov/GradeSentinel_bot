@@ -28,6 +28,7 @@ def get_admin_group_id():
 def support_started(message):
     user_id = message.chat.id
     admin_group = get_admin_group_id()
+    logger.info(f"Support flow started for user {user_id}. Admin Group ID: {admin_group}")
     
     if not admin_group:
         send_menu_safe(user_id, "🔧 <i>Функция поддержки временно недоступна (не настроена группа).</i>")
@@ -56,6 +57,7 @@ def receive_support_message(message):
         return
         
     user_states.pop(user_id, None)
+    logger.info(f"Received support message from user {user_id}. Attempting to forward to {admin_group}")
     
     # Получаем информацию о пользователе для подписи
     user_info = get_user_info_by_tg_id(user_id)
@@ -96,11 +98,13 @@ def reply_from_admin_group(message):
     Перехватывает ответы внутри админской группы на пересланные сообщения пользователей.
     И отправляет текст ответа оригинальному пользователю.
     """
+    logger.info(f"Detected reply in admin group {message.chat.id}. Target message present.")
     # Проверяем наш маппинг по ID сообщения
     original_msg = message.reply_to_message
     
     # 1. Сначала ищем в нашем словаре (самый надежный способ)
     user_id = admin_msg_map.get(original_msg.message_id)
+    logger.info(f"Mapping check for msg {original_msg.message_id}: user_id={user_id}")
     
     # 2. Если нет в словаре, пробуем forward_from (если не скрыт)
     if not user_id and original_msg.forward_from:

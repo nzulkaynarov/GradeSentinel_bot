@@ -23,6 +23,7 @@ jobs:
           # Создаем .env
           echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
           echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
+          echo "ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}" >> .env
           
           # Создаем папку config (если её нет)
           mkdir -p config
