@@ -32,11 +32,16 @@ def cmd_manage_family(message):
     _send_family_manage_menu(message.chat.id, families[0]['id'])
 
 def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
-    from src.database_manager import get_child_count
+    from src.database_manager import get_child_count, get_parent_role
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("➕ Добавить родственника", callback_data=f"add_member_{f_id}"))
     markup.add(types.InlineKeyboardButton("🧒 Добавить ребенка", callback_data=f"add_child_{f_id}"))
     markup.add(types.InlineKeyboardButton("📋 Список и Удаление", callback_data=f"list_edit_{f_id}"))
+    
+    role = get_parent_role(chat_id)
+    if role == 'admin':
+        markup.add(types.InlineKeyboardButton("🗑 Удалить семью", callback_data=f"delete_family_{f_id}"))
+        markup.add(types.InlineKeyboardButton("⬅️ К списку семей", callback_data="back_to_families"))
     
     child_count = get_child_count(f_id)
     text = f"🏠 <b>Управление семьей</b>\nДетей в базе: {child_count}/5"

@@ -92,18 +92,9 @@ def cmd_list_families(message, user_id=None):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_manage_'))
 def callback_admin_manage(call):
     """Меню управления конкретной семьей для админа."""
-    from src.database_manager import get_child_count
+    from src.handlers.family import _send_family_manage_menu
     f_id = int(call.data.split('_')[2])
-    
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("➕ Добавить родственника", callback_data=f"add_member_{f_id}"))
-    markup.add(types.InlineKeyboardButton("🧒 Добавить ребенка", callback_data=f"add_child_{f_id}"))
-    markup.add(types.InlineKeyboardButton("📋 Список и Удаление", callback_data=f"list_edit_{f_id}"))
-    markup.add(types.InlineKeyboardButton("🗑 Удалить семью", callback_data=f"delete_family_{f_id}"))
-    markup.add(types.InlineKeyboardButton("⬅️ К списку семей", callback_data="back_to_families"))
-    
-    child_count = get_child_count(f_id)
-    bot.edit_message_text(f"🛠 <b>Админ-управление семьей #{f_id}</b>\nДетей в базе: {child_count}/5", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
+    _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'back_to_families')
 def callback_back_to_families(call):
