@@ -22,9 +22,9 @@
 
 
 ### Таблицы:
-* **`parents`**: `id`, `fio`, `phone` (unique), `tg_id` (unique), `is_admin` (boolean).
+* **`parents`**: `id`, `fio`, `phone` (unique), `tg_id` (unique), `role` (`admin`, `senior`).
 * **`students`**: `id`, `fio`, `spreadsheet_id`.
-* **`families`**: `id`, `family_name`, `subscription_end` (timestamp).
+* **`families`**: `id`, `family_name`, `subscription_end`, `head_id` (ссылка на parent_id Главы).
 * **`family_links`**: `family_id`, `parent_id`, `student_id` (связующая таблица).
 * **`grade_history`**: `student_id`, `subject`, `grade`, `date_added`.
 
@@ -34,8 +34,9 @@
 
 ### 3.1. Telegram Bot (Interface)
 * **Auth-Flow:** Использование `ReplyKeyboardMarkup` с параметром `request_contact=True`.
-* **Admin-Panel:** Команды для ручного добавления семей в БД без прямого доступа к файлу `.db`.
-* **User-Menu:** Кнопки «Текущие оценки», «Средний балл», «Настройки уведомлений».
+* **Dynamic Menu:** "Умная" клавиатура, собирающаяся на лету в зависимости от ролей пользователя (Admin, Head одной/нескольких семей, Senior).
+* **Admin-Panel:** Управление семьями, назначение глав, добавление/удаление членов и детей.
+* **Family Head:** Контекстное управление своими семьями с поддержкой выбора, если человек руководит несколькими.
 
 ### 3.2. Google Integration (Data Source)
 * **Auth:** Использование `google-auth` через Service Account.
