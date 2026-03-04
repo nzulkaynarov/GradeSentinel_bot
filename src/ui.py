@@ -14,6 +14,8 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
     if role == 'admin':
         markup.row("📊 Статус", "🏠 Семьи")
         markup.row("➕ Новая семья")
+    elif is_head or has_children:
+        markup.row("📊 Статус")
         
     if is_head:
         markup.row("🏠 Моя семья")

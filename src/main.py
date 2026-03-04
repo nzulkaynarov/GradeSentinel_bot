@@ -38,8 +38,13 @@ def send_welcome(message):
         return
 
     # Check if user is already saved
+    from src.database_manager import get_parent_role, is_head_of_any_family, has_children_for_grades
     role = get_parent_role(user_id)
     if role:
+        if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
+            send_menu_safe(user_id, "ℹ️ Ваш аккаунт зарегистрирован, но в данный момент вы не привязаны ни к одной семье.\nПожалуйста, ожидайте, пока администратор добавит вас.")
+            return
+            
         send_menu_safe(user_id, "✅ Вы уже авторизованы. Главное меню загружено.")
         return
 
@@ -66,15 +71,19 @@ def contact_handler(message):
             update_parent_telegram_id(phone, user_id)
             role = parent.get('role', 'senior')
             
-            welcome_msg = f"✅ Авторизация успешна! Здравствуйте, {parent['fio']}.\n"
-            if role == 'admin':
-                welcome_msg += "👑 Вы авторизованы как <b>Супер-администратор</b>."
+            from src.database_manager import is_head_of_any_family, has_children_for_grades
+            
+            if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
+                welcome_msg = f"ℹ️ Здравствуйте, {parent['fio']}.\nВаш номер подтвержден, но в данный момент вы не привязаны ни к одной семье. Ожидайте действий администратора."
             else:
-                from src.database_manager import is_head_of_any_family
-                if is_head_of_any_family(user_id):
-                    welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>."
+                welcome_msg = f"✅ Авторизация успешна! Здравствуйте, {parent['fio']}.\n"
+                if role == 'admin':
+                    welcome_msg += "👑 Вы авторизованы как <b>Супер-администратор</b>."
                 else:
-                    welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
+                    if is_head_of_any_family(user_id):
+                        welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>."
+                    else:
+                        welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
                 
             send_menu_safe(user_id, welcome_msg)
             logger.info(f"User {phone} authorized as {role}")

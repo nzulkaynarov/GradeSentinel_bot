@@ -36,18 +36,34 @@ def admin_help(message):
 
 @bot.message_handler(commands=['status'])
 def system_status(message):
-    if not is_user_admin(message.chat.id):
-        return
+    user_id = message.chat.id
     
-    from src.database_manager import get_active_spreadsheets
-    students = get_active_spreadsheets()
-    
-    status_text = (
-        "🛰 <b>Статус системы</b>\n\n"
-        f"📊 Активных студентов: {len(students)}\n"
-        "⚙️ Мониторинг: Работает"
-    )
-    send_content(message.chat.id, status_text)
+    if is_user_admin(user_id):
+        from src.database_manager import get_global_stats
+        stats = get_global_stats()
+        status_text = (
+            "🛰 <b>Глобальный статус системы</b>\n\n"
+            f"👥 Всего семей: <b>{stats.get('families', 0)}</b>\n"
+            f"👨‍👩‍👧‍👦 Зарегистрировано родителей: <b>{stats.get('parents', 0)}</b>\n"
+            f"🎓 Активных учеников: <b>{stats.get('students', 0)}</b>\n"
+            f"🔄 Обработано записей (история): <b>{stats.get('history_records', 0)}</b>\n\n"
+            "⚙️ Мониторинг: <b>Работает</b>"
+        )
+    else:
+        from src.database_manager import get_user_stats, is_head_of_any_family, has_children_for_grades
+        if not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
+            return
+            
+        stats = get_user_stats(user_id)
+        status_text = (
+            "📊 <b>Ваша статистика</b>\n\n"
+            f"🏠 Состоите в семьях: <b>{stats.get('families', 0)}</b>\n"
+            f"🎓 Привязано детей: <b>{stats.get('students', 0)}</b>\n"
+            f"🔄 Уведомлений в истории: <b>{stats.get('history_records', 0)}</b>\n\n"
+            "💡 <i>Бот активно проверяет дневники ваших детей каждые 5 минут.</i>"
+        )
+        
+    send_content(user_id, status_text)
 
 @bot.message_handler(commands=['add_family'])
 def cmd_add_family_start(message):

@@ -400,6 +400,53 @@ def delete_student_from_family(family_id: int, student_id: int):
             cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
             cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
 
+def get_global_stats() -> Dict[str, Any]:
+    """Возвращает глобальную статистику системы для администраторов."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        stats = {}
+        stats['families'] = cursor.execute('SELECT COUNT(*) as c FROM families').fetchone()['c']
+        stats['parents'] = cursor.execute('SELECT COUNT(*) as c FROM parents').fetchone()['c']
+        stats['students'] = cursor.execute('SELECT COUNT(*) as c FROM students').fetchone()['c']
+        stats['history_records'] = cursor.execute('SELECT COUNT(*) as c FROM grade_history').fetchone()['c']
+        return stats
+    return {}
+
+def get_user_stats(telegram_id: int) -> Dict[str, Any]:
+    """Возвращает персонализированную статистику для конкретного пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        stats = {}
+        
+        # Получаем ID родителя
+        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
+        parent_row = cursor.fetchone()
+        if not parent_row:
+            return {'families': 0, 'students': 0, 'history_records': 0}
+            
+        parent_id = parent_row['id']
+        
+        # Количество семей
+        stats['families'] = cursor.execute('SELECT COUNT(DISTINCT family_id) as c FROM family_links WHERE parent_id = ?', (parent_id,)).fetchone()['c']
+        
+        # Количество доступных детей
+        stats['students'] = cursor.execute('''
+            SELECT COUNT(DISTINCT student_id) as c 
+            FROM family_links 
+            WHERE parent_id = ? AND student_id IS NOT NULL
+        ''', (parent_id,)).fetchone()['c']
+        
+        # Количество записей оценок для этих детей
+        stats['history_records'] = cursor.execute('''
+            SELECT COUNT(*) as c 
+            FROM grade_history gh
+            JOIN family_links fl ON gh.student_id = fl.student_id
+            WHERE fl.parent_id = ?
+        ''', (parent_id,)).fetchone()['c']
+        
+        return stats
+    return {}
+
 if __name__ == '__main__':
     init_db()
     print("Database initialized successfully at", DB_PATH)
