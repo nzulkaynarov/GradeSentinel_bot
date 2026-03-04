@@ -13,7 +13,7 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
     
     if role == 'admin':
         markup.row("📊 Статус", "🏠 Семьи")
-        markup.row("➕ Новая семья")
+        markup.row("➕ Новая семья", "📢 Рассылка")
     elif is_head or has_children:
         markup.row("📊 Статус")
         
@@ -22,6 +22,9 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
         
     if has_children:
         markup.row("📈 Оценки")
+        
+    if role or is_head or has_children:
+        markup.row("💬 Поддержка")
             
     # Если вообще нет кнопок (пустой пользователь), дадим хотя бы заглушку
     if len(markup.keyboard) == 0:

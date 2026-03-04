@@ -18,10 +18,13 @@ from src.monitor_engine import start_polling
 # Import handlers to register them
 import src.handlers.admin
 import src.handlers.family
+import src.handlers.communication
 
 # For direct routing in main menu
-from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start
-from src.handlers.family import cmd_manage_family, get_grades_command
+from src.handlers.admin import system_status
+from src.handlers.family import cmd_list_families, cmd_add_family_start, cmd_manage_family
+from src.handlers.family import get_grades_command
+from src.handlers.communication import support_started, broadcast_started
 
 # ====================
 # Telegram bot setup
@@ -98,8 +101,8 @@ def contact_handler(message):
     else:
         bot.send_message(message.chat.id, "❌ Ошибка при получении контакта.")
 
-@bot.message_handler(func=lambda m: m.text in ["📊 Статус", "🏠 Семьи", "➕ Новая семья", "🏠 Моя семья", "📈 Оценки"])
-def main_menu_buttons_handler(message):
+@bot.message_handler(func=lambda m: m.text in ["📊 Статус", "🏠 Семьи", "➕ Новая семья", "🏠 Моя семья", "📈 Оценки", "💬 Поддержка", "📢 Рассылка"])
+def handle_menu_buttons(message):
     """Обработчик нажатий на кнопки главного меню."""
     txt = message.text
     user_id = message.chat.id
@@ -122,6 +125,10 @@ def main_menu_buttons_handler(message):
         cmd_manage_family(message)
     elif txt == "📈 Оценки":
         get_grades_command(message)
+    elif txt == "💬 Поддержка":
+        support_started(message)
+    elif txt == "📢 Рассылка":
+        broadcast_started(message)
 
 def start_bot():
     """Запускает Telegram бота в режиме polling."""

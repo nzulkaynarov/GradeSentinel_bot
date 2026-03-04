@@ -445,8 +445,43 @@ def get_user_stats(telegram_id: int) -> Dict[str, Any]:
         ''', (parent_id,)).fetchone()['c']
         
         return stats
+        return stats
     return {}
 
+def get_all_telegram_ids() -> List[int]:
+    """Возвращает список telegram_id всех зарегистрированных пользователей."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT telegram_id FROM parents WHERE telegram_id IS NOT NULL")
+        return [row['telegram_id'] for row in cursor.fetchall()]
+    return []
+
+def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает основную информацию о пользователе и его семьях по telegram_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, fio, phone, role FROM parents WHERE telegram_id = ?", (telegram_id,))
+        user = cursor.fetchone()
+        if not user:
+            return None
+            
+        # Get family names
+        cursor.execute('''
+            SELECT f.family_name 
+            FROM families f 
+            JOIN family_links fl ON f.id = fl.family_id 
+            WHERE fl.parent_id = ?
+        ''', (user['id'],))
+        families = [row['family_name'] for row in cursor.fetchall()]
+        
+        return {
+            'id': user['id'],
+            'fio': user['fio'],
+            'phone': user['phone'],
+            'role': user['role'],
+            'families': families
+        }
+        
 if __name__ == '__main__':
     init_db()
     print("Database initialized successfully at", DB_PATH)
