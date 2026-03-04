@@ -2,7 +2,7 @@ import logging
 from typing import List
 from telebot import types
 from src.bot_instance import bot
-from src.ui import send_menu_safe
+from src.ui import send_menu_safe, send_content
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +96,23 @@ def callback_back_manage(call):
 def callback_add_child(call):
     f_id = call.data.split('_')[2]
     logger.info(f"Callback add_child triggered for family_id: {f_id}")
-    send_menu_safe(call.message.chat.id, "Отправьте ссылку на Google Таблицу ребенка:")
-    bot.register_next_step_handler(call.message, process_add_child_step, f_id)
+    
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton("❌ Отмена"))
+    
+    msg = bot.send_message(
+        call.message.chat.id, 
+        "Отправьте ссылку на Google Таблицу ребенка.\nИли нажмите 'Отмена':",
+        reply_markup=markup
+    )
+    bot.register_next_step_handler(msg, process_add_child_step, f_id)
 
 def process_add_child_step(message, f_id):
     from src.database_manager import add_student, link_student_to_family, get_child_count
     from src.google_sheets import get_spreadsheet_title
     
-    if not message.text:
-        send_menu_safe(message.chat.id, "❌ Пожалуйста, отправьте текстовую ссылку.")
+    if not message.text or message.text == "❌ Отмена":
+        send_menu_safe(message.chat.id, "Действие отменено.")
         return
 
     url = message.text.strip()
@@ -147,7 +155,7 @@ def process_add_child_step(message, f_id):
         link_student_to_family(int(f_id), s_id)
         logger.info(f"Student {s_id} linked to family {f_id}")
         
-        send_menu_safe(
+        send_content(
             message.chat.id, 
             f"✅ <b>Ребенок успешно добавлен!</b>\n\n"
             f"👤 Имя: {title}\n"
@@ -156,19 +164,30 @@ def process_add_child_step(message, f_id):
         )
     except Exception as e:
         logger.exception("Unexpected error in process_add_child_step")
-        send_menu_safe(message.chat.id, f"❌ Произошла ошибка: {str(e)}")
+        send_content(message.chat.id, f"❌ Произошла ошибка: {str(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
     f_id = call.data.split('_')[2]
-    send_menu_safe(call.message.chat.id, "Введите ФИО и номер телефона родственника (через пробел):\nПример: <code>Иванов Иван 998901234567</code>")
-    bot.register_next_step_handler(call.message, process_add_member_step, f_id)
+    
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton("❌ Отмена"))
+    
+    msg = bot.send_message(
+        call.message.chat.id, 
+        "Введите ФИО и номер телефона родственника (через пробел):\n"
+        "Пример: <code>Иванов Иван 998901234567</code>\n\n"
+        "Или нажмите 'Отмена'.",
+        parse_mode='HTML',
+        reply_markup=markup
+    )
+    bot.register_next_step_handler(msg, process_add_member_step, f_id)
 
 def process_add_member_step(message, f_id):
     from src.database_manager import add_parent, link_parent_to_family
     
-    if not message.text:
-        send_menu_safe(message.chat.id, "❌ Пожалуйста, отправьте текстовое сообщение.")
+    if not message.text or message.text == "❌ Отмена":
+        send_menu_safe(message.chat.id, "Действие отменено.")
         return
     
     try:
@@ -186,9 +205,9 @@ def process_add_member_step(message, f_id):
         p_id = add_parent(fio, phone, role='senior')
         link_parent_to_family(int(f_id), p_id)
         
-        send_menu_safe(message.chat.id, f"✅ Родственник <b>{fio}</b> добавлен в семью.")
+        send_content(message.chat.id, f"✅ Родственник <b>{fio}</b> добавлен в семью.")
     except Exception as e:
-        send_menu_safe(message.chat.id, f"❌ Ошибка: {e}")
+        send_content(message.chat.id, f"❌ Ошибка: {e}")
 
 @bot.message_handler(commands=['grades'])
 def get_grades_command(message):
@@ -234,4 +253,4 @@ def get_grades_command(message):
             report_lines.append("За сегодня записей/оценок пока нет.")
             
         report_lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>")
-        send_menu_safe(user_id, "\n".join(report_lines))
+        send_content(user_id, "\n".join(report_lines))

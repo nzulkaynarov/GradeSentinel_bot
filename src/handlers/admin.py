@@ -3,7 +3,7 @@ import re
 import logging
 from telebot import types
 from src.bot_instance import bot
-from src.ui import send_menu_safe
+from src.ui import send_menu_safe, send_content
 from src.database_manager import DB_PATH, get_active_spreadsheets, get_parent_role, get_all_families, add_family, add_parent, link_parent_to_family, get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def admin_help(message):
         "Кнопки внизу экрана помогут вам перемещаться по разделам.\n"
         "Бот автоматически удаляет старые меню, чтобы чат оставался чистым."
     )
-    send_menu_safe(message.chat.id, help_text)
+    send_content(message.chat.id, help_text)
 
 @bot.message_handler(commands=['status'])
 def system_status(message):
@@ -47,7 +47,7 @@ def system_status(message):
         f"📊 Активных студентов: {len(students)}\n"
         "⚙️ Мониторинг: Работает"
     )
-    send_menu_safe(message.chat.id, status_text)
+    send_content(message.chat.id, status_text)
 
 @bot.message_handler(commands=['add_family'])
 def cmd_add_family_start(message):
@@ -57,14 +57,22 @@ def cmd_add_family_start(message):
         bot.send_message(message.chat.id, "⛔ У вас нет прав доступа к этой команде.")
         return
         
-    msg = bot.send_message(message.chat.id, "🏗 *Создание новой семьи*\n\nВведите название семьи (фамилию):", parse_mode='Markdown')
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton("❌ Отмена"))
+    
+    msg = bot.send_message(
+        message.chat.id, 
+        "🏗 *Создание новой семьи*\n\nВведите название семьи (фамилию):", 
+        parse_mode='Markdown',
+        reply_markup=markup
+    )
     bot.register_next_step_handler(msg, process_family_name)
 
 @bot.message_handler(commands=['list_families'])
-def cmd_list_families(message):
-    """Супер-админ: Показать список всех семей."""
-    user_id = message.from_user.id
-    if get_parent_role(user_id) != 'admin':
+def cmd_list_families(message, user_id=None):
+    """Супер-админ: Показать список всех семей с кнопками управления."""
+    target_user_id = user_id if user_id else message.from_user.id
+    if get_parent_role(target_user_id) != 'admin':
         bot.send_message(message.chat.id, "⛔ У вас нет прав доступа к этой команде.")
         return
         
@@ -73,18 +81,60 @@ def cmd_list_families(message):
         send_menu_safe(message.chat.id, "📭 В базе пока нет ни одной семьи.")
         return
         
-    report = "📋 <b>Список всех семей:</b>\n\n"
+    markup = types.InlineKeyboardMarkup()
     for f in families:
         head = f['head_fio'] if f['head_fio'] else "Не назначен"
-        report += f"🏠 <b>{f['family_name']}</b> (ID: {f['id']})\n"
-        report += f"👤 Глава: {head}\n"
-        report += f"🧒 Детей: {f['child_count']}/5\n"
-        report += "──────────────────\n"
+        btn_text = f"🏠 {f['family_name']} ({head} - {f['child_count']}/5)"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_manage_{f['id']}"))
         
-    send_menu_safe(message.chat.id, report)
+    send_menu_safe(message.chat.id, "📋 <b>Список всех семей:</b>\nВыберите семью для управления:", inline_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_manage_'))
+def callback_admin_manage(call):
+    """Меню управления конкретной семьей для админа."""
+    from src.database_manager import get_child_count
+    f_id = int(call.data.split('_')[2])
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("➕ Добавить родственника", callback_data=f"add_member_{f_id}"))
+    markup.add(types.InlineKeyboardButton("🧒 Добавить ребенка", callback_data=f"add_child_{f_id}"))
+    markup.add(types.InlineKeyboardButton("📋 Список и Удаление", callback_data=f"list_edit_{f_id}"))
+    markup.add(types.InlineKeyboardButton("🗑 Удалить семью", callback_data=f"delete_family_{f_id}"))
+    markup.add(types.InlineKeyboardButton("⬅️ К списку семей", callback_data="back_to_families"))
+    
+    child_count = get_child_count(f_id)
+    bot.edit_message_text(f"🛠 <b>Админ-управление семьей #{f_id}</b>\nДетей в базе: {child_count}/5", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='HTML')
+
+@bot.callback_query_handler(func=lambda call: call.data == 'back_to_families')
+def callback_back_to_families(call):
+    cmd_list_families(call.message, user_id=call.from_user.id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_family_'))
+def callback_delete_family(call):
+    f_id = int(call.data.split('_')[2])
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("⚠️ ДА, УДАЛИТЬ СЕМЬЮ", callback_data=f"confirm_delete_family_{f_id}"))
+    markup.add(types.InlineKeyboardButton("Отмена", callback_data=f"admin_manage_{f_id}"))
+    bot.edit_message_text("Вы уверены? Это удалит всех детей и родственников из этой семьи.", call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_delete_family_'))
+def callback_confirm_delete_family(call):
+    f_id = int(call.data.split('_')[3])
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM family_links WHERE family_id = ?", (f_id,))
+        cursor.execute("DELETE FROM families WHERE id = ?", (f_id,))
+        conn.commit()
+    
+    bot.answer_callback_query(call.id, "✅ Семья полностью удалена")
+    cmd_list_families(call.message, user_id=call.from_user.id)
 
 def process_family_name(message):
     family_name = message.text.strip()
+    if family_name == "❌ Отмена":
+        send_menu_safe(message.chat.id, "Действие отменено.")
+        return
+        
     if not family_name:
         bot.send_message(message.chat.id, "❌ Название не может быть пустым. Попробуйте снова /add_family")
         return
@@ -122,12 +172,12 @@ def process_head_choice(message, family_name):
                 cursor = conn.cursor()
                 cursor.execute("UPDATE parents SET role = 'head' WHERE id = ? AND role != 'admin'", (parent_id,))
                 
-            send_menu_safe(
+            send_content(
                 message.chat.id, 
                 f"✅ <b>Семья '{family_name}' создана!</b>\n\nВы назначены главой. Теперь вы можете использовать 🏠 Моя семья для управления."
             )
         except Exception as e:
-            send_menu_safe(message.chat.id, f"❌ Ошибка: {e}")
+            send_content(message.chat.id, f"❌ Ошибка: {e}")
     else:
         send_menu_safe(message.chat.id, "Введите <b>ФИО Главы семьи</b>:")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_head_fio, family_name)
@@ -153,7 +203,7 @@ def process_head_phone(message, family_name, head_fio):
         p_id = add_parent(head_fio, head_phone, role='head')
         link_parent_to_family(f_id, p_id)
         
-        send_menu_safe(
+        send_content(
             message.chat.id, 
             f"✅ <b>Семья успешно создана!</b>\n\n"
             f"🏘 Семья: {family_name}\n"
@@ -162,4 +212,4 @@ def process_head_phone(message, family_name, head_fio):
             "Статус: Активен"
         )
     except Exception as e:
-        send_menu_safe(message.chat.id, f"❌ Ошибка в базе данных: {e}")
+        send_content(message.chat.id, f"❌ Ошибка в базе данных: {e}")

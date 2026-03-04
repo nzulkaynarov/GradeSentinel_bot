@@ -37,6 +37,12 @@ def send_welcome(message):
         send_menu_safe(user_id, "✅ Авторизация успешна! Здравствуйте, Super Admin.\n👑 Вы авторизованы как *Супер-администратор*.")
         return
 
+    # Check if user is already saved
+    role = get_parent_role(user_id)
+    if role:
+        send_menu_safe(user_id, "✅ Вы уже авторизованы. Главное меню загружено.")
+        return
+
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     button = types.KeyboardButton("📱 Подтвердить номер телефона", request_contact=True)
     markup.add(button)

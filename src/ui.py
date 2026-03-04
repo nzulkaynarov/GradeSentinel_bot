@@ -16,7 +16,8 @@ def get_main_menu(role: str) -> types.ReplyKeyboardMarkup:
 
 def send_menu_safe(chat_id: int, text: str, reply_markup=None, inline_markup=None):
     """
-    Отправляет меню, удаляя предыдущее сообщение меню для поддержания чистоты чата.
+    Отправляет техническое меню навигации, удаляя предыдущее сообщение 
+    навигационного меню для поддержания чистоты чата. КОНТЕНТ (оценки) сюда нельзя отправлять.
     """
     last_id = get_last_menu_id(chat_id)
     if last_id:
@@ -33,3 +34,14 @@ def send_menu_safe(chat_id: int, text: str, reply_markup=None, inline_markup=Non
     
     msg = bot.send_message(chat_id, text, reply_markup=final_markup, parse_mode='HTML')
     update_last_menu_id(chat_id, msg.message_id)
+
+def send_content(chat_id: int, text: str, reply_markup=None):
+    """
+    Отправляет контент, который ДОЛЖЕН остаться в истории чата (например, оценки).
+    Всегда прикрепляет клавиатуру главного меню, чтобы не было "тупиков".
+    """
+    role = get_parent_role(chat_id)
+    if not reply_markup:
+        reply_markup = get_main_menu(role)
+        
+    bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode='HTML', disable_web_page_preview=True)
