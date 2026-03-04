@@ -22,9 +22,9 @@
 
 
 ### Таблицы:
-* **`parents`**: `id`, `fio`, `phone` (unique), `tg_id` (unique), `is_admin` (boolean).
+* **`parents`**: `id`, `fio`, `phone` (unique), `tg_id` (unique), `role` (`admin`, `senior`).
 * **`students`**: `id`, `fio`, `spreadsheet_id`.
-* **`families`**: `id`, `family_name`, `subscription_end` (timestamp).
+* **`families`**: `id`, `family_name`, `subscription_end`, `head_id` (ссылка на parent_id Главы).
 * **`family_links`**: `family_id`, `parent_id`, `student_id` (связующая таблица).
 * **`grade_history`**: `student_id`, `subject`, `grade`, `date_added`.
 
@@ -34,8 +34,9 @@
 
 ### 3.1. Telegram Bot (Interface)
 * **Auth-Flow:** Использование `ReplyKeyboardMarkup` с параметром `request_contact=True`.
-* **Admin-Panel:** Команды для ручного добавления семей в БД без прямого доступа к файлу `.db`.
-* **User-Menu:** Кнопки «Текущие оценки», «Средний балл», «Настройки уведомлений».
+* **Dynamic Menu:** "Умная" клавиатура, собирающаяся на лету в зависимости от ролей пользователя (Admin, Head одной/нескольких семей, Senior).
+* **Admin-Panel:** Управление семьями, назначение глав, добавление/удаление членов и детей.
+* **Family Head:** Контекстное управление своими семьями с поддержкой выбора, если человек руководит несколькими.
 
 ### 3.2. Google Integration (Data Source)
 * **Auth:** Использование `google-auth` через Service Account.
@@ -60,7 +61,11 @@
 * **Volumes:** * `/app/data` — для сохранения `sentinel.db`.
     * `/app/config` — для `credentials.json` и `settings.yaml`.
 
-### Docker Compose:
+### 3.4 Модуль коммуникации (Communication)
+* **Обратная связь (Поддержка):** Любой авторизованный пользователь может нажать "💬 Поддержка" и отправить сообщение (текст/медиа), которое пересылается в закрытую группу администраторов (задается через `ADMIN_GROUP_ID` в `.env`). Ответ на это сообщение в админ-группе (Reply) бот доставит обратно пользователю.
+* **Рассылка (Broadcast):** Супер-администратор обладает кнопкой "📢 Рассылка", позволяющей отправить массовое уведомление/анонс всем зарегистрированным пользователям из БД.
+
+## 4. Среда развертывания (Docker)
 * **Restart Policy:** `always` (автозапуск при сбое Raspberry Pi).
 * **Environment:** Передача `BOT_TOKEN` через файл `.env`.
 
