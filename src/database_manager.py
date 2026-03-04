@@ -439,9 +439,8 @@ def get_user_stats(telegram_id: int) -> Dict[str, Any]:
         # Количество записей оценок для этих детей
         stats['history_records'] = cursor.execute('''
             SELECT COUNT(*) as c 
-            FROM grade_history gh
-            JOIN family_links fl ON gh.student_id = fl.student_id
-            WHERE fl.parent_id = ?
+            FROM grade_history 
+            WHERE student_id IN (SELECT DISTINCT student_id FROM family_links WHERE parent_id = ?)
         ''', (parent_id,)).fetchone()['c']
         
         return stats
@@ -467,7 +466,7 @@ def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
             
         # Get family names
         cursor.execute('''
-            SELECT f.family_name 
+            SELECT DISTINCT f.family_name 
             FROM families f 
             JOIN family_links fl ON f.id = fl.family_id 
             WHERE fl.parent_id = ?

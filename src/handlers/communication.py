@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 # Состояния для общения
 user_states: Dict[int, Any] = {}
+# Маппинг message_id в админ-группе -> user_id (для надежных ответов)
+admin_msg_map: Dict[int, int] = {}
 
 def get_admin_group_id():
     """Возвращает ID админ-группы из .env"""
@@ -71,9 +73,14 @@ def receive_support_message(message):
     
     try:
         # Сначала отправляем заголовок-карточку
-        bot.send_message(admin_group, header, parse_mode="HTML")
+        card = bot.send_message(admin_group, header, parse_mode="HTML")
+        if card:
+            admin_msg_map[card.message_id] = user_id
+            
         # Затем пересылаем само сообщение (чтобы сохранить фото/документы)
-        bot.forward_message(admin_group, message.chat.id, message.message_id)
+        forwarded = bot.forward_message(admin_group, message.chat.id, message.message_id)
+        if forwarded:
+            admin_msg_map[forwarded.message_id] = user_id
         
         send_menu_safe(user_id, "✅ <b>Сообщение отправлено!</b>\nСпасибо за обратную связь. Администратор уже получил ваше сообщение и ответит вам здесь же.")
     except Exception as e:
@@ -89,30 +96,32 @@ def reply_from_admin_group(message):
     Перехватывает ответы внутри админской группы на пересланные сообщения пользователей.
     И отправляет текст ответа оригинальному пользователю.
     """
-    # Проверяем, что исходное сообщение было переслано от пользователя
+    # Проверяем наш маппинг по ID сообщения
     original_msg = message.reply_to_message
-    if not original_msg.forward_from:
-        # Если пересылка скрыта настройками приватности, мы можем попытаться найти ID в заголовке
-        # Но для простоты сейчас обрабатываем только открытые пересылки
-        # P.S: В предыдущей функции мы пересылали с forward_message. 
-        # Если юзер скрыл профиль, forward_from будет None.
+    
+    # 1. Сначала ищем в нашем словаре (самый надежный способ)
+    user_id = admin_msg_map.get(original_msg.message_id)
+    
+    # 2. Если нет в словаре, пробуем forward_from (если не скрыт)
+    if not user_id and original_msg.forward_from:
+        user_id = original_msg.forward_from.id
         
-        # Попробуем извлечь ID из текста, если кто-то ответил на карточку
+    # 3. Если все еще нет, парсим текст (поиск в карточке)
+    if not user_id:
         if original_msg.text and "TG_ID:" in original_msg.text:
             try:
-                # Извлекаем ID из формата 🆔 TG_ID: 123456
                 lines = original_msg.text.split('\n')
                 for line in lines:
                     if "TG_ID:" in line:
                         user_id = int(line.split(':')[1].strip())
-                        send_reply_to_user(message, user_id)
-                        return
+                        break
             except Exception as e:
                 logger.error(f"Failed to parse user ID from support card: {e}")
-        return
-        
-    user_id = original_msg.forward_from.id
-    send_reply_to_user(message, user_id)
+    
+    if user_id:
+        send_reply_to_user(message, user_id)
+    else:
+        logger.warning(f"Could not find user_id for reply to message {original_msg.message_id}")
 
 def send_reply_to_user(message, target_user_id):
     """Вспомогательная функция для отправки ответа пользователю"""
