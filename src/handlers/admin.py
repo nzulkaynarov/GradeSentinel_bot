@@ -168,9 +168,8 @@ def process_head_choice(message, family_name):
             f_id = add_family(family_name)
             link_parent_to_family(f_id, parent_id)
             
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE parents SET role = 'head' WHERE id = ? AND role != 'admin'", (parent_id,))
+            from src.database_manager import set_family_head
+            set_family_head(f_id, parent_id)
                 
             send_content(
                 message.chat.id, 
@@ -200,8 +199,11 @@ def process_head_phone(message, family_name, head_fio):
         
     try:
         f_id = add_family(family_name)
-        p_id = add_parent(head_fio, head_phone, role='head')
+        p_id = add_parent(head_fio, head_phone, role='senior')
         link_parent_to_family(f_id, p_id)
+        
+        from src.database_manager import set_family_head
+        set_family_head(f_id, p_id)
         
         send_content(
             message.chat.id, 

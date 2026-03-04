@@ -9,26 +9,46 @@ logger = logging.getLogger(__name__)
 @bot.message_handler(commands=['manage_family'])
 def cmd_manage_family(message):
     """Глава семьи: Меню управления членами и детьми."""
-    from src.database_manager import get_family_by_head, get_child_count, get_parent_role
+    from src.database_manager import is_head_of_any_family, get_families_for_head
     
     user_id = message.from_user.id
-    role = get_parent_role(user_id)
-    if role != 'head' and role != 'admin':
+    if not is_head_of_any_family(user_id):
         bot.send_message(message.chat.id, "⛔ Эта команда доступна только главам семей.")
         return
         
-    f_id = get_family_by_head(user_id)
-    if not f_id and role != 'admin':
+    families = get_families_for_head(user_id)
+    if not families:
         bot.send_message(message.chat.id, "❌ Семья не найдена.")
         return
         
+    if len(families) > 1:
+        markup = types.InlineKeyboardMarkup()
+        for f in families:
+            markup.add(types.InlineKeyboardButton(f["family_name"], callback_data=f"open_manage_{f['id']}"))
+        send_menu_safe(message.chat.id, "🏠 Вы являетесь главой нескольких семей.\n\nПожалуйста, выберите семью для управления:", inline_markup=markup)
+        return
+        
+    # Если семья одна
+    _send_family_manage_menu(message.chat.id, families[0]['id'])
+
+def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
+    from src.database_manager import get_child_count
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("➕ Добавить родственника", callback_data=f"add_member_{f_id}"))
     markup.add(types.InlineKeyboardButton("🧒 Добавить ребенка", callback_data=f"add_child_{f_id}"))
     markup.add(types.InlineKeyboardButton("📋 Список и Удаление", callback_data=f"list_edit_{f_id}"))
     
     child_count = get_child_count(f_id)
-    send_menu_safe(message.chat.id, f"🏠 <b>Управление семьей</b>\nДетей в базе: {child_count}/5", inline_markup=markup)
+    text = f"🏠 <b>Управление семьей</b>\nДетей в базе: {child_count}/5"
+    if message_id_to_edit:
+        bot.edit_message_text(text, chat_id, message_id_to_edit, reply_markup=markup, parse_mode='HTML')
+    else:
+        send_menu_safe(chat_id, text, inline_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('open_manage_'))
+def callback_open_manage(call):
+    f_id = int(call.data.split('_')[2])
+    _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('list_edit_'))
 def callback_list_edit(call):
@@ -49,7 +69,7 @@ def callback_list_edit(call):
         markup.add(types.InlineKeyboardButton("─── РОДСТВЕННИКИ ───", callback_data="none"))
         for m in members:
             label = f"{m['fio']} ({m['role']})"
-            if m['role'] != 'head':
+            if not m.get('is_head'):
                 markup.add(types.InlineKeyboardButton(f"❌ {label}", callback_data=f"del_par_{f_id}_{m['id']}"))
             else:
                 markup.add(types.InlineKeyboardButton(f"👑 {label}", callback_data="none"))
@@ -81,16 +101,8 @@ def callback_del_student(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('back_manage_'))
 def callback_back_manage(call):
-    from src.database_manager import get_child_count
     f_id = int(call.data.split('_')[2])
-    
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("➕ Добавить родственника", callback_data=f"add_member_{f_id}"))
-    markup.add(types.InlineKeyboardButton("🧒 Добавить ребенка", callback_data=f"add_child_{f_id}"))
-    markup.add(types.InlineKeyboardButton("📋 Список и Удаление", callback_data=f"list_edit_{f_id}"))
-    
-    child_count = get_child_count(f_id)
-    bot.edit_message_text(f"🏠 *Управление семьей*\nДетей в базе: {child_count}/5", call.message.chat.id, call.message.message_id, reply_markup=markup, parse_mode='Markdown')
+    _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_child_'))
 def callback_add_child(call):

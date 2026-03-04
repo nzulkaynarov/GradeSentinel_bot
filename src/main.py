@@ -69,10 +69,12 @@ def contact_handler(message):
             welcome_msg = f"✅ Авторизация успешна! Здравствуйте, {parent['fio']}.\n"
             if role == 'admin':
                 welcome_msg += "👑 Вы авторизованы как <b>Супер-администратор</b>."
-            elif role == 'head':
-                welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>."
             else:
-                welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
+                from src.database_manager import is_head_of_any_family
+                if is_head_of_any_family(user_id):
+                    welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>."
+                else:
+                    welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
                 
             send_menu_safe(user_id, welcome_msg)
             logger.info(f"User {phone} authorized as {role}")
