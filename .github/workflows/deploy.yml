@@ -3,7 +3,7 @@ name: Deploy to Raspberry Pi
 on:
   push:
     branches:
-      - main # Запуск происходит при пуше в эту ветку
+      - main # Деплой только при пуше в основную ветку
 
 jobs:
   deploy:

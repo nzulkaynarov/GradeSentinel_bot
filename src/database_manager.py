@@ -115,6 +115,14 @@ def init_db():
                 cursor.execute('UPDATE parents SET role = "admin" WHERE telegram_id = ?', (admin_id_int,))
             except ValueError:
                 logger.error("ADMIN_ID in environment is not a valid integer")
+
+        # 7. Состояния приложения (для очистки меню)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_states (
+            user_id INTEGER PRIMARY KEY,
+            last_menu_msg_id INTEGER
+        )
+        ''')
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -133,6 +141,7 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_t
         except sqlite3.IntegrityError:
             # Сработал UNIQUE(student_id, cell_reference)
             return False
+    return False
 
 def get_parents_for_student(student_id: int) -> List[int]:
     """Возвращает список telegram_id всех родителей, привязанных к данному студенту через семью."""
@@ -145,6 +154,7 @@ def get_parents_for_student(student_id: int) -> List[int]:
             WHERE fl.student_id = ? AND p.telegram_id IS NOT NULL
         ''', (student_id,))
         return [row['telegram_id'] for row in cursor.fetchall()]
+    return []
 
 def get_active_spreadsheets() -> List[Dict[str, Any]]:
     """Возвращает список всех словарей {student_id, spreadsheet_id, fio} для опроса таблиц."""
@@ -178,6 +188,7 @@ def get_parent_role(telegram_id: int) -> Optional[str]:
         cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (telegram_id,))
         row = cursor.fetchone()
         return row['role'] if row else None
+    return None
 
 def get_family_by_head(head_telegram_id: int) -> Optional[int]:
     """Возвращает ID семьи, в которой данный пользователь является главой (или он админ и в семье)."""
@@ -240,6 +251,7 @@ def get_child_count(family_id: int) -> int:
         cursor = conn.cursor()
         cursor.execute('SELECT COUNT(DISTINCT student_id) as count FROM family_links WHERE family_id = ? AND student_id IS NOT NULL', (family_id,))
         return cursor.fetchone()['count']
+    return 0
 
 def link_student_to_family(family_id: int, student_id: int):
     """Привязывает студента ко всей семье (всем родителям в этой семье)."""
@@ -261,27 +273,13 @@ def get_all_families() -> List[Dict[str, Any]]:
     """Возвращает список всех семей с информацией о главе и количестве детей."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT f.id, f.family_name, p.fio as head_fio, p.phone as head_phone,
-                   (SELECT COUNT(DISTINCT student_id) FROM family_links WHERE family_id = f.id AND student_id IS NOT NULL) as child_count
-            FROM families f
-            LEFT JOIN family_links fl ON f.id = fl.family_id
-            LEFT JOIN parents p ON fl.parent_id = p.id AND (p.role = 'head' OR p.role = 'admin')
-            GROUP BY f.id
-        ''')
         return [dict(row) for row in cursor.fetchall()]
+    return []
 
 def get_students_for_parent(telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех студентов {student_id, fio, spreadsheet_id}, привязанных к telegram_id."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id
-            FROM students s
-            JOIN family_links fl ON s.id = fl.student_id
-            JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ?
-        ''', (telegram_id,))
         return [dict(row) for row in cursor.fetchall()]
     return []
 
@@ -292,13 +290,8 @@ def get_family_members(family_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех взрослых членов семьи."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT p.id, p.fio, p.phone, p.role 
-            FROM parents p
-            JOIN family_links fl ON p.id = fl.parent_id
-            WHERE fl.family_id = ?
-        ''', (family_id,))
         return [dict(row) for row in cursor.fetchall()]
+    return []
 
 def get_family_students(family_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех детей в семье."""
@@ -323,6 +316,7 @@ def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
             
         cursor.execute('DELETE FROM family_links WHERE family_id = ? AND parent_id = ?', (family_id, parent_id))
         return True
+    return False
 
 def delete_student_from_family(family_id: int, student_id: int):
     """Удаляет ребенка из конкретной семьи."""
@@ -335,3 +329,21 @@ def delete_student_from_family(family_id: int, student_id: int):
         if cursor.fetchone()['count'] == 0:
             cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
             cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
+
+def get_last_menu_id(user_id: int) -> Optional[int]:
+    """Возвращает ID последнего сообщения меню для пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT last_menu_msg_id FROM app_states WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        return row['last_menu_msg_id'] if row else None
+
+def update_last_menu_id(user_id: int, msg_id: Optional[int]):
+    """Обновляет ID последнего сообщения меню для пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO app_states (user_id, last_menu_msg_id) 
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET last_menu_msg_id = excluded.last_menu_msg_id
+        ''', (user_id, msg_id))
