@@ -71,11 +71,11 @@ def check_for_new_grades():
         # Упрощенная логика парсинга для примера (Предмет в col 0, Оценка в col 1)
         # Начинаем с индекса 1, пропуская заголовки
         for row_idx, row in enumerate(data[1:], start=2):
-            if len(row) < 2:
+            if not isinstance(row, list) or len(row) < 2:
                 continue # Пустая строка или нет оценки
                 
-            subject = row[0].strip()
-            raw_grade = row[1].strip()
+            subject = str(row[0]).strip()
+            raw_grade = str(row[1]).strip()
             
             if not raw_grade:
                 continue

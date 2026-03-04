@@ -11,7 +11,8 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 @contextmanager
 def get_db_connection():
     """Контекстный менеджер для безопасного подключения к БД."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
+    conn.execute('PRAGMA journal_mode=WAL;')
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -273,6 +274,14 @@ def get_all_families() -> List[Dict[str, Any]]:
     """Возвращает список всех семей с информацией о главе и количестве детей."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id, f.family_name, p.fio as head_fio,
+                   (SELECT COUNT(DISTINCT student_id) FROM family_links fl2 WHERE fl2.family_id = f.id AND fl2.student_id IS NOT NULL) as child_count
+            FROM families f
+            LEFT JOIN family_links fl ON f.id = fl.family_id
+            LEFT JOIN parents p ON fl.parent_id = p.id AND p.role = 'head'
+            GROUP BY f.id
+        ''')
         return [dict(row) for row in cursor.fetchall()]
     return []
 
@@ -280,16 +289,26 @@ def get_students_for_parent(telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех студентов {student_id, fio, spreadsheet_id}, привязанных к telegram_id."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
+            FROM students s
+            JOIN family_links fl ON s.id = fl.student_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ?
+        ''', (telegram_id,))
         return [dict(row) for row in cursor.fetchall()]
     return []
 
-if __name__ == '__main__':
-    init_db()
-    print("Database initialized successfully at", DB_PATH)
 def get_family_members(family_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех взрослых членов семьи."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT p.id, p.fio, p.role
+            FROM parents p
+            JOIN family_links fl ON p.id = fl.parent_id
+            WHERE fl.family_id = ?
+        ''', (family_id,))
         return [dict(row) for row in cursor.fetchall()]
     return []
 
@@ -304,6 +323,7 @@ def get_family_students(family_id: int) -> List[Dict[str, Any]]:
             WHERE fl.family_id = ?
         ''', (family_id,))
         return [dict(row) for row in cursor.fetchall()]
+    return []
 
 def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
     """Удаляет родителя из семьи. Главу семьи удалить нельзя."""
@@ -329,6 +349,10 @@ def delete_student_from_family(family_id: int, student_id: int):
         if cursor.fetchone()['count'] == 0:
             cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
             cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
+
+if __name__ == '__main__':
+    init_db()
+    print("Database initialized successfully at", DB_PATH)
 
 def get_last_menu_id(user_id: int) -> Optional[int]:
     """Возвращает ID последнего сообщения меню для пользователя."""
