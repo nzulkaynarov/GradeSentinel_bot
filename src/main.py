@@ -1,5 +1,7 @@
 import os
+import time
 import threading
+from collections import defaultdict
 from dotenv import load_dotenv
 import logging
 from telebot import types
@@ -9,6 +11,22 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Rate limiting: max 5 requests per 10 seconds per user
+_rate_limit_store: dict = defaultdict(list)
+RATE_LIMIT_MAX = 5
+RATE_LIMIT_WINDOW = 10  # seconds
+
+def is_rate_limited(user_id: int) -> bool:
+    """Проверяет, превышен ли лимит запросов для пользователя."""
+    now = time.time()
+    timestamps = _rate_limit_store[user_id]
+    # Удаляем устаревшие записи
+    _rate_limit_store[user_id] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
+        return True
+    _rate_limit_store[user_id].append(now)
+    return False
 
 from src.bot_instance import bot
 from src.ui import send_menu_safe
@@ -36,7 +54,7 @@ def send_welcome(message):
     # Автоматическая авторизация админа
     if admin_id_env and str(user_id) == str(admin_id_env):
         update_parent_telegram_id(f"admin_{user_id}", user_id) # Ensure DB linked
-        send_menu_safe(user_id, "✅ Авторизация успешна! Здравствуйте, Super Admin.\n👑 Вы авторизованы как *Супер-администратор*.")
+        send_menu_safe(user_id, "✅ Авторизация успешна! Здравствуйте, Super Admin.\n👑 Вы авторизованы как <b>Супер-администратор</b>.")
         return
 
     # Check if user is already saved
@@ -44,13 +62,13 @@ def send_welcome(message):
     role = get_parent_role(user_id)
     if role:
         if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
-            send_menu_safe(user_id, "ℹ️ Ваш аккаунт зарегистрирован, но в данный момент вы не привязаны ни к одной семье.\nПожалуйста, ожидайте, пока администратор добавит вас.")
+            send_menu_safe(user_id, "ℹ️ Ваш аккаунт зарегистрирован, но в данный момент вы не привязаны ни к одной семье.\n\n💡 Если это ошибка — нажмите <b>💬 Поддержка</b> внизу, чтобы сообщить администратору.")
             return
             
         send_menu_safe(user_id, "✅ Вы уже авторизованы. Главное меню загружено.")
         return
 
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True, input_field_placeholder="Нажмите кнопку ниже для авторизации")
     button = types.KeyboardButton("📱 Подтвердить номер телефона", request_contact=True)
     markup.add(button)
     
@@ -85,17 +103,30 @@ def contact_handler(message):
                     if is_head_of_any_family(user_id):
                         welcome_msg += "🏠 Вы авторизованы как <b>Глава семьи</b>."
                     else:
-                        welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках."
+                        welcome_msg += "Теперь я буду присылать вам уведомления о новых оценках.\n\n"
+                        welcome_msg += "💡 <b>Как это работает:</b>\n"
+                        welcome_msg += "• Бот автоматически проверяет дневник каждые 5 минут\n"
+                        welcome_msg += "• Вы получите уведомление о каждой новой оценке\n"
+                        welcome_msg += "• Нажмите <b>📈 Оценки</b> — чтобы посмотреть все оценки за сегодня"
                 
             send_menu_safe(user_id, welcome_msg)
             logger.info(f"User {phone} authorized as {role}")
         else:
-            bot.send_message(
-                user_id, 
+            admin_id_env = os.environ.get("ADMIN_ID")
+            markup = types.ReplyKeyboardRemove()
+            not_found_text = (
                 "❌ Извините, ваш номер не найден в базе данных.\n"
-                "Пожалуйста, свяжитесь с администратором для регистрации.",
-                reply_markup=types.ReplyKeyboardRemove()
+                "Пожалуйста, свяжитесь с администратором для регистрации."
             )
+            if admin_id_env:
+                inline_markup = types.InlineKeyboardMarkup()
+                inline_markup.add(types.InlineKeyboardButton(
+                    "📩 Написать администратору",
+                    url=f"tg://user?id={admin_id_env}"
+                ))
+                bot.send_message(user_id, not_found_text, reply_markup=inline_markup)
+            else:
+                bot.send_message(user_id, not_found_text, reply_markup=markup)
             logger.warning(f"Unauthorized access attempt from phone: {phone}")
     else:
         bot.send_message(message.chat.id, "❌ Ошибка при получении контакта.")
@@ -105,11 +136,15 @@ def handle_menu_buttons(message):
     """Обработчик нажатий на кнопки главного меню."""
     txt = message.text
     user_id = message.chat.id
-    
+
+    if is_rate_limited(user_id):
+        bot.send_message(user_id, "⏳ Слишком много запросов. Пожалуйста, подождите несколько секунд.")
+        return
+
     try:
         bot.delete_message(user_id, message.message_id)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete menu button message: {e}")
 
     role = get_parent_role(user_id)
     logger.info(f"Button clicked: '{txt}' by user {user_id} (role: {role})")

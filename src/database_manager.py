@@ -89,9 +89,17 @@ def init_db():
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             fio TEXT NOT NULL,
-            spreadsheet_id TEXT NOT NULL
+            spreadsheet_id TEXT NOT NULL,
+            display_name TEXT
         )
         ''')
+
+        # Миграция: добавляем display_name если нет
+        cursor.execute("PRAGMA table_info(students)")
+        columns_students = [column[1] for column in cursor.fetchall()]
+        if 'display_name' not in columns_students:
+            cursor.execute("ALTER TABLE students ADD COLUMN display_name TEXT")
+            logger.info("Database migration: display_name column added to students.")
 
         # 4. Связи "Семьи - Родители - Дети"
         # У одного студента может быть несколько родителей (членов семьи)
@@ -148,6 +156,24 @@ def init_db():
             last_menu_msg_id INTEGER
         )
         ''')
+
+        # 8. Состояния пользователей (для multi-step flows, персистентно)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_states (
+            user_id INTEGER PRIMARY KEY,
+            state TEXT NOT NULL,
+            data TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        # 9. Маппинг сообщений поддержки (admin_group msg_id -> user_id)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS support_msg_map (
+            admin_msg_id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL
+        )
+        ''')
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -182,10 +208,10 @@ def get_parents_for_student(student_id: int) -> List[int]:
     return []
 
 def get_active_spreadsheets() -> List[Dict[str, Any]]:
-    """Возвращает список всех словарей {student_id, spreadsheet_id, fio} для опроса таблиц."""
+    """Возвращает список всех словарей {student_id, spreadsheet_id, fio, display_name} для опроса таблиц."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id as student_id, fio, spreadsheet_id FROM students WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""')
+        cursor.execute('SELECT id as student_id, fio, spreadsheet_id, display_name FROM students WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""')
         return [dict(row) for row in cursor.fetchall()]
     return []
 
@@ -257,12 +283,18 @@ def add_parent(fio: str, phone: str, role: str = 'senior') -> Optional[int]:
             return cursor.fetchone()['id']
         return cursor.lastrowid
 
-def add_student(fio: str, spreadsheet_id: str) -> Optional[int]:
+def add_student(fio: str, spreadsheet_id: str, display_name: str = None) -> Optional[int]:
     """Создает нового студента и возвращает его ID."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO students (fio, spreadsheet_id) VALUES (?, ?)', (fio, spreadsheet_id))
+        cursor.execute('INSERT INTO students (fio, spreadsheet_id, display_name) VALUES (?, ?, ?)', (fio, spreadsheet_id, display_name))
         return cursor.lastrowid
+
+def update_student_display_name(student_id: int, display_name: str):
+    """Обновляет кэшированное display_name студента."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE students SET display_name = ? WHERE id = ?', (display_name, student_id))
 
 def link_parent_to_family(family_id: int, parent_id: int):
     """Привязывает родителя к семье."""
@@ -438,14 +470,12 @@ def get_user_stats(telegram_id: int) -> Dict[str, Any]:
         
         # Количество записей оценок для этих детей
         stats['history_records'] = cursor.execute('''
-            SELECT COUNT(*) as c 
-            FROM grade_history 
+            SELECT COUNT(*) as c
+            FROM grade_history
             WHERE student_id IN (SELECT DISTINCT student_id FROM family_links WHERE parent_id = ?)
         ''', (parent_id,)).fetchone()['c']
-        
+
         return stats
-        return stats
-    return {}
 
 def get_all_telegram_ids() -> List[int]:
     """Возвращает список telegram_id всех зарегистрированных пользователей."""
@@ -498,7 +528,55 @@ def update_last_menu_id(user_id: int, msg_id: Optional[int]):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO app_states (user_id, last_menu_msg_id) 
+            INSERT INTO app_states (user_id, last_menu_msg_id)
             VALUES (?, ?)
             ON CONFLICT(user_id) DO UPDATE SET last_menu_msg_id = excluded.last_menu_msg_id
         ''', (user_id, msg_id))
+
+# ====================
+# Персистентные user_states
+# ====================
+def set_user_state(user_id: int, state: str, data: str = None):
+    """Сохраняет состояние пользователя в БД."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_states (user_id, state, data, updated_at)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET state = excluded.state, data = excluded.data, updated_at = CURRENT_TIMESTAMP
+        ''', (user_id, state, data))
+
+def get_user_state(user_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает состояние пользователя из БД."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT state, data FROM user_states WHERE user_id = ?', (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return {'state': row['state'], 'data': row['data']}
+        return None
+
+def clear_user_state(user_id: int):
+    """Удаляет состояние пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM user_states WHERE user_id = ?', (user_id,))
+
+# ====================
+# Персистентный маппинг сообщений поддержки
+# ====================
+def save_support_msg_map(admin_msg_id: int, user_id: int):
+    """Сохраняет связь между сообщением в админ-группе и пользователем."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO support_msg_map (admin_msg_id, user_id) VALUES (?, ?)
+        ''', (admin_msg_id, user_id))
+
+def get_support_user_id(admin_msg_id: int) -> Optional[int]:
+    """Находит user_id по ID сообщения в админ-группе."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT user_id FROM support_msg_map WHERE admin_msg_id = ?', (admin_msg_id,))
+        row = cursor.fetchone()
+        return row['user_id'] if row else None
