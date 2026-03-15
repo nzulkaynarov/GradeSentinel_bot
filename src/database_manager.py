@@ -194,6 +194,30 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_t
             return False
     return False
 
+def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[str, Any]]:
+    """Возвращает историю оценок студента за последние N дней."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, date_added
+            FROM grade_history
+            WHERE student_id = ? AND date_added >= datetime('now', ?)
+            ORDER BY date_added
+        ''', (student_id, f'-{days} days'))
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[Dict[str, Any]]:
+    """Возвращает полную историю оценок студента за N дней (для WebApp API)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, cell_reference, date_added
+            FROM grade_history
+            WHERE student_id = ? AND date_added >= datetime('now', ?)
+            ORDER BY date_added DESC
+        ''', (student_id, f'-{days} days'))
+        return [dict(row) for row in cursor.fetchall()]
+
 def get_parents_for_student(student_id: int) -> List[int]:
     """Возвращает список telegram_id всех родителей, привязанных к данному студенту через семью."""
     with get_db_connection() as conn:

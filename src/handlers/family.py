@@ -279,3 +279,9 @@ def get_grades_command(message):
             
         report_lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>")
         send_content(user_id, "\n".join(report_lines))
+
+    # Предлагаем WebApp дашборд если настроен
+    from src.ui import get_webapp_button
+    webapp_markup = get_webapp_button()
+    if webapp_markup:
+        bot.send_message(user_id, "📈 Подробная статистика и графики:", reply_markup=webapp_markup)

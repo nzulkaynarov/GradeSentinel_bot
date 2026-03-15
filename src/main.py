@@ -37,11 +37,13 @@ from src.monitor_engine import start_polling
 import src.handlers.admin
 import src.handlers.family
 import src.handlers.communication
+import src.handlers.analytics
 
 # For direct routing in main menu
 from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start
 from src.handlers.family import cmd_manage_family, get_grades_command
 from src.handlers.communication import support_started, broadcast_started
+from src.handlers.analytics import cmd_ai_report
 
 # ====================
 # Telegram bot setup
@@ -131,7 +133,7 @@ def contact_handler(message):
     else:
         bot.send_message(message.chat.id, "❌ Ошибка при получении контакта.")
 
-@bot.message_handler(func=lambda m: m.text in ["📊 Статус", "🏠 Семьи", "➕ Новая семья", "🏠 Моя семья", "📈 Оценки", "💬 Поддержка", "📢 Рассылка"])
+@bot.message_handler(func=lambda m: m.text in ["📊 Статус", "🏠 Семьи", "➕ Новая семья", "🏠 Моя семья", "📈 Оценки", "🤖 AI-анализ", "💬 Поддержка", "📢 Рассылка"])
 def handle_menu_buttons(message):
     """Обработчик нажатий на кнопки главного меню."""
     txt = message.text
@@ -159,6 +161,8 @@ def handle_menu_buttons(message):
         cmd_manage_family(message)
     elif txt == "📈 Оценки":
         get_grades_command(message)
+    elif txt == "🤖 AI-анализ":
+        cmd_ai_report(message)
     elif txt == "💬 Поддержка":
         support_started(message)
     elif txt == "📢 Рассылка":
@@ -182,8 +186,12 @@ def main():
     monitor_thread = threading.Thread(target=start_polling, args=(300,), daemon=True)
     monitor_thread.start()
     logger.info("Monitor engine thread started with bot integration.")
-    
-    # 3. Start telegram bot blocking main thread
+
+    # 3. Start weekly AI report scheduler (if API key available)
+    from src.handlers.analytics import start_weekly_scheduler
+    start_weekly_scheduler()
+
+    # 4. Start telegram bot blocking main thread
     start_bot()
 
 if __name__ == '__main__':
