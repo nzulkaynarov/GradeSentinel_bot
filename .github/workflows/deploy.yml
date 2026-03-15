@@ -24,6 +24,9 @@ jobs:
           echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
           echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
           echo "ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}" >> .env
+          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
+          echo "WEBAPP_URL=${{ secrets.WEBAPP_URL }}" >> .env
+          echo "WEBAPP_PORT=${{ secrets.WEBAPP_PORT }}" >> .env
           
           # Создаем папку config (если её нет)
           mkdir -p config
