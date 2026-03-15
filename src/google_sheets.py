@@ -16,15 +16,21 @@ CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
+_sheets_service = None
+
 def get_sheets_service():
-    """Инициализирует и возвращает сервис Google Sheets API."""
+    """Инициализирует и возвращает кэшированный сервис Google Sheets API (singleton)."""
+    global _sheets_service
+    if _sheets_service is not None:
+        return _sheets_service
+
     if not os.path.exists(CREDENTIALS_FILE):
         return None
-        
+
     creds = Credentials.from_service_account_file(
         CREDENTIALS_FILE, scopes=SCOPES)
-    service = build('sheets', 'v4', credentials=creds)
-    return service
+    _sheets_service = build('sheets', 'v4', credentials=creds)
+    return _sheets_service
 
 def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -> Optional[List[List[str]]]:
     """

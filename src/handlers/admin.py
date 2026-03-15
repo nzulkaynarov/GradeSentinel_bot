@@ -1,10 +1,9 @@
-import sqlite3
 import re
 import logging
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import DB_PATH, get_active_spreadsheets, get_parent_role, get_all_families, add_family, add_parent, link_parent_to_family, get_db_connection
+from src.database_manager import get_parent_role, get_all_families, add_family, add_parent, link_parent_to_family, get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +14,7 @@ def validate_phone(phone: str) -> bool:
 
 def is_user_admin(user_id):
     """Проверяет, является ли пользователь администратором."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (user_id,))
-        row = cursor.fetchone()
-        return row and row['role'] == 'admin'
+    return get_parent_role(user_id) == 'admin'
 
 @bot.message_handler(commands=['admin_help'])
 def admin_help(message):
@@ -183,7 +177,8 @@ def process_head_choice(message, family_name):
                 f"✅ <b>Семья '{family_name}' создана!</b>\n\nВы назначены главой. Теперь вы можете использовать 🏠 Моя семья для управления."
             )
         except Exception as e:
-            send_content(message.chat.id, f"❌ Ошибка: {e}")
+            logger.error(f"Error creating family with self as head: {e}")
+            send_content(message.chat.id, "❌ Произошла ошибка при создании семьи. Пожалуйста, попробуйте позже.")
     else:
         send_menu_safe(message.chat.id, "Введите <b>ФИО Главы семьи</b>:")
         bot.register_next_step_handler_by_chat_id(message.chat.id, process_head_fio, family_name)
@@ -221,4 +216,5 @@ def process_head_phone(message, family_name, head_fio):
             "Статус: Активен"
         )
     except Exception as e:
-        send_content(message.chat.id, f"❌ Ошибка в базе данных: {e}")
+        logger.error(f"Error creating family with external head: {e}")
+        send_content(message.chat.id, "❌ Произошла ошибка при создании семьи. Пожалуйста, попробуйте позже.")

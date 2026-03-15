@@ -15,5 +15,29 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # WebApp Dashboard (optional — requires WEBAPP_URL in .env)
+  webapp:
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile
+    container_name: gradesentinel_webapp
+    restart: always
+    ports:
+      - "${WEBAPP_PORT:-8443}:8443"
+    volumes:
+      - sentinel_data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env
+    environment:
+      - WEBAPP_PORT=8443
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    profiles:
+      - webapp
+
 volumes:
   sentinel_data:

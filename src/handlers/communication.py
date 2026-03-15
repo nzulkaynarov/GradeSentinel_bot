@@ -1,19 +1,22 @@
 import os
 import logging
+import threading
 from telebot import types
 import time
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import get_parent_role, get_user_info_by_tg_id, get_all_telegram_ids
+from src.database_manager import (
+    get_parent_role, get_user_info_by_tg_id, get_all_telegram_ids,
+    set_user_state, get_user_state, clear_user_state,
+    save_support_msg_map, get_support_user_id
+)
 
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Состояния для общения
-user_states: Dict[int, Any] = {}
-# Маппинг message_id в админ-группе -> user_id (для надежных ответов)
-admin_msg_map: Dict[int, int] = {}
+# In-memory хранилище только для broadcast message_obj (не сериализуется в SQLite)
+_broadcast_pending: Dict[int, Any] = {}
 
 def get_admin_group_id():
     """Возвращает ID админ-группы из .env"""
@@ -34,29 +37,29 @@ def support_started(message):
         send_menu_safe(user_id, "🔧 <i>Функция поддержки временно недоступна (не настроена группа).</i>")
         return
         
-    user_states[user_id] = "awaiting_support_message"
+    set_user_state(user_id, "awaiting_support_message")
     
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, input_field_placeholder="Опишите вашу проблему...")
     markup.add("❌ Отмена")
-    
+
     bot.send_message(
-        user_id, 
-        "📝 <b>Техническая поддержка</b>\n\nНапишите ваш вопрос, пожелание или опишите проблему. Вы можете отправить текст или фото с описанием.\n\nАдминистратор ответит вам при первой возможности.", 
+        user_id,
+        "📝 <b>Техническая поддержка</b>\n\nНапишите ваш вопрос, пожелание или опишите проблему. Вы можете отправить текст или фото с описанием.\n\nАдминистратор ответит вам при первой возможности.",
         reply_markup=markup,
         parse_mode="HTML"
     )
 
-@bot.message_handler(func=lambda msg: user_states.get(msg.chat.id) == "awaiting_support_message", content_types=['text', 'photo', 'document', 'video'])
+@bot.message_handler(func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == "awaiting_support_message", content_types=['text', 'photo', 'document', 'video'])
 def receive_support_message(message):
     user_id = message.chat.id
     admin_group = get_admin_group_id()
-    
+
     if message.text == "❌ Отмена":
-        user_states.pop(user_id, None)
+        clear_user_state(user_id)
         send_menu_safe(user_id, "Действие отменено.")
         return
-        
-    user_states.pop(user_id, None)
+
+    clear_user_state(user_id)
     logger.info(f"Received support message from user {user_id}. Attempting to forward to {admin_group}")
     
     # Получаем информацию о пользователе для подписи
@@ -77,12 +80,12 @@ def receive_support_message(message):
         # Сначала отправляем заголовок-карточку
         card = bot.send_message(admin_group, header, parse_mode="HTML")
         if card:
-            admin_msg_map[card.message_id] = user_id
-            
+            save_support_msg_map(card.message_id, user_id)
+
         # Затем пересылаем само сообщение (чтобы сохранить фото/документы)
         forwarded = bot.forward_message(admin_group, message.chat.id, message.message_id)
         if forwarded:
-            admin_msg_map[forwarded.message_id] = user_id
+            save_support_msg_map(forwarded.message_id, user_id)
         
         send_menu_safe(user_id, "✅ <b>Сообщение отправлено!</b>\nСпасибо за обратную связь. Администратор уже получил ваше сообщение и ответит вам здесь же.")
     except Exception as e:
@@ -102,8 +105,8 @@ def reply_from_admin_group(message):
     # Проверяем наш маппинг по ID сообщения
     original_msg = message.reply_to_message
     
-    # 1. Сначала ищем в нашем словаре (самый надежный способ)
-    user_id = admin_msg_map.get(original_msg.message_id)
+    # 1. Сначала ищем в БД (персистентный маппинг)
+    user_id = get_support_user_id(original_msg.message_id)
     logger.info(f"Mapping check for msg {original_msg.message_id}: user_id={user_id}")
     
     # 2. Если нет в словаре, пробуем forward_from (если не скрыт)
@@ -136,7 +139,8 @@ def send_reply_to_user(message, target_user_id):
         # Подтверждаем админу в группе
         bot.reply_to(message, "✅ Ответ успешно доставлен пользователю!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка отправки: пользователь заблокировал бота или удален. ({str(e)})")
+        logger.error(f"Failed to send reply to user {target_user_id}: {e}")
+        bot.reply_to(message, "❌ Ошибка отправки: пользователь заблокировал бота или удалён.")
 
 # ====================
 # Рассылка новостей (Супер-Админ -> Пользователи)
@@ -146,28 +150,29 @@ def broadcast_started(message):
     if get_parent_role(user_id) != 'admin':
         return
         
-    user_states[user_id] = "awaiting_broadcast_message"
+    set_user_state(user_id, "awaiting_broadcast_message")
     
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, input_field_placeholder="Введите текст рассылки...")
     markup.add("❌ Отмена")
-    
+
     bot.send_message(
-        user_id, 
-        "📢 <b>Режим рассылки новостей</b>\n\nОтправьте сообщение (текст, фото или видео), которое нужно разослать <b>всем</b> зарегистрированным пользователям бота.\n\nПеред отправкой у вас будет возможность подтвердить действие.", 
+        user_id,
+        "📢 <b>Режим рассылки новостей</b>\n\nОтправьте сообщение (текст, фото или видео), которое нужно разослать <b>всем</b> зарегистрированным пользователям бота.\n\nПеред отправкой у вас будет возможность подтвердить действие.",
         reply_markup=markup,
         parse_mode="HTML"
     )
 
-@bot.message_handler(func=lambda msg: user_states.get(msg.chat.id) == "awaiting_broadcast_message", content_types=['text', 'photo', 'document', 'video'])
+@bot.message_handler(func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == "awaiting_broadcast_message", content_types=['text', 'photo', 'document', 'video'])
 def confirm_broadcast_message(message):
     user_id = message.chat.id
-    
+
     if message.text == "❌ Отмена":
-        user_states.pop(user_id, None)
+        clear_user_state(user_id)
         send_menu_safe(user_id, "Рассылка отменена.")
         return
-        
-    user_states[user_id] = {"state": "confirming_broadcast", "message_obj": message}
+
+    set_user_state(user_id, "confirming_broadcast")
+    _broadcast_pending[user_id] = message
     
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("✅ Да, начать рассылку", callback_data="broadcast_confirm"))
@@ -183,45 +188,56 @@ def confirm_broadcast_message(message):
 @bot.callback_query_handler(func=lambda call: call.data in ["broadcast_confirm", "broadcast_cancel"])
 def process_broadcast_confirmation(call):
     user_id = call.message.chat.id
-    state_data = user_states.get(user_id)
-    
-    if not isinstance(state_data, dict) or state_data.get("state") != "confirming_broadcast":
+    state_data = get_user_state(user_id)
+
+    if not state_data or state_data.get("state") != "confirming_broadcast":
         bot.answer_callback_query(call.id, "Данные устарели.")
-        bot.delete_message(chat_id=user_id, message_id=call.message.message_id)
+        try:
+            bot.delete_message(chat_id=user_id, message_id=call.message.message_id)
+        except Exception:
+            pass
         return
-        
+
     if call.data == "broadcast_cancel":
-        user_states.pop(user_id, None)
+        clear_user_state(user_id)
+        _broadcast_pending.pop(user_id, None)
         bot.edit_message_text("Рассылка отменена.", user_id, call.message.message_id)
         send_menu_safe(user_id, "Главное меню")
         return
-        
+
     # Начинаем рассылку
     bot.edit_message_text("🚀 Рассылка началась. Пожалуйста, подождите...", user_id, call.message.message_id)
+
+    original_message = _broadcast_pending.pop(user_id, None)
+    clear_user_state(user_id)
+
+    if not original_message:
+        bot.send_message(user_id, "❌ Сообщение для рассылки не найдено. Попробуйте снова.")
+        send_menu_safe(user_id, "Главное меню")
+        return
     
-    original_message: types.Message = state_data["message_obj"]
-    user_states.pop(user_id, None)
-    
-    users = get_all_telegram_ids()
-    success_count: int = 0
-    fail_count: int = 0
-    
-    for tg_id in users:
-        # Не отправляем самому себе
-        if str(tg_id) == str(user_id):
-            continue
-            
-        try:
-            bot.copy_message(tg_id, from_chat_id=user_id, message_id=original_message.message_id)
-            success_count += 1
-            time.sleep(0.05) # Небольшая пауза во избежание флуда
-        except Exception as e:
-            logger.error(f"Failed to broadcast to {tg_id}: {e}")
-            fail_count += 1
-            
-    bot.send_message(
-        user_id, 
-        f"✅ <b>Рассылка завершена!</b>\n\nУспешно доставлено: {success_count}\nОшибок/Блокировок: {fail_count}",
-        parse_mode="HTML"
-    )
-    send_menu_safe(user_id, "Главное меню")
+    def _do_broadcast(target_user_id, msg_obj):
+        """Выполняет рассылку в фоновом потоке, не блокируя обработку других сообщений."""
+        users = get_all_telegram_ids()
+        success_count = 0
+        fail_count = 0
+
+        for tg_id in users:
+            if str(tg_id) == str(target_user_id):
+                continue
+            try:
+                bot.copy_message(tg_id, from_chat_id=target_user_id, message_id=msg_obj.message_id)
+                success_count += 1
+                time.sleep(0.05)
+            except Exception as e:
+                logger.error(f"Failed to broadcast to {tg_id}: {e}")
+                fail_count += 1
+
+        bot.send_message(
+            target_user_id,
+            f"✅ <b>Рассылка завершена!</b>\n\nУспешно доставлено: {success_count}\nОшибок/Блокировок: {fail_count}",
+            parse_mode="HTML"
+        )
+        send_menu_safe(target_user_id, "Главное меню")
+
+    threading.Thread(target=_do_broadcast, args=(user_id, original_message), daemon=True).start()

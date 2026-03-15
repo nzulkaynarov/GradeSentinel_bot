@@ -1,5 +1,4 @@
 import logging
-from typing import List
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
@@ -73,7 +72,8 @@ def callback_list_edit(call):
     if members:
         markup.add(types.InlineKeyboardButton("─── РОДСТВЕННИКИ ───", callback_data="none"))
         for m in members:
-            label = f"{m['fio']} ({m['role']})"
+            role_label = "Глава" if m.get('is_head') else "Родственник"
+            label = f"{m['fio']} ({role_label})"
             if not m.get('is_head'):
                 markup.add(types.InlineKeyboardButton(f"❌ {label}", callback_data=f"del_par_{f_id}_{m['id']}"))
             else:
@@ -114,11 +114,11 @@ def callback_add_child(call):
     f_id = call.data.split('_')[2]
     logger.info(f"Callback add_child triggered for family_id: {f_id}")
     
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, input_field_placeholder="Вставьте ссылку на Google Таблицу...")
     markup.add(types.KeyboardButton("❌ Отмена"))
-    
+
     msg = bot.send_message(
-        call.message.chat.id, 
+        call.message.chat.id,
         "Отправьте ссылку на Google Таблицу ребенка.\nИли нажмите 'Отмена':",
         reply_markup=markup
     )
@@ -135,8 +135,10 @@ def process_add_child_step(message, f_id):
     url = message.text.strip()
     logger.info(f"Processing add_child for family {f_id}, url: {url}")
     
-    try: bot.delete_message(message.chat.id, message.message_id)
-    except Exception as de: logger.warning(f"Failed to delete user message: {de}")
+    try:
+        bot.delete_message(message.chat.id, message.message_id)
+    except Exception:
+        logger.debug("Could not delete user message in add_child flow")
 
     if "docs.google.com/spreadsheets/d/" not in url:
         send_menu_safe(message.chat.id, "❌ Некорректная ссылка на Google Таблицу.\nУбедитесь, что она содержит <code>/spreadsheets/d/</code>")
@@ -163,11 +165,14 @@ def process_add_child_step(message, f_id):
             logger.error(f"Error calling Sheets API: {se}")
             title = None
 
-        if not title: 
+        if not title:
             title = "Новый ученик"
-        
-        s_id = add_student(title, ss_id)
-        logger.info(f"Student added to DB with id {s_id}")
+
+        from src.utils import clean_student_name
+        display_name = clean_student_name(title)
+
+        s_id = add_student(title, ss_id, display_name=display_name)
+        logger.info(f"Student added to DB with id {s_id}, display_name: {display_name}")
         
         link_student_to_family(int(f_id), s_id)
         logger.info(f"Student {s_id} linked to family {f_id}")
@@ -181,17 +186,17 @@ def process_add_child_step(message, f_id):
         )
     except Exception as e:
         logger.exception("Unexpected error in process_add_child_step")
-        send_content(message.chat.id, f"❌ Произошла ошибка: {str(e)}")
+        send_content(message.chat.id, "❌ Произошла ошибка при добавлении ребёнка. Проверьте ссылку и попробуйте позже.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
     f_id = call.data.split('_')[2]
     
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True, input_field_placeholder="Фамилия Имя 998XXXXXXXXX")
     markup.add(types.KeyboardButton("❌ Отмена"))
-    
+
     msg = bot.send_message(
-        call.message.chat.id, 
+        call.message.chat.id,
         "Введите ФИО и номер телефона родственника (через пробел):\n"
         "Пример: <code>Иванов Иван 998901234567</code>\n\n"
         "Или нажмите 'Отмена'.",
@@ -208,8 +213,10 @@ def process_add_member_step(message, f_id):
         return
     
     try:
-        try: bot.delete_message(message.chat.id, message.message_id)
-        except: pass
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+        except Exception:
+            logger.debug("Could not delete user message in add_member flow")
 
         parts = message.text.split(maxsplit=2)
         if len(parts) < 3:
@@ -224,7 +231,8 @@ def process_add_member_step(message, f_id):
         
         send_content(message.chat.id, f"✅ Родственник <b>{fio}</b> добавлен в семью.")
     except Exception as e:
-        send_content(message.chat.id, f"❌ Ошибка: {e}")
+        logger.error(f"Error adding family member: {e}")
+        send_content(message.chat.id, "❌ Ошибка при добавлении родственника. Проверьте формат данных и попробуйте снова.")
 
 @bot.message_handler(commands=['grades'])
 def get_grades_command(message):
@@ -271,3 +279,9 @@ def get_grades_command(message):
             
         report_lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>")
         send_content(user_id, "\n".join(report_lines))
+
+    # Предлагаем WebApp дашборд если настроен
+    from src.ui import get_webapp_button
+    webapp_markup = get_webapp_button()
+    if webapp_markup:
+        bot.send_message(user_id, "📈 Подробная статистика и графики:", reply_markup=webapp_markup)

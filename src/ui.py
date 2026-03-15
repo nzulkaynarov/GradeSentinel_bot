@@ -1,3 +1,4 @@
+import os
 from telebot import types
 from src.bot_instance import bot
 from src.database_manager import get_last_menu_id, update_last_menu_id, get_parent_role
@@ -21,15 +22,28 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
         markup.row("🏠 Моя семья")
         
     if has_children:
-        markup.row("📈 Оценки")
-        
+        markup.row("📈 Оценки", "🤖 AI-анализ")
+
     if role or is_head or has_children:
         markup.row("💬 Поддержка")
-            
+
     # Если вообще нет кнопок (пустой пользователь), дадим хотя бы заглушку
     if len(markup.keyboard) == 0:
         markup.row("⏳ Ожидание привязки")
-        
+
+    return markup
+
+
+def get_webapp_button() -> types.InlineKeyboardMarkup:
+    """Возвращает inline-кнопку для открытия WebApp дашборда (если настроен URL)."""
+    webapp_url = os.environ.get("WEBAPP_URL")
+    if not webapp_url:
+        return None
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        "📊 Дашборд оценок",
+        web_app=types.WebAppInfo(url=f"{webapp_url}/webapp")
+    ))
     return markup
 
 def send_menu_safe(chat_id: int, text: str, reply_markup=None, inline_markup=None):

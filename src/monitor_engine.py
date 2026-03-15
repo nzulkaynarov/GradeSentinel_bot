@@ -1,9 +1,9 @@
 import time
 import logging
-import json
-from src.database_manager import get_active_spreadsheets, add_grade, get_parents_for_student
+from src.database_manager import get_active_spreadsheets, add_grade, get_parents_for_student, update_student_display_name
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
+from src.utils import clean_student_name
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -50,10 +50,12 @@ def check_for_new_grades():
         fio = student['fio']
         spreadsheet_id = student['spreadsheet_id']
         
-        # Получаем реальное имя из заголовка таблицы
-        sheet_title = get_spreadsheet_title(spreadsheet_id)
-        from src.utils import clean_student_name
-        display_name = clean_student_name(sheet_title) if sheet_title else fio
+        # Используем кэшированное display_name; если нет — подтягиваем из API один раз
+        display_name = student.get('display_name')
+        if not display_name:
+            sheet_title = get_spreadsheet_title(spreadsheet_id)
+            display_name = clean_student_name(sheet_title) if sheet_title else fio
+            update_student_display_name(student_id, display_name)
         
         logger.info(f"Checking sheet for student: {display_name} (ID: {student_id})")
         

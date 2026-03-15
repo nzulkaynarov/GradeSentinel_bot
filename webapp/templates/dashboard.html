@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>GradeSentinel Dashboard</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Loading grades...</p>
+        </div>
+
+        <div id="content" style="display:none;">
+            <!-- Student selector (if multiple children) -->
+            <div id="student-selector" style="display:none;">
+                <select id="student-select"></select>
+            </div>
+
+            <!-- Summary cards -->
+            <div id="summary-cards" class="cards-row">
+                <div class="card">
+                    <div class="card-value" id="avg-grade">—</div>
+                    <div class="card-label">Average</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="total-grades">—</div>
+                    <div class="card-label">Total grades</div>
+                </div>
+                <div class="card">
+                    <div class="card-value" id="best-subject">—</div>
+                    <div class="card-label">Best subject</div>
+                </div>
+            </div>
+
+            <!-- Period selector -->
+            <div class="period-selector">
+                <button class="period-btn active" data-days="7">7d</button>
+                <button class="period-btn" data-days="14">14d</button>
+                <button class="period-btn" data-days="30">30d</button>
+            </div>
+
+            <!-- Grade trend chart -->
+            <div class="chart-container">
+                <h3>Grade trend</h3>
+                <canvas id="trendChart"></canvas>
+            </div>
+
+            <!-- Subject averages chart -->
+            <div class="chart-container">
+                <h3>Average by subject</h3>
+                <canvas id="subjectChart"></canvas>
+            </div>
+
+            <!-- Recent grades table -->
+            <div class="section">
+                <h3>Recent grades</h3>
+                <div id="grades-table"></div>
+            </div>
+        </div>
+
+        <div id="error" style="display:none;">
+            <p id="error-text"></p>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

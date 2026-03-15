@@ -21,15 +21,14 @@ def sanitize_grade(raw_string: str) -> Tuple[Optional[float], Optional[str]]:
         return None, ""
         
     # Ищем базовую оценку от 1 до 5
-    # Шаблон ловит только если строка начинается с цифры 1-5 и имеет длину до 2-3 символов (напр "5", "5-", "4+")
-    # Или просто проверяем, что вся строка — это по сути оценка.
-    if len(clean_text) <= 3 and re.match(r'^[1-5][\-+=]?$', clean_text):
-        match = re.search(r'([1-5])', clean_text)
-        if match:
-            return float(match.group(1)), clean_text
-            
-    # Если это "н", "б" и т.д. — возвращаем только текст, считая это "отметкой"
-    if clean_text.lower() in ['н', 'б', 'н/а', 'осв']:
+    # Поддерживаем: "5", "5-", "4+", "4=", "5.0", "4.5" и т.д.
+    grade_match = re.match(r'^([1-5])([.\-+=]?\d?)$', clean_text)
+    if grade_match:
+        base_grade = float(grade_match.group(1))
+        return base_grade, clean_text
+
+    # Если это текстовая отметка (отсутствие, болезнь и т.д.)
+    if clean_text.lower() in ['н', 'б', 'н/а', 'осв', 'болел', 'болела', 'ув']:
          return None, clean_text
     
     # В остальных случаях (даты, мусор) возвращаем None, None
@@ -45,8 +44,13 @@ if __name__ == "__main__":
         (" 2 ", (2.0, "2")),
         ("н", (None, "н")),
         ("болел", (None, "болел")),
+        ("болела", (None, "болела")),
         ("5.0", (5.0, "5.0")),
-        ("отлично", (None, "отлично"))
+        ("4.5", (4.0, "4.5")),
+        ("осв", (None, "осв")),
+        ("ув", (None, "ув")),
+        ("отлично", (None, None)),
+        ("", (None, "")),
     ]
     
     for input_val, expected in test_cases:
