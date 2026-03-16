@@ -191,7 +191,12 @@ def main():
     from src.handlers.analytics import start_weekly_scheduler
     start_weekly_scheduler()
 
-    # 4. Start telegram bot blocking main thread
+    # 4. Start daily schedulers (evening summary, quiet hours flush, bot alive)
+    from src.schedulers import start_daily_schedulers, set_bot_instance as set_scheduler_bot
+    set_scheduler_bot(bot)
+    start_daily_schedulers()
+
+    # 5. Start telegram bot blocking main thread
     start_bot()
 
 if __name__ == '__main__':

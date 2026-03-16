@@ -236,52 +236,149 @@ def process_add_member_step(message, f_id):
 
 @bot.message_handler(commands=['grades'])
 def get_grades_command(message):
-    """По запросу выводит текущие оценки всех детей родителя."""
+    """По запросу выводит текущие оценки детей родителя. Если > 1 ребёнок — inline-кнопки выбора."""
     user_id = message.chat.id
     from src.database_manager import get_students_for_parent
-    from src.google_sheets import get_sheet_data, get_spreadsheet_title
-    from src.data_cleaner import sanitize_grade
-    
+
     students = get_students_for_parent(user_id)
     if not students:
         bot.send_message(user_id, "ℹ️ У вас нет привязанных учеников. Обратитесь к администратору.")
         return
-        
-    for student in students:
-        fio = student['fio']
-        spreadsheet_id = student['spreadsheet_id']
-        
-        sheet_title = get_spreadsheet_title(spreadsheet_id)
-        from src.utils import clean_student_name
-        display_name = clean_student_name(sheet_title) if sheet_title else fio
-        
-        data = get_sheet_data(spreadsheet_id, "Сегодня!A1:B50")
-        if not data:
-            send_menu_safe(user_id, f"⚠️ Не удалось получить данные для {display_name}.")
-            continue
-            
-        report_lines = [f"📊 <b>Оценки {display_name} за сегодня:</b>\n"]
-        grades_found = False
-        
-        for row in data[1:]:
-            if not isinstance(row, list) or len(row) < 2: continue
-            subject = str(row[0]).strip()
-            raw_grade = str(row[1]).strip()
-            if not raw_grade or not subject: continue
-            
-            _, clean_text = sanitize_grade(raw_grade)
-            if clean_text:
-                report_lines.append(f"🔹 {subject}: <b>{clean_text}</b>")
-                grades_found = True
-        
-        if not grades_found:
-            report_lines.append("За сегодня записей/оценок пока нет.")
-            
-        report_lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>")
-        send_content(user_id, "\n".join(report_lines))
 
-    # Предлагаем WebApp дашборд если настроен
+    if len(students) > 1:
+        # Показываем кнопки выбора ребёнка
+        markup = types.InlineKeyboardMarkup()
+        for s in students:
+            from src.utils import clean_student_name
+            display = s.get('display_name') or clean_student_name(s['fio'])
+            markup.add(types.InlineKeyboardButton(
+                f"👤 {display}", callback_data=f"show_grades_{s['id']}"
+            ))
+        markup.add(types.InlineKeyboardButton(
+            "📊 Все дети сразу", callback_data="show_grades_all"
+        ))
+        send_menu_safe(user_id, "📈 <b>Выберите ребёнка:</b>", inline_markup=markup)
+    else:
+        # Один ребёнок — сразу показываем
+        _show_student_grades(user_id, students[0])
+        _show_webapp_button(user_id)
+
+
+def _show_student_grades(chat_id: int, student: dict):
+    """Отображает оценки одного ученика за сегодня."""
+    from src.google_sheets import get_sheet_data, get_spreadsheet_title
+    from src.data_cleaner import sanitize_grade
+    from src.utils import clean_student_name
+
+    fio = student['fio']
+    spreadsheet_id = student['spreadsheet_id']
+
+    sheet_title = get_spreadsheet_title(spreadsheet_id)
+    display_name = clean_student_name(sheet_title) if sheet_title else fio
+
+    data = get_sheet_data(spreadsheet_id, "Сегодня!A1:B50")
+    if not data:
+        send_content(chat_id, f"⚠️ Не удалось получить данные для {display_name}.")
+        return
+
+    report_lines = [f"📊 <b>Оценки {display_name} за сегодня:</b>\n"]
+    grades_found = False
+
+    for row in data[1:]:
+        if not isinstance(row, list) or len(row) < 2: continue
+        subject = str(row[0]).strip()
+        raw_grade = str(row[1]).strip()
+        if not raw_grade or not subject: continue
+
+        _, clean_text = sanitize_grade(raw_grade)
+        if clean_text:
+            report_lines.append(f"🔹 {subject}: <b>{clean_text}</b>")
+            grades_found = True
+
+    if not grades_found:
+        report_lines.append("За сегодня записей/оценок пока нет.")
+
+    report_lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>")
+    send_content(chat_id, "\n".join(report_lines))
+
+
+def _show_webapp_button(chat_id: int):
+    """Предлагает WebApp дашборд если настроен."""
     from src.ui import get_webapp_button
     webapp_markup = get_webapp_button()
     if webapp_markup:
-        bot.send_message(user_id, "📈 Подробная статистика и графики:", reply_markup=webapp_markup)
+        bot.send_message(chat_id, "📈 Подробная статистика и графики:", reply_markup=webapp_markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('show_grades_'))
+def callback_show_grades(call):
+    """Обработчик выбора ребёнка для показа оценок."""
+    from src.database_manager import get_students_for_parent
+
+    chat_id = call.message.chat.id
+    data_part = call.data.replace('show_grades_', '')
+
+    bot.answer_callback_query(call.id)
+
+    if data_part == 'all':
+        students = get_students_for_parent(call.from_user.id)
+        for s in students:
+            _show_student_grades(chat_id, s)
+    else:
+        student_id = int(data_part)
+        students = get_students_for_parent(call.from_user.id)
+        student = next((s for s in students if s['id'] == student_id), None)
+        if student:
+            _show_student_grades(chat_id, student)
+        else:
+            bot.send_message(chat_id, "❌ Ученик не найден.")
+
+    _show_webapp_button(chat_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('grade_seen_'))
+def callback_grade_seen(call):
+    """Родитель нажал 'Видел(а)' — убираем кнопки, добавляем отметку."""
+    bot.answer_callback_query(call.id, "👀 Отмечено!")
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    except Exception:
+        pass
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('grade_today_'))
+def callback_grade_today(call):
+    """Родитель нажал 'Все за сегодня' — показываем сводку по этому ученику."""
+    from src.database_manager import get_students_for_parent, get_today_grades_for_student
+
+    student_id = int(call.data.replace('grade_today_', ''))
+    bot.answer_callback_query(call.id)
+
+    # Проверяем, что родитель имеет доступ к ученику
+    students = get_students_for_parent(call.from_user.id)
+    student = next((s for s in students if s['id'] == student_id), None)
+
+    if not student:
+        bot.send_message(call.message.chat.id, "❌ Ученик не найден.")
+        return
+
+    grades = get_today_grades_for_student(student_id)
+    if not grades:
+        send_content(call.message.chat.id, "📊 За сегодня записей пока нет.")
+        return
+
+    from src.utils import clean_student_name
+    display_name = student.get('display_name') or clean_student_name(student['fio'])
+    lines = [f"📊 <b>Все записи {display_name} за сегодня:</b>\n"]
+    numeric = []
+
+    for g in grades:
+        lines.append(f"🔹 {g['subject']}: <b>{g['raw_text']}</b>")
+        if g['grade_value'] is not None:
+            numeric.append(g['grade_value'])
+
+    if numeric:
+        avg = sum(numeric) / len(numeric)
+        lines.append(f"\nСредний балл: <b>{avg:.1f}</b> ({len(numeric)} оценок)")
+
+    send_content(call.message.chat.id, "\n".join(lines))
