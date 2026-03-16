@@ -116,7 +116,7 @@ def callback_back_manage(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_child_'))
 def callback_add_child(call):
-    f_id = call.data.split('_')[2]
+    f_id = int(call.data.split('_')[2])
     lang = get_user_lang(call.from_user.id)
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
@@ -153,7 +153,7 @@ def process_add_child_step(message, f_id):
             send_menu_safe(message.chat.id, t("child_url_no_id", lang))
             return
 
-        current_count = get_child_count(int(f_id))
+        current_count = get_child_count(f_id)
         if current_count >= 5:
             send_menu_safe(message.chat.id, t("child_limit_reached", lang, count=current_count))
             return
@@ -171,7 +171,7 @@ def process_add_child_step(message, f_id):
         display_name = clean_student_name(title)
 
         s_id = add_student(title, ss_id, display_name=display_name)
-        link_student_to_family(int(f_id), s_id)
+        link_student_to_family(f_id, s_id)
 
         send_content(
             message.chat.id,
@@ -183,7 +183,7 @@ def process_add_child_step(message, f_id):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
-    f_id = call.data.split('_')[2]
+    f_id = int(call.data.split('_')[2])
     lang = get_user_lang(call.from_user.id)
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
@@ -221,7 +221,7 @@ def process_add_member_step(message, f_id):
             phone = parts[2]
 
         p_id = add_parent(fio, phone, role='senior')
-        link_parent_to_family(int(f_id), p_id)
+        link_parent_to_family(f_id, p_id)
 
         send_content(message.chat.id, t("member_added", lang, name=fio))
     except Exception as e:
