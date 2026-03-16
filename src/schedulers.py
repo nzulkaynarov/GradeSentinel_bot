@@ -10,6 +10,7 @@ import threading
 from datetime import datetime, timedelta
 
 from src.notification_helpers import TIMEZONE_OFFSET_HOURS
+from src.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +24,10 @@ def set_bot_instance(bot):
 
 
 def _get_local_now() -> datetime:
-    """Текущее время по местному часовому поясу (UTC+5)."""
     return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET_HOURS)
 
 
 def start_daily_schedulers():
-    """Запускает все ежедневные фоновые задачи."""
     global _scheduler_started
     if _scheduler_started:
         return
@@ -40,8 +39,6 @@ def start_daily_schedulers():
 
 
 def _scheduler_loop():
-    """Единый цикл проверки всех ежедневных задач каждые 3 минуты."""
-    # Трекеры, чтобы не дублировать отправку в одном дне
     last_evening_date = None
     last_morning_date = None
     last_alive_date = None
@@ -51,17 +48,14 @@ def _scheduler_loop():
             now = _get_local_now()
             today = now.date()
 
-            # 07:00-07:05 — рассылка отложенных уведомлений (тихие часы)
             if now.hour == 7 and now.minute < 6 and last_morning_date != today:
                 last_morning_date = today
                 _flush_quiet_hours_queue()
 
-            # 15:00-15:05 — статус «бот работает» если нет оценок
             if now.hour == 15 and now.minute < 6 and last_alive_date != today:
                 last_alive_date = today
                 _send_bot_alive_status()
 
-            # 19:00-19:05 — ежедневная вечерняя сводка
             if now.hour == 19 and now.minute < 6 and last_evening_date != today:
                 last_evening_date = today
                 _send_daily_evening_summary()
@@ -69,12 +63,11 @@ def _scheduler_loop():
         except Exception as e:
             logger.error(f"Error in daily scheduler loop: {e}")
 
-        time.sleep(180)  # Каждые 3 минуты
+        time.sleep(180)
 
 
 def _flush_quiet_hours_queue():
-    """Утренняя рассылка: отправляет все уведомления, накопленные за ночь."""
-    from src.database_manager import get_all_queued_telegram_ids, get_and_clear_queued_notifications
+    from src.database_manager import get_all_queued_telegram_ids, get_and_clear_queued_notifications, get_user_lang
 
     if not _bot:
         return
@@ -91,7 +84,8 @@ def _flush_quiet_hours_queue():
         if not messages:
             continue
 
-        header = f"🌅 <b>Доброе утро! За ночь поступило {len(messages)} уведомлений:</b>\n"
+        lang = get_user_lang(tg_id)
+        header = t("quiet_morning_header", lang, count=len(messages))
         try:
             _bot.send_message(tg_id, header, parse_mode='HTML')
             time.sleep(0.05)
@@ -108,8 +102,7 @@ def _flush_quiet_hours_queue():
 
 
 def _send_daily_evening_summary():
-    """Ежедневная вечерняя сводка оценок за день (19:00)."""
-    from src.database_manager import get_all_parents_with_children, get_today_grades_for_student
+    from src.database_manager import get_all_parents_with_children, get_today_grades_for_student, get_user_lang
 
     if not _bot:
         return
@@ -118,14 +111,13 @@ def _send_daily_evening_summary():
 
     parent_data = get_all_parents_with_children()
 
-    # Группируем: tg_id -> [{student_id, display_name}]
     from collections import defaultdict
     parents_map = defaultdict(list)
     for row in parent_data:
         parents_map[row['telegram_id']].append(row)
 
     for tg_id, children in parents_map.items():
-        # Собираем сводку по всем детям
+        lang = get_user_lang(tg_id)
         summaries = []
         for child in children:
             grades = get_today_grades_for_student(child['student_id'])
@@ -142,15 +134,15 @@ def _send_daily_evening_summary():
 
             if numeric_grades:
                 avg = sum(numeric_grades) / len(numeric_grades)
-                lines.append(f"\n  Средний балл: <b>{avg:.1f}</b>")
-                lines.append(f"  Всего записей: {len(grades)}")
+                lines.append(f"\n  {t('daily_avg', lang, avg=f'{avg:.1f}')}")
+                lines.append(f"  {t('daily_total', lang, count=len(grades))}")
 
             summaries.append("\n".join(lines))
 
         if not summaries:
             continue
 
-        msg = "📋 <b>Итоги дня</b>\n\n" + "\n\n".join(summaries)
+        msg = t("daily_summary_title", lang) + "\n\n" + "\n\n".join(summaries)
 
         try:
             _bot.send_message(tg_id, msg, parse_mode='HTML')
@@ -162,8 +154,7 @@ def _send_daily_evening_summary():
 
 
 def _send_bot_alive_status():
-    """Отправляет сообщение «бот работает» родителям, у которых за день нет оценок."""
-    from src.database_manager import get_all_parents_with_children, has_today_grades_for_parent
+    from src.database_manager import get_all_parents_with_children, has_today_grades_for_parent, get_user_lang
 
     if not _bot:
         return
@@ -180,16 +171,11 @@ def _send_bot_alive_status():
         notified.add(tg_id)
 
         if has_today_grades_for_parent(tg_id):
-            continue  # У этого родителя уже были оценки — не нужно
+            continue
 
+        lang = get_user_lang(tg_id)
         try:
-            _bot.send_message(
-                tg_id,
-                "✅ <b>Бот активен</b>\n\n"
-                "Сегодня новых оценок пока не поступало. "
-                "Я слежу за дневником и сообщу сразу, как появится новая запись.",
-                parse_mode='HTML'
-            )
+            _bot.send_message(tg_id, t("bot_alive", lang), parse_mode='HTML')
             time.sleep(0.05)
         except Exception as e:
             logger.error(f"Failed to send alive status to {tg_id}: {e}")

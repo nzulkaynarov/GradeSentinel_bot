@@ -184,6 +184,13 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+
+        # 11. Миграция: колонка lang для мультиязычности
+        cursor.execute("PRAGMA table_info(parents)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'lang' not in columns:
+            cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
+            logger.info("Database migration: lang column added to parents.")
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -274,6 +281,20 @@ def get_parent_role(telegram_id: int) -> Optional[str]:
         row = cursor.fetchone()
         return row['role'] if row else None
     return None
+
+def get_user_lang(telegram_id: int) -> str:
+    """Возвращает язык пользователя (ru/uz/en). По умолчанию 'ru'."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT lang FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return row['lang'] if row and row['lang'] else 'ru'
+
+def set_user_lang(telegram_id: int, lang: str):
+    """Устанавливает язык пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE parents SET lang = ? WHERE telegram_id = ?', (lang, telegram_id))
 
 def get_families_for_head(head_telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список семей, в которых данный пользователь является главой."""

@@ -3,63 +3,63 @@ import logging
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
-    update_student_display_name, queue_notification
+    update_student_display_name, queue_notification, get_user_lang
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
 from src.utils import clean_student_name
 from src.notification_helpers import format_grade_notification, is_quiet_hours
+from src.i18n import t
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Global bot instance for notifications
 _bot = None
 
 def set_bot_instance(bot):
-    """Устанавливает глобальный экземпляр бота для отправки уведомлений."""
     global _bot
     _bot = bot
 
-def _make_grade_inline_keyboard(student_id: int) -> types.InlineKeyboardMarkup:
-    """Создаёт inline-кнопки под уведомлением об оценке."""
+def _make_grade_inline_keyboard(student_id: int, lang: str = 'ru') -> types.InlineKeyboardMarkup:
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton("👀 Видел(а)", callback_data=f"grade_seen_{student_id}"),
-        types.InlineKeyboardButton("📊 Все за сегодня", callback_data=f"grade_today_{student_id}")
+        types.InlineKeyboardButton(t("btn_seen", lang), callback_data=f"grade_seen_{student_id}"),
+        types.InlineKeyboardButton(t("btn_today_all", lang), callback_data=f"grade_today_{student_id}")
     )
     return markup
 
 def send_notification(telegram_ids, message, inline_markup=None):
     """
-    Отправляет уведомление в Telegram через реальный API.
-    В тихие часы (22:00-07:00) копит уведомления в очередь.
+    Отправляет уведомление. В тихие часы (22:00-07:00) копит в очередь.
+    message может быть dict {tg_id: msg_text} для мультиязычности или str.
     """
     if not _bot:
         logger.warning("Bot instance not set. Using logger placeholder.")
         for tg_id in telegram_ids:
-            logger.info(f"[PLACEHOLDER -> {tg_id}] {message}")
+            logger.info(f"[PLACEHOLDER -> {tg_id}]")
         return
 
     quiet = is_quiet_hours()
 
     for tg_id in telegram_ids:
+        msg_text = message[tg_id] if isinstance(message, dict) else message
         try:
             if quiet:
-                queue_notification(tg_id, message)
+                queue_notification(tg_id, msg_text)
                 logger.info(f"Notification queued (quiet hours) for TG:{tg_id}")
             else:
+                lang = get_user_lang(tg_id)
+                kb = inline_markup[tg_id] if isinstance(inline_markup, dict) else inline_markup
                 _bot.send_message(
-                    tg_id, message, parse_mode='HTML',
+                    tg_id, msg_text, parse_mode='HTML',
                     disable_web_page_preview=True,
-                    reply_markup=inline_markup
+                    reply_markup=kb
                 )
                 logger.info(f"Notification sent to TG:{tg_id}")
         except Exception as e:
             logger.error(f"Failed to send notification to {tg_id}: {e}")
 
 def check_for_new_grades():
-    """Единичный пробег по всем активным таблицам студентов."""
     students = get_active_spreadsheets()
     if not students:
         logger.info("No active students with spreadsheets found.")
@@ -112,17 +112,19 @@ def check_for_new_grades():
                 logger.info(f"[NEW GRADE] {display_name} got '{clean_text}' in {subject}")
                 parents_ids = get_parents_for_student(student_id)
                 if parents_ids:
-                    # Эмоциональное уведомление + streak
-                    msg = format_grade_notification(
-                        display_name, subject, clean_text,
-                        grade_value, spreadsheet_id, student_id
-                    )
-                    # Inline-кнопки быстрых реакций
-                    inline_kb = _make_grade_inline_keyboard(student_id)
-                    send_notification(parents_ids, msg, inline_markup=inline_kb)
+                    # Формируем мультиязычные уведомления
+                    messages = {}
+                    keyboards = {}
+                    for tg_id in parents_ids:
+                        lang = get_user_lang(tg_id)
+                        messages[tg_id] = format_grade_notification(
+                            display_name, subject, clean_text,
+                            grade_value, spreadsheet_id, student_id, lang=lang
+                        )
+                        keyboards[tg_id] = _make_grade_inline_keyboard(student_id, lang)
+                    send_notification(parents_ids, messages, inline_markup=keyboards)
 
 def start_polling(interval_seconds=300):
-    """Запускает бесконечный цикл мониторинга."""
     logger.info(f"Starting GradeSentinel monitor engine (interval: {interval_seconds}s)")
     while True:
         try:

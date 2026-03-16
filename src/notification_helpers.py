@@ -1,12 +1,14 @@
 """
 Вспомогательные функции для улучшенных уведомлений родителям:
-- Эмоциональное форматирование оценок
+- Эмоциональное форматирование оценок (мультиязычное)
 - Подсчёт серий пятёрок (streaks)
 - Логика тихих часов (22:00-07:00)
 """
 import logging
 from datetime import datetime
 from typing import Optional, Tuple
+
+from src.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,6 @@ TIMEZONE_OFFSET_HOURS = 5
 
 
 def get_local_hour() -> int:
-    """Возвращает текущий час по местному времени (UTC+5)."""
     from datetime import timedelta
     now_utc = datetime.utcnow()
     local = now_utc + timedelta(hours=TIMEZONE_OFFSET_HOURS)
@@ -23,43 +24,36 @@ def get_local_hour() -> int:
 
 
 def is_quiet_hours() -> bool:
-    """Проверяет, находимся ли мы в тихих часах (22:00 - 07:00 по местному времени)."""
     hour = get_local_hour()
     return hour >= 22 or hour < 7
 
 
-def get_emotional_header(grade_value: Optional[float], clean_text: str) -> Tuple[str, str]:
+def get_emotional_header(grade_value: Optional[float], clean_text: str, lang: str = 'ru') -> Tuple[str, str]:
     """
     Возвращает (заголовок, эмодзи) в зависимости от оценки.
-    Для числовых оценок - по уровню, для текстовых (н, б) - нейтральный формат.
     """
     if grade_value is not None:
         if grade_value >= 5:
-            return "Отличная оценка!", "🌟"
+            return t("notif_grade_excellent", lang), "🌟"
         elif grade_value >= 4:
-            return "Хорошая оценка", "👍"
+            return t("notif_grade_good", lang), "👍"
         elif grade_value >= 3:
-            return "Обратите внимание", "⚠️"
+            return t("notif_grade_attention", lang), "⚠️"
         else:
-            return "Требуется внимание!", "🚨"
+            return t("notif_grade_danger", lang), "🚨"
 
-    # Текстовые отметки (н, б, болел, осв и т.д.)
     lower = clean_text.lower() if clean_text else ""
     if lower in ("н", "н/а"):
-        return "Отсутствие на уроке", "📋"
+        return t("notif_absent", lang), "📋"
     elif lower in ("б", "болел", "болела"):
-        return "Отсутствие по болезни", "🏥"
+        return t("notif_sick", lang), "🏥"
     elif lower in ("осв", "ув"):
-        return "Освобождение", "📋"
+        return t("notif_excused", lang), "📋"
 
-    return "Новая запись в дневнике", "📝"
+    return t("notif_new_entry", lang), "📝"
 
 
 def get_streak_count(student_id: int) -> int:
-    """
-    Подсчитывает серию последних подряд идущих пятёрок у ученика.
-    Считает с конца: если последняя оценка 5, потом 5, потом 4 — streak = 2.
-    """
     from src.database_manager import get_db_connection
 
     with get_db_connection() as conn:
@@ -84,22 +78,21 @@ def get_streak_count(student_id: int) -> int:
 
 def format_grade_notification(display_name: str, subject: str, clean_text: str,
                                grade_value: Optional[float], spreadsheet_id: str,
-                               student_id: int) -> str:
+                               student_id: int, lang: str = 'ru') -> str:
     """Формирует эмоциональное уведомление об оценке с серией пятёрок."""
-    header_text, emoji = get_emotional_header(grade_value, clean_text)
+    header_text, emoji = get_emotional_header(grade_value, clean_text, lang)
 
     msg = (
         f"{emoji} <b>{header_text}</b>\n"
-        f"👨‍🎓 Ученик: {display_name}\n"
-        f"📚 Предмет: {subject}\n"
-        f"📝 Значение: <b>{clean_text}</b>\n\n"
-        f"<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>🔗 Открыть таблицу</a>"
+        f"{t('notif_student', lang, name=display_name)}\n"
+        f"{t('notif_subject', lang, subject=subject)}\n"
+        f"{t('notif_value', lang, value=clean_text)}\n\n"
+        f"<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>{t('grades_open_sheet', lang)}</a>"
     )
 
-    # Добавляем streak если есть серия пятёрок (>= 2)
     if grade_value is not None and grade_value >= 5:
         streak = get_streak_count(student_id)
         if streak >= 2:
-            msg += f"\n🔥 Это уже {streak}-я пятёрка подряд!"
+            msg += f"\n{t('notif_streak', lang, count=streak)}"
 
     return msg
