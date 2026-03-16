@@ -149,7 +149,7 @@
   "ai_not_enough_data": "📊 <b>{name}</b>\nℹ️ Not enough data for analysis (need at least 2 grades in 14 days).",
   "ai_weekly_title": "📊 <b>Weekly AI Report</b>\n👨‍🎓 {name}\n\n{analysis}",
 
-  "ai_prompt": "Analyze the school grades of student {name} for the last {days} days.\nProvide a brief analysis (4-6 sentences) in English.\nInclude:\n- Overall trend (improving/declining/stable)\n- Best and weakest subjects\n- Streaks (consecutive fives, grade drops)\n- A short motivating recommendation for parents\n\nUse emojis for clarity.\nDO NOT use headings or markdown. Write in plain text.\n\nGrades:\n{grades}",
+  "ai_prompt": "You are a school AI analyst. Analyze the grades of student {name} for the last {days} days.\n\nRespond STRICTLY in this format (use HTML tags <b> for bold):\n\n📊 <b>Summary:</b> [number] grades | Average: [X.X]\n5 — [N] | 4 — [N] | 3 — [N] | 2 — [N]\n\n✅ <b>Strengths:</b> [subjects with best grades and scores]\n\n⚠️ <b>Attention:</b> [subjects with 3s/2s, specific facts]\n— [brief explanation of patterns if any]\n\n💡 <b>Recommendation:</b> [1-2 specific tips for parents, no generic advice like 'hire a tutor']\n\nRULES:\n- Count grades accurately, do not make mistakes with numbers\n- Write ONLY in English\n- Do NOT use markdown (** or #), only HTML tags <b></b>\n- Use max 3 emojis (📊 ✅ ⚠️ 💡 — only at block starts)\n- If there are few grades — say so, do not invent trends\n- Be specific: name subjects and scores, avoid filler\n- Entire response — no more than 8 lines\n\nGrades:\n{grades}",
 
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Language changed to English.",

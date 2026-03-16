@@ -53,7 +53,7 @@ def analyze_student_grades(student_id: int, student_name: str, days: int = 14, l
     try:
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=600,
+            max_tokens=800,
             messages=[{
                 "role": "user",
                 "content": prompt
