@@ -174,6 +174,23 @@ def init_db():
             user_id INTEGER NOT NULL
         )
         ''')
+
+        # 10. Очередь уведомлений для тихих часов
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notification_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
+        # 11. Миграция: колонка lang для мультиязычности
+        cursor.execute("PRAGMA table_info(parents)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'lang' not in columns:
+            cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
+            logger.info("Database migration: lang column added to parents.")
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -264,6 +281,20 @@ def get_parent_role(telegram_id: int) -> Optional[str]:
         row = cursor.fetchone()
         return row['role'] if row else None
     return None
+
+def get_user_lang(telegram_id: int) -> str:
+    """Возвращает язык пользователя (ru/uz/en). По умолчанию 'ru'."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT lang FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return row['lang'] if row and row['lang'] else 'ru'
+
+def set_user_lang(telegram_id: int, lang: str):
+    """Устанавливает язык пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE parents SET lang = ? WHERE telegram_id = ?', (lang, telegram_id))
 
 def get_families_for_head(head_telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список семей, в которых данный пользователь является главой."""
@@ -375,13 +406,13 @@ def get_all_families() -> List[Dict[str, Any]]:
     return []
 
 def get_students_for_parent(telegram_id: int, family_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Возвращает список всех студентов {student_id, fio, spreadsheet_id}, привязанных к telegram_id.
+    """Возвращает список всех студентов {id, fio, spreadsheet_id, display_name}, привязанных к telegram_id.
     Если указан family_id, фильтрует только по этой семье."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if family_id:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON fl.parent_id = p.id
@@ -389,7 +420,7 @@ def get_students_for_parent(telegram_id: int, family_id: Optional[int] = None) -
             ''', (telegram_id, family_id))
         else:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON fl.parent_id = p.id
@@ -604,3 +635,76 @@ def get_support_user_id(admin_msg_id: int) -> Optional[int]:
         cursor.execute('SELECT user_id FROM support_msg_map WHERE admin_msg_id = ?', (admin_msg_id,))
         row = cursor.fetchone()
         return row['user_id'] if row else None
+
+
+# ====================
+# Очередь уведомлений (тихие часы)
+# ====================
+def queue_notification(telegram_id: int, message: str):
+    """Сохраняет уведомление в очередь для отложенной отправки."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO notification_queue (telegram_id, message) VALUES (?, ?)',
+                       (telegram_id, message))
+
+
+def get_and_clear_queued_notifications(telegram_id: int) -> List[str]:
+    """Извлекает и удаляет все отложенные уведомления для пользователя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT message FROM notification_queue WHERE telegram_id = ? ORDER BY created_at', (telegram_id,))
+        messages = [row['message'] for row in cursor.fetchall()]
+        cursor.execute('DELETE FROM notification_queue WHERE telegram_id = ?', (telegram_id,))
+        return messages
+
+
+def get_all_queued_telegram_ids() -> List[int]:
+    """Возвращает список уникальных telegram_id с отложенными уведомлениями."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT DISTINCT telegram_id FROM notification_queue')
+        return [row['telegram_id'] for row in cursor.fetchall()]
+
+
+# ====================
+# Оценки за сегодня (для вечерней сводки)
+# ====================
+def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все оценки студента за сегодня."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, date_added
+            FROM grade_history
+            WHERE student_id = ? AND date(date_added) = date('now')
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def has_today_grades_for_parent(telegram_id: int) -> bool:
+    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) as c FROM grade_history gh
+            JOIN family_links fl ON gh.student_id = fl.student_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ? AND date(gh.date_added) = date('now')
+        ''', (telegram_id,))
+        return cursor.fetchone()['c'] > 0
+
+
+def get_all_parents_with_children() -> List[Dict[str, Any]]:
+    """Возвращает всех родителей с их детьми (для массовых рассылок)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT p.telegram_id, s.id as student_id,
+                   COALESCE(s.display_name, s.fio) as display_name
+            FROM parents p
+            JOIN family_links fl ON p.id = fl.parent_id
+            JOIN students s ON fl.student_id = s.id
+            WHERE p.telegram_id IS NOT NULL AND s.spreadsheet_id IS NOT NULL
+        ''')
+        return [dict(row) for row in cursor.fetchall()]
