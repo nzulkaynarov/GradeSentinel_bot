@@ -114,6 +114,8 @@
   "notif_student": "👨‍🎓 Ученик: {name}",
   "notif_subject": "📚 Предмет: {subject}",
   "notif_value": "📝 Значение: <b>{value}</b>",
+  "notif_grade_changed": "Оценка изменена",
+  "notif_change": "📝 Было: <b>{old}</b> → Стало: <b>{new}</b>",
   "notif_streak": "🔥 Это уже {count}-я пятёрка подряд!",
 
   "quiet_morning_header": "🌅 <b>Доброе утро! За ночь поступило {count} уведомлений:</b>\n",

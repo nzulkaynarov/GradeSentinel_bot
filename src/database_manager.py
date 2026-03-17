@@ -195,7 +195,7 @@ def init_db():
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
     Добавляет новую оценку в БД, если такой еще нет.
-    Возвращает True, если оценка новая (успешно добавлена), 
+    Возвращает True, если оценка новая (успешно добавлена),
     и False, если дубликат (такая cell_reference уже есть для этого студента).
     """
     with get_db_connection() as conn:
@@ -210,6 +210,31 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_t
             # Сработал UNIQUE(student_id, cell_reference)
             return False
     return False
+
+
+def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[str, Any]]:
+    """Возвращает существующую оценку по cell_reference, или None если не найдена."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT grade_value, raw_text, subject
+            FROM grade_history
+            WHERE student_id = ? AND cell_reference = ?
+        ''', (student_id, cell_reference))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_grade(student_id: int, cell_reference: str, grade_value: Optional[float], raw_text: str) -> bool:
+    """Обновляет значение оценки по cell_reference. Возвращает True если обновлено."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE grade_history
+            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
+            WHERE student_id = ? AND cell_reference = ?
+        ''', (grade_value, raw_text, student_id, cell_reference))
+        return cursor.rowcount > 0
 
 def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[str, Any]]:
     """Возвращает историю оценок студента за последние N дней."""

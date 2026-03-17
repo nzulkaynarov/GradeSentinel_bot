@@ -114,6 +114,8 @@
   "notif_student": "👨‍🎓 Student: {name}",
   "notif_subject": "📚 Subject: {subject}",
   "notif_value": "📝 Value: <b>{value}</b>",
+  "notif_grade_changed": "Grade changed",
+  "notif_change": "📝 Was: <b>{old}</b> → Now: <b>{new}</b>",
   "notif_streak": "🔥 That's {count} fives in a row!",
 
   "quiet_morning_header": "🌅 <b>Good morning! {count} notifications received overnight:</b>\n",
