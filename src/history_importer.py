@@ -197,6 +197,74 @@ def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str
     return result
 
 
+def import_quarters_for_student(student_id: int, spreadsheet_id: str) -> Dict[str, int]:
+    """
+    Импортирует четвертные оценки из листа "Четверти".
+
+    Структура листа:
+      - Строка 1: заголовок (пропускаем)
+      - Строка 2: "Предметы" | "1 Четверть" | "2 Четверть" | "3 Четверть" | "4 Четверть" | "Год"
+      - Строки 3+: предмет | оценка | оценка | ...
+
+    Returns:
+        {imported: int, skipped: int, total: int}
+    """
+    from src.database_manager import upsert_quarter_grade
+
+    RANGE_NAME = "Четверти!A1:G50"
+
+    try:
+        data = get_sheet_data(spreadsheet_id, RANGE_NAME)
+    except Exception as e:
+        logger.error(f"Failed to fetch 'Четверти' for student {student_id}: {e}")
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    if not data or len(data) < 3:
+        logger.warning(f"No data in 'Четверти' for student {student_id}")
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    # Столбцы B-F = четверти 1-4 + год (quarter=5 для годовой)
+    imported = 0
+    skipped = 0
+    total = 0
+
+    for row in data[1:]:  # Пропускаем заголовок
+        if not row or len(row) < 2:
+            continue
+
+        subject = str(row[0]).strip()
+        if not subject or subject.lower() in SKIP_SUBJECTS:
+            continue
+        try:
+            int(subject)
+            continue
+        except ValueError:
+            pass
+
+        # Столбцы 1-5: четверти 1-4 + год
+        for col_idx in range(1, min(len(row), 7)):
+            cell_value = str(row[col_idx]).strip()
+            if not cell_value:
+                continue
+
+            quarter = col_idx  # 1=1ч, 2=2ч, 3=3ч, 4=4ч, 5=год
+
+            grade_value, clean_text = sanitize_grade(cell_value)
+            if clean_text is None:
+                continue
+
+            total += 1
+            changed = upsert_quarter_grade(student_id, subject, quarter, grade_value, clean_text)
+            if changed:
+                imported += 1
+            else:
+                skipped += 1
+
+    result = {'imported': imported, 'skipped': skipped, 'total': total}
+    logger.info(f"Quarter import for student {student_id}: {result}")
+    return result
+
+
 def import_history_for_all_students():
     """
     Одноразовый импорт истории для всех студентов, у которых ещё нет исторических данных.
@@ -228,7 +296,11 @@ def import_history_for_all_students():
 
         logger.info(f"Importing history for student {student_id} ({student['fio']})...")
         result = import_history_for_student(student_id, spreadsheet_id)
-        logger.info(f"Student {student_id}: imported={result['imported']}, skipped={result['skipped']}")
+        logger.info(f"Student {student_id} history: imported={result['imported']}, skipped={result['skipped']}")
+
+        # Также импортируем четвертные
+        q_result = import_quarters_for_student(student_id, spreadsheet_id)
+        logger.info(f"Student {student_id} quarters: imported={q_result['imported']}, skipped={q_result['skipped']}")
 
 
 def _col_letter(col_index: int) -> str:

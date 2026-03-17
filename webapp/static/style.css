@@ -184,6 +184,78 @@ body {
     margin-left: 8px;
 }
 
+/* Filters row */
+.filters-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: center;
+}
+
+.filters-row .period-selector {
+    margin-bottom: 0;
+    flex: 1;
+}
+
+.subject-filter {
+    flex: 0 0 auto;
+    min-width: 120px;
+}
+
+#subject-select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--tg-hint);
+    border-radius: 8px;
+    background: var(--tg-bg);
+    color: var(--tg-text);
+    font-size: 13px;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+/* Quarter grades grid */
+.quarter-grid {
+    font-size: 13px;
+}
+
+.qr-header, .qr-row {
+    display: grid;
+    grid-template-columns: 1fr repeat(5, 36px);
+    gap: 4px;
+    align-items: center;
+    padding: 6px 8px;
+}
+
+.qr-header {
+    font-size: 11px;
+    color: var(--tg-hint);
+    font-weight: 600;
+    text-align: center;
+}
+
+.qr-row {
+    background: var(--tg-secondary-bg);
+    border-radius: 8px;
+    margin-bottom: 4px;
+}
+
+.qr-subject {
+    font-weight: 500;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qr-row span:not(.qr-subject) {
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 2px;
+    border-radius: 4px;
+}
+
 /* Error state */
 #error {
     text-align: center;

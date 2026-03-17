@@ -20,6 +20,7 @@ from src.database_manager import (
     get_students_for_parent,
     get_grade_history_for_student_all,
     get_parent_role,
+    get_quarter_grades,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -108,10 +109,37 @@ def api_grades(student_id):
         abort(403)
 
     days = request.args.get("days", 30, type=int)
-    days = min(days, 90)  # Cap at 90 days
+    days = min(days, 365)  # Increased cap: full year with historical import
+
+    subject = request.args.get("subject", "").strip()
 
     grades = get_grade_history_for_student_all(student_id, days=days)
+
+    # Фильтр по предмету (P3)
+    if subject:
+        grades = [g for g in grades if g['subject'] == subject]
+
     return jsonify(grades)
+
+
+@app.route("/api/quarters/<int:student_id>")
+def api_quarters(student_id):
+    """Returns quarter grades for a specific student."""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    try:
+        user = validate_init_data(init_data)
+        telegram_id = user["id"]
+    except (ValueError, KeyError) as e:
+        logger.warning(f"WebApp auth failed: {e}")
+        abort(401)
+
+    students = get_students_for_parent(telegram_id)
+    student_ids = [s["id"] for s in students]
+    if student_id not in student_ids:
+        abort(403)
+
+    quarters = get_quarter_grades(student_id)
+    return jsonify(quarters)
 
 
 @app.route("/health")

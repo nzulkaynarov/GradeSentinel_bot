@@ -37,11 +37,19 @@
                 </div>
             </div>
 
-            <!-- Period selector -->
-            <div class="period-selector">
-                <button class="period-btn active" data-days="7">7d</button>
-                <button class="period-btn" data-days="14">14d</button>
-                <button class="period-btn" data-days="30">30d</button>
+            <!-- Filters row: period + subject -->
+            <div class="filters-row">
+                <div class="period-selector">
+                    <button class="period-btn active" data-days="7">7d</button>
+                    <button class="period-btn" data-days="14">14d</button>
+                    <button class="period-btn" data-days="30">30d</button>
+                    <button class="period-btn" data-days="365">All</button>
+                </div>
+                <div class="subject-filter">
+                    <select id="subject-select">
+                        <option value="">All subjects</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Grade trend chart -->
@@ -54,6 +62,12 @@
             <div class="chart-container">
                 <h3>Average by subject</h3>
                 <canvas id="subjectChart"></canvas>
+            </div>
+
+            <!-- Quarter grades -->
+            <div class="section" id="quarters-section" style="display:none;">
+                <h3>Quarter grades</h3>
+                <div id="quarters-table"></div>
             </div>
 
             <!-- Recent grades table -->

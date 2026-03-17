@@ -178,17 +178,19 @@ def process_add_child_step(message, f_id):
             t("child_added", lang, name=title, btn_grades=t("btn_grades", lang))
         )
 
-        # Фоновый импорт исторических оценок из "Все оценки"
+        # Фоновый импорт исторических и четвертных оценок
         import threading
         def _bg_import():
             try:
-                from src.history_importer import import_history_for_student
+                from src.history_importer import import_history_for_student, import_quarters_for_student
                 result = import_history_for_student(s_id, ss_id)
-                if result['imported'] > 0:
+                q_result = import_quarters_for_student(s_id, ss_id)
+                total = result['imported'] + q_result['imported']
+                if total > 0:
                     send_content(
                         message.chat.id,
                         t("history_imported", lang,
-                          count=result['imported'], name=display_name)
+                          count=total, name=display_name)
                     )
             except Exception as e:
                 logger.error(f"Background history import failed for student {s_id}: {e}")
