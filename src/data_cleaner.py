@@ -28,7 +28,7 @@ def sanitize_grade(raw_string: str) -> Tuple[Optional[float], Optional[str]]:
         return base_grade, clean_text
 
     # Если это текстовая отметка (отсутствие, болезнь и т.д.)
-    if clean_text.lower() in ['н', 'б', 'н/а', 'осв', 'болел', 'болела', 'ув']:
+    if clean_text.lower() in ['н', 'б', 'н/а', 'осв', 'болел', 'болела', 'ув', 'дз', 'см', 'б/ф']:
          return None, clean_text
     
     # В остальных случаях (даты, мусор) возвращаем None, None

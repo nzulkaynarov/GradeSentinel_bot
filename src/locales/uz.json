@@ -85,6 +85,7 @@
   "child_limit_reached": "⚠️ Limitga yetildi: oilada allaqachon {count} ta bola (maksimum 5).",
   "child_added": "✅ <b>Bola muvaffaqiyatli qo'shildi!</b>\n\n👤 Ismi: {name}\n📊 Holat: Monitoring faollashtirildi\n\n💡 '{btn_grades}' tugmasi orqali istalgan vaqtda baholarni tekshirishingiz mumkin",
   "child_add_error": "❌ Bola qo'shishda xatolik yuz berdi. Havolani tekshiring va keyinroq urinib ko'ring.",
+  "history_imported": "📚 {name} uchun tarixdan <b>{count}</b> ta baho import qilindi. Endi AI-tahlil to'liq ma'lumotlar bilan ishlaydi!",
 
   "member_enter": "Qarindoshning F.I.Sh. va telefon raqamini kiriting (bo'sh joy bilan):\nMisol: <code>Ivanov Ivan 998901234567</code>\n\nYoki 'Bekor qilish' tugmasini bosing.",
   "member_enter_placeholder": "Familiya Ism 998XXXXXXXXX",

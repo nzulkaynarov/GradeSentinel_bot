@@ -177,6 +177,22 @@ def process_add_child_step(message, f_id):
             message.chat.id,
             t("child_added", lang, name=title, btn_grades=t("btn_grades", lang))
         )
+
+        # Фоновый импорт исторических оценок из "Все оценки"
+        import threading
+        def _bg_import():
+            try:
+                from src.history_importer import import_history_for_student
+                result = import_history_for_student(s_id, ss_id)
+                if result['imported'] > 0:
+                    send_content(
+                        message.chat.id,
+                        t("history_imported", lang,
+                          count=result['imported'], name=display_name)
+                    )
+            except Exception as e:
+                logger.error(f"Background history import failed for student {s_id}: {e}")
+        threading.Thread(target=_bg_import, daemon=True).start()
     except Exception as e:
         logger.exception("Unexpected error in process_add_child_step")
         send_content(message.chat.id, t("child_add_error", lang))

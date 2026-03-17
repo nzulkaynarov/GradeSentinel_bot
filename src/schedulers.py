@@ -37,6 +37,10 @@ def start_daily_schedulers():
     thread.start()
     logger.info("Daily schedulers started (evening summary, quiet hours flush, bot alive).")
 
+    # Одноразовый импорт истории для существующих студентов (в фоне)
+    import_thread = threading.Thread(target=_startup_history_import, daemon=True)
+    import_thread.start()
+
 
 def _scheduler_loop():
     last_evening_date = None
@@ -181,3 +185,15 @@ def _send_bot_alive_status():
             logger.error(f"Failed to send alive status to {tg_id}: {e}")
 
     logger.info("Bot alive status sent.")
+
+
+def _startup_history_import():
+    """Одноразовый импорт истории при запуске бота."""
+    try:
+        time.sleep(10)  # Даём боту прогреться
+        from src.history_importer import import_history_for_all_students
+        logger.info("Starting one-time history import for existing students...")
+        import_history_for_all_students()
+        logger.info("One-time history import completed.")
+    except Exception as e:
+        logger.error(f"Startup history import failed: {e}")

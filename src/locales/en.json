@@ -85,6 +85,7 @@
   "child_limit_reached": "⚠️ Limit reached: the family already has {count} children (maximum 5).",
   "child_added": "✅ <b>Child successfully added!</b>\n\n👤 Name: {name}\n📊 Status: Monitoring activated\n\n💡 You can check grades anytime using the '{btn_grades}' button",
   "child_add_error": "❌ An error occurred while adding the child. Check the link and try later.",
+  "history_imported": "📚 Imported <b>{count}</b> grades from history for {name}. AI analysis will now work with the full picture!",
 
   "member_enter": "Enter the relative's full name and phone number (separated by space):\nExample: <code>Ivanov Ivan 998901234567</code>\n\nOr press 'Cancel'.",
   "member_enter_placeholder": "Surname Name 998XXXXXXXXX",
