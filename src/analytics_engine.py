@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 import anthropic
 
-from src.database_manager import get_grade_history_for_student
+from src.database_manager import get_grade_history_for_student, get_quarter_grades
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,16 @@ def analyze_student_grades(student_id: int, student_name: str, days: int = 14, l
         + (f" (балл: {g['grade_value']})" if g['grade_value'] else "")
         for g in grades
     )
+
+    # Добавляем четвертные оценки в контекст AI
+    quarter_grades = get_quarter_grades(student_id)
+    quarter_names = {1: "1ч", 2: "2ч", 3: "3ч", 4: "4ч", 5: "Год"}
+    if quarter_grades:
+        quarter_text = "\n".join(
+            f"{q['subject']}: {quarter_names.get(q['quarter'], '?')} = {q['raw_text']}"
+            for q in quarter_grades
+        )
+        grade_text += f"\n\nЧетвертные оценки:\n{quarter_text}"
 
     prompt = t("ai_prompt", lang, name=student_name, days=days, grades=grade_text)
 

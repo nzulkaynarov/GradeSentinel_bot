@@ -13,7 +13,9 @@ const API_HEADERS = { "X-Telegram-Init-Data": initData };
 let trendChart = null;
 let subjectChart = null;
 let allGrades = [];
+let quarterGrades = [];
 let currentDays = 7;
+let currentSubject = "";
 
 // ============ INIT ============
 
@@ -49,6 +51,12 @@ async function init() {
             });
         });
 
+        // Setup subject filter
+        document.getElementById("subject-select").addEventListener("change", (e) => {
+            currentSubject = e.target.value;
+            loadGrades(getCurrentStudentId(students));
+        });
+
         // Load first student
         await loadGrades(students[0].id);
 
@@ -69,14 +77,48 @@ function getCurrentStudentId(students) {
 
 async function loadGrades(studentId) {
     try {
-        allGrades = await fetchJSON(`/api/grades/${studentId}?days=${currentDays}`);
+        let url = `/api/grades/${studentId}?days=${currentDays}`;
+        if (currentSubject) url += `&subject=${encodeURIComponent(currentSubject)}`;
+
+        allGrades = await fetchJSON(url);
+        populateSubjectFilter();
         renderSummary();
         renderTrendChart();
         renderSubjectChart();
         renderTable();
+
+        // Load quarter grades (once per student switch)
+        if (!currentSubject) {
+            try {
+                quarterGrades = await fetchJSON(`/api/quarters/${studentId}`);
+                renderQuarters();
+            } catch (e) {
+                quarterGrades = [];
+            }
+        }
     } catch (e) {
         showError("Failed to load grades: " + e.message);
     }
+}
+
+function populateSubjectFilter() {
+    const select = document.getElementById("subject-select");
+    const currentVal = select.value;
+    const subjects = [...new Set(allGrades.map(g => g.subject))].sort();
+
+    // Only repopulate if subjects changed
+    const existingOpts = [...select.options].slice(1).map(o => o.value);
+    if (JSON.stringify(subjects) === JSON.stringify(existingOpts)) return;
+
+    // Keep "All subjects" option, clear rest
+    while (select.options.length > 1) select.remove(1);
+    subjects.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+    });
+    select.value = currentVal;
 }
 
 async function fetchJSON(url) {
@@ -233,6 +275,48 @@ function renderTable() {
             </div>
         `;
     }).join("");
+}
+
+// ============ QUARTER GRADES ============
+
+function renderQuarters() {
+    const section = document.getElementById("quarters-section");
+    const container = document.getElementById("quarters-table");
+
+    if (!quarterGrades || quarterGrades.length === 0) {
+        section.style.display = "none";
+        return;
+    }
+
+    section.style.display = "block";
+    const qNames = { 1: "1ч", 2: "2ч", 3: "3ч", 4: "4ч", 5: "Год" };
+
+    // Group by subject
+    const bySubject = {};
+    quarterGrades.forEach(q => {
+        if (!bySubject[q.subject]) bySubject[q.subject] = {};
+        bySubject[q.subject][q.quarter] = q;
+    });
+
+    let html = '<div class="quarter-grid"><div class="qr-header"><span></span>';
+    for (let i = 1; i <= 5; i++) html += `<span>${qNames[i]}</span>`;
+    html += '</div>';
+
+    for (const [subject, quarters] of Object.entries(bySubject)) {
+        html += `<div class="qr-row"><span class="qr-subject">${escapeHtml(subject)}</span>`;
+        for (let i = 1; i <= 5; i++) {
+            const q = quarters[i];
+            if (q && q.raw_text) {
+                const cls = q.grade_value ? `grade-${Math.round(q.grade_value)}` : "grade-text";
+                html += `<span class="${cls}">${escapeHtml(q.raw_text)}</span>`;
+            } else {
+                html += `<span>—</span>`;
+            }
+        }
+        html += '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
 }
 
 // ============ HELPERS ============

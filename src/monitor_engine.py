@@ -3,12 +3,13 @@ import logging
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
-    update_student_display_name, queue_notification, get_user_lang
+    update_student_display_name, queue_notification, get_user_lang,
+    get_existing_grade, update_grade
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
 from src.utils import clean_student_name
-from src.notification_helpers import format_grade_notification, is_quiet_hours
+from src.notification_helpers import format_grade_notification, format_grade_change_notification, is_quiet_hours
 from src.i18n import t
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -112,7 +113,6 @@ def check_for_new_grades():
                 logger.info(f"[NEW GRADE] {display_name} got '{clean_text}' in {subject}")
                 parents_ids = get_parents_for_student(student_id)
                 if parents_ids:
-                    # Формируем мультиязычные уведомления
                     messages = {}
                     keyboards = {}
                     for tg_id in parents_ids:
@@ -123,6 +123,25 @@ def check_for_new_grades():
                         )
                         keyboards[tg_id] = _make_grade_inline_keyboard(student_id, lang)
                     send_notification(parents_ids, messages, inline_markup=keyboards)
+            elif not is_new and clean_text:
+                # Проверяем, изменилась ли оценка
+                existing = get_existing_grade(student_id, cell_reference)
+                if existing and existing['raw_text'] != clean_text:
+                    old_text = existing['raw_text']
+                    update_grade(student_id, cell_reference, grade_value, clean_text)
+                    logger.info(f"[GRADE CHANGED] {display_name}: {subject} '{old_text}' -> '{clean_text}'")
+                    parents_ids = get_parents_for_student(student_id)
+                    if parents_ids:
+                        messages = {}
+                        keyboards = {}
+                        for tg_id in parents_ids:
+                            lang = get_user_lang(tg_id)
+                            messages[tg_id] = format_grade_change_notification(
+                                display_name, subject, old_text, clean_text,
+                                grade_value, spreadsheet_id, student_id, lang=lang
+                            )
+                            keyboards[tg_id] = _make_grade_inline_keyboard(student_id, lang)
+                        send_notification(parents_ids, messages, inline_markup=keyboards)
 
 def start_polling(interval_seconds=300):
     logger.info(f"Starting GradeSentinel monitor engine (interval: {interval_seconds}s)")

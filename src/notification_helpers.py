@@ -96,3 +96,22 @@ def format_grade_notification(display_name: str, subject: str, clean_text: str,
             msg += f"\n{t('notif_streak', lang, count=streak)}"
 
     return msg
+
+
+def format_grade_change_notification(display_name: str, subject: str,
+                                      old_text: str, new_text: str,
+                                      new_grade_value: Optional[float],
+                                      spreadsheet_id: str, student_id: int,
+                                      lang: str = 'ru') -> str:
+    """Формирует уведомление об изменении оценки преподавателем."""
+    header_text, emoji = get_emotional_header(new_grade_value, new_text, lang)
+
+    msg = (
+        f"✏️ <b>{t('notif_grade_changed', lang)}</b>\n"
+        f"{t('notif_student', lang, name=display_name)}\n"
+        f"{t('notif_subject', lang, subject=subject)}\n"
+        f"{t('notif_change', lang, old=old_text, new=new_text)}\n\n"
+        f"<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>{t('grades_open_sheet', lang)}</a>"
+    )
+
+    return msg

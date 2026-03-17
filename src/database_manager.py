@@ -130,7 +130,22 @@ def init_db():
         )
         ''')
         
-        # 6. Автоматическая регистрация администратора из .env
+        # 6. Четвертные оценки
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS quarter_grades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            quarter INTEGER NOT NULL,
+            grade_value REAL,
+            raw_text TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(id),
+            UNIQUE(student_id, subject, quarter)
+        )
+        ''')
+
+        # 7. Автоматическая регистрация администратора из .env
         admin_id = os.environ.get("ADMIN_ID")
         if admin_id:
             try:
@@ -195,7 +210,7 @@ def init_db():
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
     Добавляет новую оценку в БД, если такой еще нет.
-    Возвращает True, если оценка новая (успешно добавлена), 
+    Возвращает True, если оценка новая (успешно добавлена),
     и False, если дубликат (такая cell_reference уже есть для этого студента).
     """
     with get_db_connection() as conn:
@@ -210,6 +225,68 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_t
             # Сработал UNIQUE(student_id, cell_reference)
             return False
     return False
+
+
+def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[str, Any]]:
+    """Возвращает существующую оценку по cell_reference, или None если не найдена."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT grade_value, raw_text, subject
+            FROM grade_history
+            WHERE student_id = ? AND cell_reference = ?
+        ''', (student_id, cell_reference))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_grade(student_id: int, cell_reference: str, grade_value: Optional[float], raw_text: str) -> bool:
+    """Обновляет значение оценки по cell_reference. Возвращает True если обновлено."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE grade_history
+            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
+            WHERE student_id = ? AND cell_reference = ?
+        ''', (grade_value, raw_text, student_id, cell_reference))
+        return cursor.rowcount > 0
+
+def upsert_quarter_grade(student_id: int, subject: str, quarter: int,
+                         grade_value: Optional[float], raw_text: str) -> bool:
+    """Вставляет или обновляет четвертную оценку. Возвращает True если значение изменилось."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT grade_value, raw_text FROM quarter_grades
+            WHERE student_id = ? AND subject = ? AND quarter = ?
+        ''', (student_id, subject, quarter))
+        existing = cursor.fetchone()
+
+        if existing and existing['raw_text'] == raw_text:
+            return False  # Не изменилось
+
+        cursor.execute('''
+            INSERT INTO quarter_grades (student_id, subject, quarter, grade_value, raw_text)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(student_id, subject, quarter)
+            DO UPDATE SET grade_value = excluded.grade_value, raw_text = excluded.raw_text,
+                          updated_at = CURRENT_TIMESTAMP
+        ''', (student_id, subject, quarter, grade_value, raw_text))
+        return True
+
+
+def get_quarter_grades(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все четвертные оценки студента."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, quarter, grade_value, raw_text
+            FROM quarter_grades
+            WHERE student_id = ?
+            ORDER BY subject, quarter
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
 
 def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[str, Any]]:
     """Возвращает историю оценок студента за последние N дней."""
