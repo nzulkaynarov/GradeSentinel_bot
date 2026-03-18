@@ -1,5 +1,6 @@
 import time
 import logging
+from datetime import date
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
@@ -103,7 +104,10 @@ def check_for_new_grades():
             if not raw_grade:
                 continue
 
-            cell_reference = f"Сегодня!B{row_idx}"
+            # Дата в cell_reference — чтобы каждый день создавались новые записи.
+            # Без даты "Сегодня!B2" от вчера блокирует INSERT сегодняшней оценки.
+            today = date.today().isoformat()
+            cell_reference = f"Сегодня!B{row_idx}:{today}"
 
             grade_value, clean_text = sanitize_grade(raw_grade)
 

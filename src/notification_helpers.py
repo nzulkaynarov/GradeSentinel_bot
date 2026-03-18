@@ -16,11 +16,18 @@ logger = logging.getLogger(__name__)
 TIMEZONE_OFFSET_HOURS = 5
 
 
-def get_local_hour() -> int:
+def _get_local_now() -> datetime:
     from datetime import timedelta
-    now_utc = datetime.utcnow()
-    local = now_utc + timedelta(hours=TIMEZONE_OFFSET_HOURS)
-    return local.hour
+    return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET_HOURS)
+
+
+def get_local_hour() -> int:
+    return _get_local_now().hour
+
+
+def get_local_date_str() -> str:
+    """Возвращает дату/время по Ташкенту: '18.03.2026 14:35'."""
+    return _get_local_now().strftime('%d.%m.%Y %H:%M')
 
 
 def is_quiet_hours() -> bool:
@@ -82,8 +89,10 @@ def format_grade_notification(display_name: str, subject: str, clean_text: str,
     """Формирует эмоциональное уведомление об оценке с серией пятёрок."""
     header_text, emoji = get_emotional_header(grade_value, clean_text, lang)
 
+    date_str = get_local_date_str()
     msg = (
         f"{emoji} <b>{header_text}</b>\n"
+        f"🕐 {date_str}\n"
         f"{t('notif_student', lang, name=display_name)}\n"
         f"{t('notif_subject', lang, subject=subject)}\n"
         f"{t('notif_value', lang, value=clean_text)}\n\n"
@@ -106,8 +115,10 @@ def format_grade_change_notification(display_name: str, subject: str,
     """Формирует уведомление об изменении оценки преподавателем."""
     header_text, emoji = get_emotional_header(new_grade_value, new_text, lang)
 
+    date_str = get_local_date_str()
     msg = (
         f"✏️ <b>{t('notif_grade_changed', lang)}</b>\n"
+        f"🕐 {date_str}\n"
         f"{t('notif_student', lang, name=display_name)}\n"
         f"{t('notif_subject', lang, subject=subject)}\n"
         f"{t('notif_change', lang, old=old_text, new=new_text)}\n\n"

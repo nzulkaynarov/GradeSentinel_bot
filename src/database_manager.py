@@ -583,6 +583,20 @@ def get_family_members(family_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
     return []
 
+
+def get_family_members_telegram_ids(family_id: int) -> List[int]:
+    """Возвращает telegram_id всех членов семьи (для уведомлений)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT p.telegram_id
+            FROM parents p
+            JOIN family_links fl ON p.id = fl.parent_id
+            WHERE fl.family_id = ? AND p.telegram_id IS NOT NULL
+        ''', (family_id,))
+        return [row['telegram_id'] for row in cursor.fetchall()]
+    return []
+
 def get_family_students(family_id: int) -> List[Dict[str, Any]]:
     """Возвращает список всех детей в семье."""
     with get_db_connection() as conn:
@@ -880,6 +894,15 @@ def get_parent_id_by_telegram(telegram_id: int) -> Optional[int]:
         cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
         row = cursor.fetchone()
         return row['id'] if row else None
+
+
+def get_parent_by_telegram(telegram_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает полную запись родителя по telegram_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 
 # ====================
