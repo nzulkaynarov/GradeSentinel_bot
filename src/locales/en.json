@@ -15,6 +15,7 @@
   "btn_webapp": "📊 Grades Dashboard",
   "btn_make_me_head": "👑 Make me the head",
   "btn_assign_other": "👤 Assign someone else",
+  "btn_admin_panel": "🛠 Admin Panel",
   "btn_seen": "👀 Seen",
   "btn_today_all": "📊 All for today",
   "btn_all_children": "📊 All children",
@@ -36,6 +37,16 @@
 
   "status_global": "🛰 <b>Global System Status</b>\n\n👥 Total families: <b>{families}</b>\n👨‍👩‍👧‍👦 Registered parents: <b>{parents}</b>\n🎓 Active students: <b>{students}</b>\n🔄 Processed records: <b>{history_records}</b>\n\n⚙️ Monitoring: <b>Active</b>",
   "status_user": "📊 <b>Your Statistics</b>\n\n🏠 Families: <b>{families}</b>\n🎓 Children linked: <b>{students}</b>\n🔄 History records: <b>{history_records}</b>\n\n💡 <i>The bot actively checks your children's diaries every 5 minutes.</i>",
+
+  "admin_panel_title": "🛠 <b>Admin Panel</b>\n\n👥 Families: <b>{families}</b> | Parents: <b>{parents}</b> | Students: <b>{students}</b>",
+  "admin_panel_families": "🏠 Families",
+  "admin_panel_new_family": "➕ New Family",
+  "admin_panel_prices": "💰 Pricing",
+  "admin_panel_promo": "🎁 Promo Codes",
+  "admin_panel_grant_sub": "👑 Grant Subscription",
+  "admin_panel_cancel_sub": "❌ Cancel Subscription",
+  "admin_panel_broadcast": "📢 Broadcast",
+  "admin_panel_stats": "📊 Statistics",
 
   "admin_help": "🛠 <b>GradeSentinel Admin Panel</b>\n\nUse the buttons at the bottom to navigate between sections.\nThe bot automatically removes old menus to keep the chat clean.",
   "admin_no_access": "⛔ You don't have access to this command.",
@@ -240,5 +251,5 @@
 
   "help_parent": "📖 <b>Help — GradeSentinel</b>\n\n<b>What the bot does:</b>\nMonitors your children's grades in the electronic diary and instantly notifies you about new entries.\n\n<b>Menu buttons:</b>\n📈 <b>Grades</b> — view today's grades\n🤖 <b>AI Analysis</b> — detailed 14-day performance analysis (subscription)\n📊 <b>Status</b> — your statistics\n💳 <b>Subscription</b> — manage subscription\n💬 <b>Support</b> — contact administrator\n⚙️ <b>Language</b> — change interface language\n\n<b>Automation:</b>\n• Diary check every 5 minutes\n• Evening daily summary\n• Weekly AI report (Sun 7PM)\n\n/help — this help page",
   "help_head": "\n\n<b>You are a family head. Additional features:</b>\n🏠 <b>My Family</b> — family management:\n  • 🧒 Add child (Google Sheet link)\n  • 🔗 Invite relative (invite link)\n  • 📋 List and remove members\n  • 🗑 Delete family",
-  "help_admin": "\n\n<b>Admin commands:</b>\n/add_family — create a family\n/list_families — list all families\n/grant_sub — grant subscription\n/cancel_sub — cancel subscription\n/set_prices — manage pricing\n/promo — manage promo codes\n/status — global statistics\n📢 <b>Broadcast</b> — send message to all users"
+  "help_admin": "\n\n<b>Administration:</b>\n🛠 <b>Admin Panel</b> — centralized admin panel:\n  • 🏠 Families — view and manage\n  • ➕ New Family — create\n  • 💰 Pricing — change prices\n  • 🎁 Promo Codes — create and manage\n  • 👑 Grant / ❌ Cancel subscription\n  • 📢 Broadcast — message to all\n  • 📊 System statistics"
 }

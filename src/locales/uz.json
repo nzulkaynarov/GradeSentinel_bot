@@ -15,6 +15,7 @@
   "btn_webapp": "📊 Baholar paneli",
   "btn_make_me_head": "👑 Meni boshiq qilish",
   "btn_assign_other": "👤 Boshqasini tayinlash",
+  "btn_admin_panel": "🛠 Boshqaruv",
   "btn_seen": "👀 Ko'rdim",
   "btn_today_all": "📊 Bugungi barchasi",
   "btn_all_children": "📊 Barcha bolalar",
@@ -36,6 +37,16 @@
 
   "status_global": "🛰 <b>Tizim holati</b>\n\n👥 Jami oilalar: <b>{families}</b>\n👨‍👩‍👧‍👦 Ro'yxatdagi ota-onalar: <b>{parents}</b>\n🎓 Faol o'quvchilar: <b>{students}</b>\n🔄 Qayta ishlangan yozuvlar: <b>{history_records}</b>\n\n⚙️ Monitoring: <b>Ishlayapti</b>",
   "status_user": "📊 <b>Sizning statistikangiz</b>\n\n🏠 Oilalar: <b>{families}</b>\n🎓 Bolalar: <b>{students}</b>\n🔄 Tarix yozuvlari: <b>{history_records}</b>\n\n💡 <i>Bot farzandlaringiz kundaligini har 5 daqiqada tekshiradi.</i>",
+
+  "admin_panel_title": "🛠 <b>Boshqaruv paneli</b>\n\n👥 Oilalar: <b>{families}</b> | Ota-onalar: <b>{parents}</b> | O'quvchilar: <b>{students}</b>",
+  "admin_panel_families": "🏠 Oilalar",
+  "admin_panel_new_family": "➕ Yangi oila",
+  "admin_panel_prices": "💰 Tariflar",
+  "admin_panel_promo": "🎁 Promokodlar",
+  "admin_panel_grant_sub": "👑 Obuna berish",
+  "admin_panel_cancel_sub": "❌ Obunani bekor qilish",
+  "admin_panel_broadcast": "📢 Tarqatma",
+  "admin_panel_stats": "📊 Statistika",
 
   "admin_help": "🛠 <b>GradeSentinel administrator paneli</b>\n\nEkran pastidagi tugmalar bo'limlar bo'yicha harakatlanishga yordam beradi.\nBot eski menyularni avtomatik o'chiradi.",
   "admin_no_access": "⛔ Bu buyruqqa kirish huquqingiz yo'q.",
@@ -240,5 +251,5 @@
 
   "help_parent": "📖 <b>Yordam — GradeSentinel</b>\n\n<b>Bot nima qiladi:</b>\nBolalaringizning elektron kundalikdagi baholarini kuzatadi va yangi yozuvlar haqida darhol xabar beradi.\n\n<b>Menyu tugmalari:</b>\n📈 <b>Baholar</b> — bugungi baholarni ko'rish\n🤖 <b>AI-tahlil</b> — 14 kunlik batafsil tahlil (obuna)\n📊 <b>Status</b> — sizning statistikangiz\n💳 <b>Obuna</b> — obunani boshqarish\n💬 <b>Yordam</b> — administratorga yozish\n⚙️ <b>Til</b> — interfeys tilini o'zgartirish\n\n<b>Avtomatika:</b>\n• Kundalik har 5 daqiqada tekshiriladi\n• Kechki kunlik xulosa\n• Haftalik AI-hisobot (yak 19:00)\n\n/help — ushbu yordam",
   "help_head": "\n\n<b>Siz oila boshlig'isiz. Qo'shimcha imkoniyatlar:</b>\n🏠 <b>Mening oilam</b> — oilani boshqarish:\n  • 🧒 Bola qo'shish (Google Sheet havolasi)\n  • 🔗 Qarindoshni taklif qilish (taklif havolasi)\n  • 📋 Ro'yxat va a'zolarni o'chirish\n  • 🗑 Oilani o'chirish",
-  "help_admin": "\n\n<b>Administrator buyruqlari:</b>\n/add_family — oila yaratish\n/list_families — barcha oilalar ro'yxati\n/grant_sub — obuna berish\n/cancel_sub — obunani bekor qilish\n/set_prices — tariflarni boshqarish\n/promo — promokodlarni boshqarish\n/status — global statistika\n📢 <b>Tarqatma</b> — barcha foydalanuvchilarga xabar yuborish"
+  "help_admin": "\n\n<b>Boshqaruv:</b>\n🛠 <b>Boshqaruv</b> — administrator paneli:\n  • 🏠 Oilalar — ko'rish va boshqarish\n  • ➕ Yangi oila — yaratish\n  • 💰 Tariflar — narxlarni o'zgartirish\n  • 🎁 Promokodlar — yaratish va boshqarish\n  • 👑 Obuna berish / ❌ Bekor qilish\n  • 📢 Tarqatma — barchaga xabar\n  • 📊 Tizim statistikasi"
 }

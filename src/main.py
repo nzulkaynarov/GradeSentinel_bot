@@ -43,7 +43,7 @@ import src.handlers.subscription
 import src.handlers.invite
 
 # For direct routing in main menu
-from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start
+from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start, cmd_admin_panel
 from src.handlers.family import cmd_manage_family, get_grades_command
 from src.handlers.communication import support_started, broadcast_started
 from src.handlers.analytics import cmd_ai_report
@@ -227,7 +227,9 @@ def handle_menu_buttons(message):
     role = get_parent_role(user_id)
     logger.info(f"Button action: '{action}' by user {user_id} (role: {role})")
 
-    if action == "status":
+    if action == "admin_panel":
+        cmd_admin_panel(message)
+    elif action == "status":
         system_status(message)
     elif action == "families":
         cmd_list_families(message)

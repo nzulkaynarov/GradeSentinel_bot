@@ -49,6 +49,7 @@ def _build_button_actions():
         'btn_broadcast': 'broadcast',
         'btn_settings': 'settings',
         'btn_subscription': 'subscription',
+        'btn_admin_panel': 'admin_panel',
     }
 
     for lang in SUPPORTED_LANGS:
