@@ -114,6 +114,8 @@ def cmd_subscription(message):
         # Нет провайдеров — кнопка "Написать админу"
         lines.append("")
         lines.append(t("sub_no_providers", lang))
+        markup.add(types.InlineKeyboardButton(
+            t("sub_contact_admin_btn", lang), callback_data="up_support"))
 
     bot.send_message(user_id, "\n".join(lines), parse_mode='HTML', reply_markup=markup)
 
