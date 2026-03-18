@@ -143,6 +143,16 @@
   "notif_change": "📝 Avvalgi: <b>{old}</b> → Yangi: <b>{new}</b>",
   "notif_streak": "🔥 Bu ketma-ket {count}-chi beshlik!",
 
+  "notif_quarter_title": "Choraklik baho!",
+  "notif_quarter_changed": "Choraklik baho o'zgartirildi",
+  "notif_quarter_label": "Chorak: <b>{quarter}</b>",
+  "notif_quarter_prev": "📊 Oldingi ({quarter}): <b>{value}</b>",
+  "quarter_1": "1-chorak",
+  "quarter_2": "2-chorak",
+  "quarter_3": "3-chorak",
+  "quarter_4": "4-chorak",
+  "quarter_5": "Yillik",
+
   "quiet_morning_header": "🌅 <b>Xayrli tong! Tunda {count} ta xabar keldi:</b>\n",
   "daily_summary_title": "📋 <b>Kun yakunlari</b>",
   "daily_avg": "O'rtacha ball: <b>{avg}</b>",
