@@ -49,13 +49,15 @@
   "admin_panel_broadcast": "📢 Broadcast",
   "admin_panel_stats": "📊 Statistics",
 
-  "user_panel_title": "📱 <b>Main Menu</b>\n\n{families_info}\n\nChoose an action:",
+  "user_panel_title": "📱 <b>Main Menu</b>\n\n{families_info}\n\n➖➖➖➖➖➖➖➖➖➖\nChoose an action:",
   "user_panel_grades": "📈 Grades",
   "user_panel_ai": "🤖 AI Analysis",
   "user_panel_family": "🏠 My Family",
   "user_panel_subscription": "💳 Subscription",
   "user_panel_support": "💬 Support",
   "user_panel_lang": "⚙️ Language",
+  "user_panel_back": "⬅️ Back to menu",
+  "user_panel_empty": "📱 <b>Main Menu</b>\n\nℹ️ You are not linked to any family yet and have no children added.\n\n💡 Ask the family head for an invite link, or contact support.",
 
   "admin_help": "🛠 <b>GradeSentinel Admin Panel</b>\n\nUse the buttons at the bottom to navigate between sections.\nThe bot automatically removes old menus to keep the chat clean.",
   "admin_no_access": "⛔ You don't have access to this command.",

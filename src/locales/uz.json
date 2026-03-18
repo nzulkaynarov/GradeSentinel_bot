@@ -49,13 +49,15 @@
   "admin_panel_broadcast": "📢 Tarqatma",
   "admin_panel_stats": "📊 Statistika",
 
-  "user_panel_title": "📱 <b>Bosh menyu</b>\n\n{families_info}\n\nAmalni tanlang:",
+  "user_panel_title": "📱 <b>Bosh menyu</b>\n\n{families_info}\n\n➖➖➖➖➖➖➖➖➖➖\nAmalni tanlang:",
   "user_panel_grades": "📈 Baholar",
   "user_panel_ai": "🤖 AI-tahlil",
   "user_panel_family": "🏠 Mening oilam",
   "user_panel_subscription": "💳 Obuna",
   "user_panel_support": "💬 Yordam",
   "user_panel_lang": "⚙️ Til",
+  "user_panel_back": "⬅️ Menyuga qaytish",
+  "user_panel_empty": "📱 <b>Bosh menyu</b>\n\nℹ️ Siz hali hech qaysi oilaga biriktirilmagansiz va bolalar qo'shilmagan.\n\n💡 Oila boshlig'idan taklif havolasini so'rang yoki yordamga yozing.",
 
   "admin_help": "🛠 <b>GradeSentinel administrator paneli</b>\n\nEkran pastidagi tugmalar bo'limlar bo'yicha harakatlanishga yordam beradi.\nBot eski menyularni avtomatik o'chiradi.",
   "admin_no_access": "⛔ Bu buyruqqa kirish huquqingiz yo'q.",

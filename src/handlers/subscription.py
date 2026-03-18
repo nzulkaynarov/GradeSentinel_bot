@@ -156,8 +156,8 @@ def callback_sub_back_status(call):
     # Удаляем текущее сообщение и показываем статус заново
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete sub_back message: {e}")
     # Создаём фейковый message для cmd_subscription
     cmd_subscription(call.message)
 
@@ -468,8 +468,8 @@ def callback_admin_reject_card(call):
     user_lang = get_user_lang(user_id)
     try:
         bot.send_message(user_id, t("sub_card_rejected_user", user_lang))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not send card rejection to user {user_id}: {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('sub_contact_admin_'))
@@ -907,8 +907,8 @@ def callback_cancel_sub_back(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete cancel_sub_back message: {e}")
 
 
 def _notify_family_about_cancellation(family_id: int):
@@ -1077,8 +1077,8 @@ def callback_promo_delete(call):
 
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete promo message: {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'promo_create')

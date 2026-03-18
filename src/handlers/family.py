@@ -155,8 +155,8 @@ def process_add_child_step(message, f_id):
 
     try:
         bot.delete_message(message.chat.id, message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete child URL message: {e}")
 
     if "docs.google.com/spreadsheets/d/" not in url:
         send_menu_safe(message.chat.id, t("child_url_invalid", lang))
@@ -243,8 +243,8 @@ def process_add_member_step(message, f_id):
     try:
         try:
             bot.delete_message(message.chat.id, message.message_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not delete member input message: {e}")
 
         parts = message.text.split(maxsplit=2)
         if len(parts) < 3:
@@ -355,8 +355,8 @@ def callback_grade_seen(call):
     bot.answer_callback_query(call.id, t("btn_seen", lang) + "!")
     try:
         bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not remove grade_seen reply markup: {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('grade_today_'))

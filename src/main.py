@@ -17,6 +17,43 @@ _rate_limit_store: dict = defaultdict(list)
 RATE_LIMIT_MAX = 5
 RATE_LIMIT_WINDOW = 10  # seconds
 
+# Simple TTL cache for user panel data (reduces DB queries)
+_panel_cache: dict = {}  # {chat_id: (timestamp, data_dict)}
+PANEL_CACHE_TTL = 30  # seconds
+
+
+def _get_panel_data(chat_id: int) -> dict:
+    """Returns cached panel data or fetches fresh from DB."""
+    now = time.time()
+    cached = _panel_cache.get(chat_id)
+    if cached and (now - cached[0]) < PANEL_CACHE_TTL:
+        return cached[1]
+
+    data = {
+        'is_head': is_head_of_any_family(chat_id),
+        'has_kids': has_children_for_grades(chat_id),
+        'families': get_families_for_user(chat_id),
+    }
+    # Fetch subscription status per family
+    fam_subs = []
+    for fam in data['families']:
+        active = is_subscription_active(fam['id'])
+        sub = get_family_subscription(fam['id'])
+        fam_subs.append({
+            'id': fam['id'],
+            'family_name': fam['family_name'],
+            'active': active,
+            'sub': sub,
+        })
+    data['fam_subs'] = fam_subs
+    _panel_cache[chat_id] = (now, data)
+    return data
+
+
+def _invalidate_panel_cache(chat_id: int):
+    """Invalidates panel cache for a user (call after data changes)."""
+    _panel_cache.pop(chat_id, None)
+
 def is_rate_limited(user_id: int) -> bool:
     """Проверяет, превышен ли лимит запросов для пользователя."""
     now = time.time()
@@ -28,7 +65,7 @@ def is_rate_limited(user_id: int) -> bool:
     return False
 
 from src.bot_instance import bot
-from src.ui import send_menu_safe
+from src.ui import send_menu_safe, get_back_to_panel_markup
 from src.database_manager import init_db, get_parent_by_phone, update_parent_telegram_id, get_parent_role, get_user_lang
 from src.i18n import load_translations, t, BUTTON_ACTIONS
 from src.monitor_engine import start_polling
@@ -131,8 +168,8 @@ def callback_start_lang(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(user_id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete start_lang message: {e}")
 
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True,
                                         input_field_placeholder=t("auth_placeholder", lang))
@@ -222,57 +259,65 @@ def cmd_user_menu(message):
 def _show_user_panel(chat_id: int, message_id: int = None):
     """Показывает пользовательскую панель."""
     lang = get_user_lang(chat_id)
-    is_head = is_head_of_any_family(chat_id)
-    has_kids = has_children_for_grades(chat_id)
+    panel = _get_panel_data(chat_id)
+    is_head = panel['is_head']
+    has_kids = panel['has_kids']
+    families = panel['families']
 
-    # Собираем информацию о семьях
-    families = get_families_for_user(chat_id)
+    # Собираем информацию о семьях из кэша
     fam_lines = []
-    for fam in families:
-        active = is_subscription_active(fam['id'])
-        sub = get_family_subscription(fam['id'])
-        if active and sub and sub.get('subscription_end'):
-            status = f"✅ до {sub['subscription_end'][:10]}"
+    for fs in panel['fam_subs']:
+        if fs['active'] and fs['sub'] and fs['sub'].get('subscription_end'):
+            status = f"✅ до {fs['sub']['subscription_end'][:10]}"
         else:
             status = "❌"
-        fam_lines.append(f"🏠 <b>{fam['family_name']}</b> — {status}")
+        fam_lines.append(f"🏠 <b>{fs['family_name']}</b> — {status}")
 
-    if fam_lines:
-        fam_text = "\n".join(fam_lines)
+    # Пустое состояние — пользователь без семьи и без детей
+    if not families and not has_kids and not is_head:
+        text = t("user_panel_empty", lang)
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
+            types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
+        )
     else:
-        fam_text = t("sub_no_family", lang)
+        if fam_lines:
+            fam_text = "\n".join(fam_lines)
+        else:
+            fam_text = t("sub_no_family", lang)
 
-    text = t("user_panel_title", lang, families_info=fam_text)
+        text = t("user_panel_title", lang, families_info=fam_text)
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
+        markup = types.InlineKeyboardMarkup(row_width=2)
 
-    if has_kids:
+        if has_kids:
+            markup.row(
+                types.InlineKeyboardButton(t("user_panel_grades", lang), callback_data="up_grades"),
+                types.InlineKeyboardButton(t("user_panel_ai", lang), callback_data="up_ai"),
+            )
+
+        if is_head:
+            markup.row(
+                types.InlineKeyboardButton(t("user_panel_family", lang), callback_data="up_family"),
+                types.InlineKeyboardButton(t("user_panel_subscription", lang), callback_data="up_subscription"),
+            )
+        elif has_kids:
+            markup.add(types.InlineKeyboardButton(
+                t("user_panel_subscription", lang), callback_data="up_subscription"))
+
         markup.row(
-            types.InlineKeyboardButton(t("user_panel_grades", lang), callback_data="up_grades"),
-            types.InlineKeyboardButton(t("user_panel_ai", lang), callback_data="up_ai"),
+            types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
+            types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
         )
-
-    if is_head:
-        markup.row(
-            types.InlineKeyboardButton(t("user_panel_family", lang), callback_data="up_family"),
-            types.InlineKeyboardButton(t("user_panel_subscription", lang), callback_data="up_subscription"),
-        )
-    elif has_kids:
-        markup.add(types.InlineKeyboardButton(
-            t("user_panel_subscription", lang), callback_data="up_subscription"))
-
-    markup.row(
-        types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
-        types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
-    )
 
     if message_id:
         try:
             bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
                                   reply_markup=markup, parse_mode='HTML')
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not edit user panel message: {e}")
 
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
 
@@ -290,9 +335,11 @@ def callback_up_grades(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for grades: {e}")
     get_grades_command(call.message)
+    lang = get_user_lang(call.message.chat.id)
+    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_ai')
@@ -301,9 +348,11 @@ def callback_up_ai(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for AI: {e}")
     cmd_ai_report(call.message)
+    lang = get_user_lang(call.message.chat.id)
+    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_family')
@@ -312,8 +361,8 @@ def callback_up_family(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for family: {e}")
     cmd_manage_family(call.message)
 
 
@@ -323,9 +372,11 @@ def callback_up_subscription(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for subscription: {e}")
     cmd_subscription(call.message)
+    lang = get_user_lang(call.message.chat.id)
+    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_support')
@@ -334,20 +385,31 @@ def callback_up_support(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for support: {e}")
     support_started(call.message)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_lang')
 def callback_up_lang(call):
-    """Смена языка из пользовательской панели."""
+    """Смена языка из пользовательской панели — показываем выбор прямо в панели."""
     bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("🇷🇺 Русский", callback_data="set_lang_ru"),
+        types.InlineKeyboardButton("🇺🇿 O'zbek", callback_data="set_lang_uz"),
+        types.InlineKeyboardButton("🇬🇧 English", callback_data="set_lang_en"),
+    )
+    markup.add(types.InlineKeyboardButton(
+        t("user_panel_back", get_user_lang(call.message.chat.id)),
+        callback_data="up_back"))
     try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
-    cmd_settings(call.message)
+        bot.edit_message_text(
+            t("lang_select"), chat_id=call.message.chat.id,
+            message_id=call.message.message_id, reply_markup=markup)
+    except Exception as e:
+        logger.debug(f"Could not edit panel for lang selection: {e}")
+        cmd_settings(call.message)
 
 
 # ═══════════════════════════════════════════
