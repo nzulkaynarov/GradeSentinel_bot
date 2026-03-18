@@ -65,7 +65,7 @@ def is_rate_limited(user_id: int) -> bool:
     return False
 
 from src.bot_instance import bot
-from src.ui import send_menu_safe, get_back_to_panel_markup
+from src.ui import send_menu_safe
 from src.database_manager import init_db, get_parent_by_phone, update_parent_telegram_id, get_parent_role, get_user_lang
 from src.i18n import load_translations, t, BUTTON_ACTIONS
 from src.monitor_engine import start_polling
@@ -339,8 +339,7 @@ def callback_up_grades(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for grades: {e}")
     get_grades_command(call.message)
-    lang = get_user_lang(call.message.chat.id)
-    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
+    _show_user_panel(call.message.chat.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_ai')
@@ -352,8 +351,7 @@ def callback_up_ai(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for AI: {e}")
     cmd_ai_report(call.message)
-    lang = get_user_lang(call.message.chat.id)
-    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
+    _show_user_panel(call.message.chat.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_family')
@@ -376,8 +374,7 @@ def callback_up_subscription(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for subscription: {e}")
     cmd_subscription(call.message)
-    lang = get_user_lang(call.message.chat.id)
-    bot.send_message(call.message.chat.id, "↩️", reply_markup=get_back_to_panel_markup(lang))
+    _show_user_panel(call.message.chat.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_support')

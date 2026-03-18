@@ -376,6 +376,7 @@ def callback_grade_seen(call):
 def callback_grade_today(call):
     from src.database_manager import get_students_for_parent, get_today_grades_for_student
     lang = get_user_lang(call.from_user.id)
+    chat_id = call.message.chat.id
 
     student_id = int(call.data.replace('grade_today_', ''))
     bot.answer_callback_query(call.id)
@@ -384,12 +385,12 @@ def callback_grade_today(call):
     student = next((s for s in students if s['id'] == student_id), None)
 
     if not student:
-        bot.send_message(call.message.chat.id, t("grades_student_not_found", lang))
+        bot.send_message(chat_id, t("grades_student_not_found", lang))
         return
 
     grades = get_today_grades_for_student(student_id)
     if not grades:
-        send_content(call.message.chat.id, t("grades_today_none", lang))
+        send_content(chat_id, t("grades_today_none", lang))
         return
 
     from src.utils import clean_student_name
@@ -406,4 +407,9 @@ def callback_grade_today(call):
         avg = sum(numeric) / len(numeric)
         lines.append(f"\n{t('grades_avg', lang, avg=f'{avg:.1f}', count=len(numeric))}")
 
-    send_content(call.message.chat.id, "\n".join(lines))
+    # Показываем оценки с кнопкой открытия таблицы
+    spreadsheet_id = student.get('spreadsheet_id', '')
+    if spreadsheet_id:
+        lines.append(f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>{t('grades_open_sheet', lang)}</a>")
+
+    send_content(chat_id, "\n".join(lines))

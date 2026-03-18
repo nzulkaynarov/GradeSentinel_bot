@@ -57,7 +57,7 @@
   "user_panel_support": "💬 Yordam",
   "user_panel_lang": "⚙️ Til",
   "user_panel_back": "⬅️ Menyuga qaytish",
-  "user_panel_empty": "📱 <b>Bosh menyu</b>\n\nℹ️ Siz hali hech qaysi oilaga biriktirilmagansiz va bolalar qo'shilmagan.\n\n💡 Oila boshlig'idan taklif havolasini so'rang yoki yordamga yozing.",
+  "user_panel_empty": "📱 <b>Bosh menyu</b>\n\nℹ️ Siz hali hech qaysi oilaga biriktirilmagansiz.\n\n<b>Nima qilish kerak:</b>\n1. Oila boshlig'ingizdan 🔗 <i>Qarindosh taklif qilish</i> tugmasini bosib, sizga havola yuborishini so'rang\n2. Yoki pastdagi 💬 <b>Yordam</b> tugmasini bosing — administrator yordam beradi",
 
   "admin_help": "🛠 <b>GradeSentinel administrator paneli</b>\n\nEkran pastidagi tugmalar bo'limlar bo'yicha harakatlanishga yordam beradi.\nBot eski menyularni avtomatik o'chiradi.",
   "admin_no_access": "⛔ Bu buyruqqa kirish huquqingiz yo'q.",
