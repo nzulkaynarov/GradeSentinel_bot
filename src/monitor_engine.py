@@ -4,7 +4,7 @@ from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
     update_student_display_name, queue_notification, get_user_lang,
-    get_existing_grade, update_grade
+    get_existing_grade, update_grade, get_active_spreadsheets_with_subscription
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
@@ -61,7 +61,7 @@ def send_notification(telegram_ids, message, inline_markup=None):
             logger.error(f"Failed to send notification to {tg_id}: {e}")
 
 def check_for_new_grades():
-    students = get_active_spreadsheets()
+    students = get_active_spreadsheets_with_subscription()
     if not students:
         logger.info("No active students with spreadsheets found.")
         return

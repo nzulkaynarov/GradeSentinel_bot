@@ -206,6 +206,50 @@ def init_db():
         if 'lang' not in columns:
             cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
             logger.info("Database migration: lang column added to parents.")
+
+        # 12. Индексы для производительности
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_date ON grade_history(student_id, date_added)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_cell ON grade_history(student_id, cell_reference)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_parent ON family_links(parent_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_student ON family_links(student_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_family ON family_links(family_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_parents_telegram ON parents(telegram_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_notification_queue_tg ON notification_queue(telegram_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_quarter_grades_student ON quarter_grades(student_id)')
+
+        # 13. Таблица инвайт-ссылок для семей
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS family_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL,
+            invite_code TEXT UNIQUE NOT NULL,
+            created_by INTEGER NOT NULL,
+            used_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            is_used INTEGER DEFAULT 0,
+            FOREIGN KEY(family_id) REFERENCES families(id),
+            FOREIGN KEY(created_by) REFERENCES parents(id)
+        )
+        ''')
+
+        # 14. Таблица платежей и подписок
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL,
+            telegram_payment_charge_id TEXT,
+            provider_payment_charge_id TEXT,
+            amount INTEGER NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'UZS',
+            plan TEXT NOT NULL DEFAULT 'basic',
+            months INTEGER NOT NULL DEFAULT 1,
+            paid_by INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(family_id) REFERENCES families(id),
+            FOREIGN KEY(paid_by) REFERENCES parents(id)
+        )
+        ''')
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -330,6 +374,21 @@ def get_active_spreadsheets() -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT id as student_id, fio, spreadsheet_id, display_name FROM students WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""')
+        return [dict(row) for row in cursor.fetchall()]
+    return []
+
+def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
+    """Возвращает студентов только из семей с активной подпиской (или без ограничений если подписка не настроена)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id, s.display_name
+            FROM students s
+            JOIN family_links fl ON s.id = fl.student_id
+            JOIN families f ON fl.family_id = f.id
+            WHERE s.spreadsheet_id IS NOT NULL AND s.spreadsheet_id != ''
+              AND (f.subscription_end IS NULL OR f.subscription_end > datetime('now'))
+        ''')
         return [dict(row) for row in cursor.fetchall()]
     return []
 
@@ -770,6 +829,149 @@ def has_today_grades_for_parent(telegram_id: int) -> bool:
             WHERE p.telegram_id = ? AND date(gh.date_added) = date('now')
         ''', (telegram_id,))
         return cursor.fetchone()['c'] > 0
+
+
+# ====================
+# Инвайт-ссылки
+# ====================
+def create_invite(family_id: int, created_by_parent_id: int, expires_hours: int = 48) -> str:
+    """Создаёт инвайт-ссылку для семьи. Возвращает invite_code."""
+    import secrets
+    code = secrets.token_urlsafe(12)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO family_invites (family_id, invite_code, created_by, expires_at)
+            VALUES (?, ?, ?, datetime('now', ?))
+        ''', (family_id, code, created_by_parent_id, f'+{expires_hours} hours'))
+    return code
+
+
+def get_invite(invite_code: str) -> Optional[Dict[str, Any]]:
+    """Возвращает данные инвайта, если он валиден (не использован, не истёк)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT fi.*, f.family_name
+            FROM family_invites fi
+            JOIN families f ON fi.family_id = f.id
+            WHERE fi.invite_code = ? AND fi.is_used = 0
+              AND fi.expires_at > datetime('now')
+        ''', (invite_code,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def use_invite(invite_code: str, used_by_parent_id: int) -> bool:
+    """Помечает инвайт как использованный."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE family_invites SET is_used = 1, used_by = ?
+            WHERE invite_code = ? AND is_used = 0
+        ''', (used_by_parent_id, invite_code))
+        return cursor.rowcount > 0
+
+
+def get_parent_id_by_telegram(telegram_id: int) -> Optional[int]:
+    """Возвращает internal parent ID по telegram_id."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return row['id'] if row else None
+
+
+# ====================
+# Подписки
+# ====================
+def get_family_subscription(family_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает информацию о подписке семьи."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT subscription_end FROM families WHERE id = ?', (family_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {'subscription_end': row['subscription_end']}
+
+
+def extend_subscription(family_id: int, months: int = 1):
+    """Продлевает подписку семьи на N месяцев от текущей даты или от конца текущей подписки."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT subscription_end FROM families WHERE id = ?', (family_id,))
+        row = cursor.fetchone()
+        if not row:
+            return
+
+        current_end = row['subscription_end']
+        if current_end:
+            # Продлеваем от конца текущей подписки (если ещё активна)
+            cursor.execute('''
+                UPDATE families SET subscription_end =
+                    CASE
+                        WHEN subscription_end > datetime('now')
+                        THEN datetime(subscription_end, ?)
+                        ELSE datetime('now', ?)
+                    END
+                WHERE id = ?
+            ''', (f'+{months} months', f'+{months} months', family_id))
+        else:
+            cursor.execute(
+                "UPDATE families SET subscription_end = datetime('now', ?) WHERE id = ?",
+                (f'+{months} months', family_id))
+
+
+def record_payment(family_id: int, paid_by_parent_id: int, amount: int,
+                   currency: str, plan: str, months: int,
+                   telegram_charge_id: str = None, provider_charge_id: str = None):
+    """Записывает платёж в историю."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO payments (family_id, paid_by, amount, currency, plan, months,
+                                  telegram_payment_charge_id, provider_payment_charge_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (family_id, paid_by_parent_id, amount, currency, plan, months,
+              telegram_charge_id, provider_charge_id))
+
+
+def is_subscription_active(family_id: int) -> bool:
+    """Проверяет, активна ли подписка семьи."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subscription_end FROM families WHERE id = ?
+        ''', (family_id,))
+        row = cursor.fetchone()
+        if not row or not row['subscription_end']:
+            return False
+        # Сравниваем с текущим временем
+        cursor.execute(
+            "SELECT ? > datetime('now') as active",
+            (row['subscription_end'],))
+        return cursor.fetchone()['active'] == 1
+
+
+def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все семьи, к которым привязан пользователь."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT f.id, f.family_name, f.subscription_end, f.head_id
+            FROM families f
+            JOIN family_links fl ON f.id = fl.family_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ?
+        ''', (telegram_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def has_any_active_subscription(telegram_id: int) -> bool:
+    """Проверяет, есть ли у пользователя хотя бы одна семья с активной подпиской."""
+    families = get_families_for_user(telegram_id)
+    return any(is_subscription_active(f['id']) for f in families)
 
 
 def get_all_parents_with_children() -> List[Dict[str, Any]]:

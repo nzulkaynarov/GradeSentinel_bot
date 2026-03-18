@@ -156,5 +156,32 @@
 
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Til o'zbekchaga o'zgartirildi.",
-  "main_menu": "Bosh menyu"
+  "main_menu": "Bosh menyu",
+
+  "btn_subscription": "💳 Obuna",
+  "family_invite_btn": "🔗 Qarindoshni taklif qilish",
+
+  "invite_generated": "🔗 <b>Taklif havolasi yaratildi!</b>\n\nBu havolani qarindoshingizga yuboring:\n<code>{link}</code>\n\nHavola 48 soat amal qiladi va faqat bir marta ishlatilishi mumkin.",
+  "invite_invalid": "❌ Taklif havolasi yaroqsiz yoki allaqachon ishlatilgan.",
+  "invite_expired": "❌ Taklif havolasi muddati tugagan.",
+  "invite_accepted": "✅ <b>Xush kelibsiz!</b>\nSiz <b>{family}</b> oilasiga muvaffaqiyatli qo'shildingiz.\n\nEndi baholar haqida xabar olasiz.",
+  "invite_auth_required": "👋 Sizni <b>{family}</b> oilasiga taklif qilishyapti!\n\nTasdiqlash uchun kontaktingizni ulashing:",
+
+  "sub_unavailable": "💳 <i>To'lov tizimi vaqtincha mavjud emas.</i>",
+  "sub_no_family": "ℹ️ Siz hech qaysi oilaga biriktirilmagansiz.",
+  "sub_status_title": "💳 <b>Obuna holati</b>\n",
+  "sub_family_active": "🏠 <b>{family}</b> — <b>{end}</b> gacha faol",
+  "sub_family_inactive": "🏠 <b>{family}</b> — <i>faol emas</i>",
+  "sub_choose_plan": "Tarif rejasini tanlang:",
+  "sub_plan_monthly": "1 oy — {amount} so'm",
+  "sub_plan_quarterly": "3 oy — {amount} so'm (-11%)",
+  "sub_plan_yearly": "12 oy — {amount} so'm (-30%)",
+  "sub_select_family": "Obuna uchun oilani tanlang:",
+  "sub_invoice_title": "GradeSentinel obunasi",
+  "sub_invoice_desc": "{months} oylik obuna. Narxi: {amount} so'm.\nAvtomatik baho xabarlari, kechki xulosalar, AI-tahlil.",
+  "sub_invoice_error": "❌ To'lov hisob-fakturasini yaratib bo'lmadi. Keyinroq urinib ko'ring.",
+  "sub_payment_success": "✅ <b>To'lov muvaffaqiyatli!</b>\n\nObunangiz {months} oyga faollashtirildi.\nLoyihani qo'llab-quvvatlaganingiz uchun rahmat!",
+  "sub_required_ai": "🔒 <b>AI-tahlil — premium funksiya</b>\n\nAI-tahlilga kirish uchun faol obuna kerak.\n💳 Obuna tugmasini bosing.",
+  "sub_grant_usage": "Foydalanish: /grant_sub &lt;family_id&gt; &lt;months&gt;",
+  "sub_granted": "✅ #{family_id} oilaga {months} oylik obuna berildi."
 }

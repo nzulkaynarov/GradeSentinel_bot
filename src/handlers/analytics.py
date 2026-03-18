@@ -34,6 +34,14 @@ def _handle_ai_report(user_id: int):
         send_content(user_id, t("ai_unavailable", lang))
         return
 
+    # AI-анализ — премиум функция, проверяем подписку
+    from src.database_manager import has_any_active_subscription
+    if not has_any_active_subscription(user_id):
+        role = get_parent_role(user_id)
+        if role != 'admin':
+            send_content(user_id, t("sub_required_ai", lang))
+            return
+
     students = get_students_for_parent(user_id)
     if not students:
         send_content(user_id, t("ai_no_students", lang))
