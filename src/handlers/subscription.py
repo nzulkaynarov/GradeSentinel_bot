@@ -217,29 +217,107 @@ def handle_successful_payment(message):
 # Команда для админа — выдать подписку вручную
 @bot.message_handler(commands=['grant_sub'])
 def cmd_grant_subscription(message):
-    """Админ-команда: /grant_sub <family_id> <months>"""
-    from src.database_manager import get_parent_role
+    """Админ-команда: /grant_sub — интерактивный выбор семьи и срока."""
+    from src.database_manager import get_parent_role, get_all_families
     user_id = message.chat.id
     lang = get_user_lang(user_id)
 
     if get_parent_role(user_id) != 'admin':
         return
 
+    # Если переданы аргументы — быстрый режим (обратная совместимость)
     args = message.text.split()
-    if len(args) < 3:
-        bot.send_message(user_id, t("sub_grant_usage", lang))
+    if len(args) >= 3:
+        try:
+            family_id = int(args[1])
+            months = int(args[2])
+            _execute_grant(user_id, family_id, months, lang)
+            return
+        except ValueError:
+            pass
+
+    # Интерактивный режим — показать список семей
+    families = get_all_families()
+    if not families:
+        bot.send_message(user_id, t("sub_no_families_exist", lang))
         return
 
-    try:
-        family_id = int(args[1])
-        months = int(args[2])
-    except ValueError:
-        bot.send_message(user_id, t("sub_grant_usage", lang))
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for fam in families:
+        active = is_subscription_active(fam['id'])
+        sub = get_family_subscription(fam['id'])
+        sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "—"
+        status = "✅" if active else "❌"
+        label = f"{status} #{fam['id']} {fam['family_name']} ({fam.get('head_fio', '?')}) → {sub_end}"
+        markup.add(types.InlineKeyboardButton(
+            label, callback_data=f"gsub_fam_{fam['id']}"))
+
+    bot.send_message(user_id, t("sub_grant_select_family", lang), reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('gsub_fam_'))
+def callback_grant_select_family(call):
+    """Админ выбрал семью — теперь выбор срока."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
         return
 
+    family_id = int(call.data.replace('gsub_fam_', ''))
+    bot.answer_callback_query(call.id)
+
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        types.InlineKeyboardButton("1 мес", callback_data=f"gsub_do_{family_id}_1"),
+        types.InlineKeyboardButton("3 мес", callback_data=f"gsub_do_{family_id}_3"),
+        types.InlineKeyboardButton("6 мес", callback_data=f"gsub_do_{family_id}_6"),
+    )
+    markup.add(
+        types.InlineKeyboardButton("12 мес", callback_data=f"gsub_do_{family_id}_12"),
+        types.InlineKeyboardButton("∞ Навсегда", callback_data=f"gsub_do_{family_id}_999"),
+    )
+
+    bot.edit_message_text(
+        t("sub_grant_select_months", lang, family_id=family_id),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('gsub_do_'))
+def callback_grant_execute(call):
+    """Админ выбрал срок — выдаём подписку."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    parts = call.data.split('_')
+    family_id = int(parts[2])
+    months = int(parts[3])
+    bot.answer_callback_query(call.id)
+
+    _execute_grant(user_id, family_id, months, lang)
+
+    bot.edit_message_text(
+        t("sub_granted", lang, family_id=family_id, months=months),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id
+    )
+
+
+def _execute_grant(admin_id: int, family_id: int, months: int, lang: str):
+    """Выполняет выдачу подписки и записывает в историю."""
     extend_subscription(family_id, months)
 
-    parent_id = get_parent_id_by_telegram(user_id)
+    parent_id = get_parent_id_by_telegram(admin_id)
     record_payment(
         family_id=family_id,
         paid_by_parent_id=parent_id,
@@ -249,5 +327,4 @@ def cmd_grant_subscription(message):
         months=months,
     )
 
-    send_content(user_id, t("sub_granted", lang, family_id=family_id, months=months))
-    logger.info(f"Admin {user_id} granted {months} months to family {family_id}")
+    logger.info(f"Admin {admin_id} granted {months} months to family {family_id}")
