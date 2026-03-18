@@ -1,6 +1,6 @@
 import time
 import logging
-from datetime import date
+from datetime import datetime, timedelta
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
@@ -128,8 +128,9 @@ def check_for_new_grades():
             if not raw_grade:
                 continue
 
-            today = date.today().isoformat()
-            cell_reference = f"Сегодня!B{row_idx}:{today}"
+            # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню
+            tashkent_today = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
+            cell_reference = f"Сегодня!B{row_idx}:{tashkent_today}"
 
             grade_value, clean_text = sanitize_grade(raw_grade)
 
