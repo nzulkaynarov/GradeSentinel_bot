@@ -42,10 +42,21 @@ def callback_set_lang(call):
     _build_button_actions()
 
     bot.answer_callback_query(call.id, t("lang_changed", lang))
-    try:
-        bot.delete_message(chat_id, call.message.message_id)
-    except Exception:
-        pass
 
-    # Показываем меню на новом языке
-    send_menu_safe(chat_id, t("lang_changed", lang))
+    # Сбрасываем кэш панели (язык изменился)
+    from src.main import _invalidate_panel_cache
+    _invalidate_panel_cache(chat_id)
+
+    # Возвращаемся в пользовательскую панель на новом языке
+    from src.database_manager import get_parent_role
+    role = get_parent_role(user_id)
+    if role == 'admin':
+        try:
+            bot.delete_message(chat_id, call.message.message_id)
+        except Exception as e:
+            logger.debug(f"Could not delete lang selection message: {e}")
+        send_menu_safe(chat_id, t("lang_changed", lang))
+    else:
+        # Показываем панель через edit (без мигания)
+        from src.main import _show_user_panel
+        _show_user_panel(chat_id, call.message.message_id)

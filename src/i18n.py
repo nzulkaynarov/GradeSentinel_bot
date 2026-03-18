@@ -50,6 +50,7 @@ def _build_button_actions():
         'btn_settings': 'settings',
         'btn_subscription': 'subscription',
         'btn_admin_panel': 'admin_panel',
+        'btn_user_menu': 'user_menu',
     }
 
     for lang in SUPPORTED_LANGS:

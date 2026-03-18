@@ -65,8 +65,8 @@ def _show_admin_panel(chat_id: int, lang: str, message_id: int = None):
             bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
                                   reply_markup=markup, parse_mode='HTML')
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not edit admin panel message: {e}")
 
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
 
@@ -122,8 +122,8 @@ def _show_families_list(chat_id: int, lang: str, message_id: int = None):
             bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
                                   reply_markup=markup, parse_mode='HTML')
             return
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not edit families list message: {e}")
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
 
 
@@ -139,8 +139,8 @@ def callback_ap_new_family(call):
     # Удаляем панель и запускаем flow создания семьи
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete admin panel for new family flow: {e}")
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
@@ -208,8 +208,8 @@ def callback_ap_broadcast(call):
     bot.answer_callback_query(call.id)
     try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not delete admin panel for broadcast: {e}")
     from src.handlers.communication import broadcast_started
     broadcast_started(call.message)
 

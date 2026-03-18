@@ -168,8 +168,8 @@ def process_broadcast_confirmation(call):
         bot.answer_callback_query(call.id, t("broadcast_data_stale", lang))
         try:
             bot.delete_message(chat_id=user_id, message_id=call.message.message_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not delete stale broadcast message: {e}")
         return
 
     if call.data == "broadcast_cancel":
