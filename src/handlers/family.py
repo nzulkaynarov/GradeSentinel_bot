@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def cmd_manage_family(message):
     from src.database_manager import is_head_of_any_family, get_families_for_head
 
-    user_id = message.from_user.id
+    user_id = message.chat.id
     lang = get_user_lang(user_id)
     if not is_head_of_any_family(user_id):
         bot.send_message(message.chat.id, t("family_head_only", lang))
@@ -52,6 +52,9 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
 
         markup.add(types.InlineKeyboardButton(t("family_delete_btn", lang), callback_data=f"delete_family_{f_id}"))
         markup.add(types.InlineKeyboardButton(t("family_back_btn", lang), callback_data="back_to_families"))
+    else:
+        # Для глав семей (не админов) — кнопка назад в меню
+        markup.add(types.InlineKeyboardButton(t("user_panel_back", lang), callback_data="up_back"))
 
     child_count = get_child_count(f_id)
     text = t("family_manage_title", lang, count=child_count)
