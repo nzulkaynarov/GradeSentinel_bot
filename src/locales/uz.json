@@ -205,7 +205,40 @@
   "sub_grant_select_family": "👑 <b>Obuna berish</b>\n\nOilani tanlang:\n(✅ — faol, ❌ — faol emas)",
   "sub_grant_select_months": "⏱ #{family_id} oila uchun obuna muddatini tanlang:",
 
+  "sub_promo_btn": "Promokod kiritish",
+  "sub_promo_enter": "🎁 <b>Promokodni kiriting:</b>",
+  "sub_promo_invalid": "❌ Promokod topilmadi, allaqachon ishlatilgan yoki muddati tugagan.",
+  "sub_promo_success": "✅ <b>Promokod <code>{code}</code> qo'llanildi!</b>\n\nObunangiz <b>{months} oyga</b> faollashtirildi.",
+  "sub_promo_discount": "🎁 Promokod <code>{code}</code> <b>{discount}%</b> chegirma beradi!\n\n{plan}",
+  "sub_promo_applied_info": "🎁 Promokod <code>{code}</code> <b>{discount}%</b> chegirma beradi. Qo'llash uchun tarifni tanlang.",
+
+  "sub_cancel_select": "❌ <b>Obunani bekor qilish</b>\n\nObunani bekor qilish uchun oilani tanlang:",
+  "sub_cancel_confirm_prompt": "⚠️ <b>#{family_id}</b> oilaning obunasini bekor qilmoqchimisiz?\n\nObuna darhol o'chiriladi.",
+  "sub_cancel_yes": "⚠️ Ha, obunani bekor qilish",
+  "sub_cancel_no_active": "ℹ️ Faol obunali oilalar yo'q.",
+  "sub_cancelled_admin": "✅ #{family_id} oilaning obunasi bekor qilindi.",
+  "sub_cancelled_notify": "⚠️ <b>Obuna o'chirildi</b>\n\nObunangiz administrator tomonidan bekor qilindi. Uzaytirish uchun yordamga murojaat qiling.",
+
+  "admin_prices_title": "💰 <b>Joriy tariflar:</b>\n",
+  "admin_prices_enter": "✏️ <b>{plan}</b> tarifi uchun yangi narxni kiriting (so'mda, masalan: 29900):",
+  "admin_prices_invalid": "❌ Noto'g'ri summa. 0 dan katta son kiriting.",
+  "admin_prices_updated": "✅ <b>{plan}</b> tarifi yangilandi: <b>{amount} so'm</b>",
+
+  "admin_promo_title": "🎁 <b>Promokodlarni boshqarish</b>",
+  "admin_promo_create_btn": "➕ Promokod yaratish",
+  "admin_promo_list_btn": "📋 Promokodlar ro'yxati",
+  "admin_promo_empty": "📭 Promokodlar hali yo'q.",
+  "admin_promo_list_title": "📋 <b>Promokodlar:</b>\n",
+  "admin_promo_deleted": "✅ {code} promokod o'chirildi.",
+  "admin_promo_choose_type": "🎁 <b>Promokod turi:</b>",
+  "admin_promo_type_free": "🆓 Bepul oylar",
+  "admin_promo_type_discount": "💸 Foiz chegirma",
+  "admin_promo_enter_free": "Kiriting: <b>oylar</b> <b>foydalanish_soni</b> [amal_kunlar]\n\nMisol: <code>3 10 30</code>\n= 3 oy, 10 marta, 30 kun",
+  "admin_promo_enter_discount": "Kiriting: <b>tarif</b> <b>foiz</b> <b>foydalanish_soni</b> [amal_kunlar]\n\nMisol: <code>monthly 20 5 30</code>\n= monthly -20%, 5 marta, 30 kun",
+  "admin_promo_created": "✅ <b>Promokod yaratildi!</b>\n\n<code>{code}</code>\nTa'sir: {effect}\nFoydalanish: {max_uses}",
+  "admin_promo_input_error": "❌ Noto'g'ri kiritish. /promo orqali qayta urinib ko'ring.",
+
   "help_parent": "📖 <b>Yordam — GradeSentinel</b>\n\n<b>Bot nima qiladi:</b>\nBolalaringizning elektron kundalikdagi baholarini kuzatadi va yangi yozuvlar haqida darhol xabar beradi.\n\n<b>Menyu tugmalari:</b>\n📈 <b>Baholar</b> — bugungi baholarni ko'rish\n🤖 <b>AI-tahlil</b> — 14 kunlik batafsil tahlil (obuna)\n📊 <b>Status</b> — sizning statistikangiz\n💳 <b>Obuna</b> — obunani boshqarish\n💬 <b>Yordam</b> — administratorga yozish\n⚙️ <b>Til</b> — interfeys tilini o'zgartirish\n\n<b>Avtomatika:</b>\n• Kundalik har 5 daqiqada tekshiriladi\n• Kechki kunlik xulosa\n• Haftalik AI-hisobot (yak 19:00)\n\n/help — ushbu yordam",
   "help_head": "\n\n<b>Siz oila boshlig'isiz. Qo'shimcha imkoniyatlar:</b>\n🏠 <b>Mening oilam</b> — oilani boshqarish:\n  • 🧒 Bola qo'shish (Google Sheet havolasi)\n  • 🔗 Qarindoshni taklif qilish (taklif havolasi)\n  • 📋 Ro'yxat va a'zolarni o'chirish\n  • 🗑 Oilani o'chirish",
-  "help_admin": "\n\n<b>Administrator buyruqlari:</b>\n/add_family — oila yaratish\n/list_families — barcha oilalar ro'yxati\n/grant_sub — obuna berish (interaktiv tanlash)\n/status — global statistika\n📢 <b>Tarqatma</b> — barcha foydalanuvchilarga xabar yuborish"
+  "help_admin": "\n\n<b>Administrator buyruqlari:</b>\n/add_family — oila yaratish\n/list_families — barcha oilalar ro'yxati\n/grant_sub — obuna berish\n/cancel_sub — obunani bekor qilish\n/set_prices — tariflarni boshqarish\n/promo — promokodlarni boshqarish\n/status — global statistika\n📢 <b>Tarqatma</b> — barcha foydalanuvchilarga xabar yuborish"
 }

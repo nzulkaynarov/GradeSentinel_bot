@@ -205,7 +205,40 @@
   "sub_grant_select_family": "👑 <b>Grant subscription</b>\n\nSelect a family:\n(✅ — active, ❌ — inactive)",
   "sub_grant_select_months": "⏱ Select subscription duration for family #{family_id}:",
 
+  "sub_promo_btn": "Enter promo code",
+  "sub_promo_enter": "🎁 <b>Enter your promo code:</b>",
+  "sub_promo_invalid": "❌ Promo code not found, already used, or expired.",
+  "sub_promo_success": "✅ <b>Promo code <code>{code}</code> applied!</b>\n\nYour subscription is activated for <b>{months} month(s).</b>",
+  "sub_promo_discount": "🎁 Promo code <code>{code}</code> gives <b>{discount}%</b> off!\n\n{plan}",
+  "sub_promo_applied_info": "🎁 Promo code <code>{code}</code> gives <b>{discount}%</b> off. Choose a plan to apply.",
+
+  "sub_cancel_select": "❌ <b>Cancel subscription</b>\n\nSelect a family to cancel subscription:",
+  "sub_cancel_confirm_prompt": "⚠️ Are you sure you want to cancel the subscription for family <b>#{family_id}</b>?\n\nThe subscription will be deactivated immediately.",
+  "sub_cancel_yes": "⚠️ Yes, cancel subscription",
+  "sub_cancel_no_active": "ℹ️ No families with active subscriptions.",
+  "sub_cancelled_admin": "✅ Subscription for family #{family_id} has been cancelled.",
+  "sub_cancelled_notify": "⚠️ <b>Subscription deactivated</b>\n\nYour subscription has been cancelled by the administrator. Contact support to renew.",
+
+  "admin_prices_title": "💰 <b>Current pricing:</b>\n",
+  "admin_prices_enter": "✏️ Enter new price for <b>{plan}</b> plan (in UZS, e.g.: 29900):",
+  "admin_prices_invalid": "❌ Invalid amount. Enter a number greater than 0.",
+  "admin_prices_updated": "✅ Plan <b>{plan}</b> updated: <b>{amount} UZS</b>",
+
+  "admin_promo_title": "🎁 <b>Promo Code Management</b>",
+  "admin_promo_create_btn": "➕ Create promo code",
+  "admin_promo_list_btn": "📋 List promo codes",
+  "admin_promo_empty": "📭 No promo codes yet.",
+  "admin_promo_list_title": "📋 <b>Promo codes:</b>\n",
+  "admin_promo_deleted": "✅ Promo code {code} deleted.",
+  "admin_promo_choose_type": "🎁 <b>Promo code type:</b>",
+  "admin_promo_type_free": "🆓 Free months",
+  "admin_promo_type_discount": "💸 Percentage discount",
+  "admin_promo_enter_free": "Enter: <b>months</b> <b>max_uses</b> [days_valid]\n\nExample: <code>3 10 30</code>\n= 3 months, 10 uses, 30 days",
+  "admin_promo_enter_discount": "Enter: <b>plan</b> <b>percent</b> <b>max_uses</b> [days_valid]\n\nExample: <code>monthly 20 5 30</code>\n= monthly -20%, 5 uses, 30 days",
+  "admin_promo_created": "✅ <b>Promo code created!</b>\n\n<code>{code}</code>\nEffect: {effect}\nMax uses: {max_uses}",
+  "admin_promo_input_error": "❌ Invalid input. Try again via /promo.",
+
   "help_parent": "📖 <b>Help — GradeSentinel</b>\n\n<b>What the bot does:</b>\nMonitors your children's grades in the electronic diary and instantly notifies you about new entries.\n\n<b>Menu buttons:</b>\n📈 <b>Grades</b> — view today's grades\n🤖 <b>AI Analysis</b> — detailed 14-day performance analysis (subscription)\n📊 <b>Status</b> — your statistics\n💳 <b>Subscription</b> — manage subscription\n💬 <b>Support</b> — contact administrator\n⚙️ <b>Language</b> — change interface language\n\n<b>Automation:</b>\n• Diary check every 5 minutes\n• Evening daily summary\n• Weekly AI report (Sun 7PM)\n\n/help — this help page",
   "help_head": "\n\n<b>You are a family head. Additional features:</b>\n🏠 <b>My Family</b> — family management:\n  • 🧒 Add child (Google Sheet link)\n  • 🔗 Invite relative (invite link)\n  • 📋 List and remove members\n  • 🗑 Delete family",
-  "help_admin": "\n\n<b>Admin commands:</b>\n/add_family — create a family\n/list_families — list all families\n/grant_sub — grant subscription (interactive family & duration selection)\n/status — global statistics\n📢 <b>Broadcast</b> — send message to all users"
+  "help_admin": "\n\n<b>Admin commands:</b>\n/add_family — create a family\n/list_families — list all families\n/grant_sub — grant subscription\n/cancel_sub — cancel subscription\n/set_prices — manage pricing\n/promo — manage promo codes\n/status — global statistics\n📢 <b>Broadcast</b> — send message to all users"
 }

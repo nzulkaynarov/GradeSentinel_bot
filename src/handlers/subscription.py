@@ -10,7 +10,10 @@ from src.ui import send_menu_safe, send_content
 from src.database_manager import (
     get_user_lang, get_families_for_user, get_parent_id_by_telegram,
     is_subscription_active, extend_subscription, record_payment,
-    get_family_subscription, is_head_of_any_family
+    get_family_subscription, is_head_of_any_family,
+    get_plans_from_db, save_plans_to_db,
+    get_promo_code, use_promo_code, cancel_subscription,
+    get_family_members_telegram_ids,
 )
 from src.i18n import t
 
@@ -37,8 +40,8 @@ if not PROVIDERS and LEGACY_TOKEN:
 HAS_CARD_TRANSFER = bool(CARD_NUMBER)
 HAS_ANY_PAYMENT = bool(PROVIDERS) or HAS_CARD_TRANSFER
 
-# Тарифные планы (суммы в тийинах — 1 UZS = 100 тийин для Telegram Payments API)
-PLANS = {
+# Тарифные планы по умолчанию (суммы в тийинах — 1 UZS = 100 тийин для Telegram Payments API)
+DEFAULT_PLANS = {
     'monthly': {
         'months': 1,
         'amount': 29900_00,
@@ -55,6 +58,12 @@ PLANS = {
         'amount_display': '249 900',
     },
 }
+
+
+def get_plans() -> dict:
+    """Возвращает актуальные тарифы из БД или дефолтные."""
+    db_plans = get_plans_from_db()
+    return db_plans if db_plans else DEFAULT_PLANS
 
 
 # ═══════════════════════════════════════════
@@ -120,16 +129,14 @@ def callback_sub_start_buy(call):
     lang = get_user_lang(user_id)
     bot.answer_callback_query(call.id)
 
+    plans = get_plans()
     markup = types.InlineKeyboardMarkup()
+    for plan_key, plan in plans.items():
+        markup.add(types.InlineKeyboardButton(
+            t(f"sub_plan_{plan_key}", lang, amount=plan['amount_display']),
+            callback_data=f"sub_plan_{plan_key}"))
     markup.add(types.InlineKeyboardButton(
-        t("sub_plan_monthly", lang, amount=PLANS['monthly']['amount_display']),
-        callback_data="sub_plan_monthly"))
-    markup.add(types.InlineKeyboardButton(
-        t("sub_plan_quarterly", lang, amount=PLANS['quarterly']['amount_display']),
-        callback_data="sub_plan_quarterly"))
-    markup.add(types.InlineKeyboardButton(
-        t("sub_plan_yearly", lang, amount=PLANS['yearly']['amount_display']),
-        callback_data="sub_plan_yearly"))
+        "🎁 " + t("sub_promo_btn", lang), callback_data="sub_enter_promo"))
     markup.add(types.InlineKeyboardButton(
         t("family_back", lang), callback_data="sub_back_status"))
 
@@ -167,7 +174,8 @@ def callback_sub_plan(call):
     lang = get_user_lang(user_id)
     bot.answer_callback_query(call.id)
 
-    if plan_key not in PLANS:
+    plans = get_plans()
+    if plan_key not in plans:
         return
 
     families = get_families_for_user(user_id)
@@ -219,7 +227,8 @@ def callback_select_family_for_sub(call):
 def _show_payment_methods(chat_id: int, message_id: int,
                           family_id: int, plan_key: str, lang: str):
     """Показывает экран выбора способа оплаты с итогом заказа."""
-    plan = PLANS[plan_key]
+    plans = get_plans()
+    plan = plans[plan_key]
 
     # Итог заказа
     text = t("sub_payment_summary", lang,
@@ -272,11 +281,12 @@ def callback_pay_via_provider(call):
     lang = get_user_lang(call.from_user.id)
     bot.answer_callback_query(call.id)
 
-    if provider_key not in PROVIDERS or plan_key not in PLANS:
+    plans = get_plans()
+    if provider_key not in PROVIDERS or plan_key not in plans:
         return
 
     provider = PROVIDERS[provider_key]
-    plan = PLANS[plan_key]
+    plan = plans[plan_key]
 
     title = t("sub_invoice_title", lang)
     description = t("sub_invoice_desc", lang,
@@ -317,10 +327,11 @@ def callback_card_transfer(call):
     lang = get_user_lang(call.from_user.id)
     bot.answer_callback_query(call.id)
 
-    if plan_key not in PLANS:
+    plans = get_plans()
+    if plan_key not in plans:
         return
 
-    plan = PLANS[plan_key]
+    plan = plans[plan_key]
 
     text = t("sub_card_instructions", lang,
              amount=plan['amount_display'],
@@ -353,10 +364,11 @@ def callback_card_done(call):
     lang = get_user_lang(user_id)
     bot.answer_callback_query(call.id)
 
-    if plan_key not in PLANS:
+    plans = get_plans()
+    if plan_key not in plans:
         return
 
-    plan = PLANS[plan_key]
+    plan = plans[plan_key]
 
     # Уведомляем админа
     admin_id = os.environ.get("ADMIN_ID")
@@ -677,9 +689,521 @@ def _execute_grant(admin_id: int, family_id: int, months: int, lang: str):
     logger.info(f"Admin {admin_id} granted {months} months to family {family_id}")
 
 
+# ═══════════════════════════════════════════
+#  Промокод: ввод и применение
+# ═══════════════════════════════════════════
+
+@bot.callback_query_handler(func=lambda call: call.data == 'sub_enter_promo')
+def callback_enter_promo(call):
+    """Пользователь хочет ввести промокод."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    bot.answer_callback_query(call.id)
+
+    msg = bot.send_message(
+        call.message.chat.id,
+        t("sub_promo_enter", lang),
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, _process_promo_code)
+
+
+def _process_promo_code(message):
+    """Обрабатывает введённый промокод."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+    code = message.text.strip() if message.text else ""
+
+    if not code:
+        send_content(user_id, t("sub_promo_invalid", lang))
+        return
+
+    promo = get_promo_code(code)
+    if not promo:
+        send_content(user_id, t("sub_promo_invalid", lang))
+        return
+
+    families = get_families_for_user(user_id)
+    if not families:
+        send_content(user_id, t("sub_no_family", lang))
+        return
+
+    # Если промокод даёт бесплатные месяцы
+    if promo['free_months'] > 0:
+        if len(families) == 1:
+            _apply_promo_to_family(user_id, families[0]['id'], promo, lang)
+        else:
+            markup = types.InlineKeyboardMarkup()
+            for fam in families:
+                active = is_subscription_active(fam['id'])
+                status = "✅" if active else "❌"
+                markup.add(types.InlineKeyboardButton(
+                    f"{status} {fam['family_name']}",
+                    callback_data=f"sub_promo_apply_{fam['id']}_{promo['code']}"))
+            bot.send_message(user_id, t("sub_select_family", lang),
+                             reply_markup=markup, parse_mode='HTML')
+    else:
+        # Промокод со скидкой — показываем тарифы с учётом скидки
+        plans = get_plans()
+        plan_key = promo['plan']
+        if plan_key != 'all' and plan_key in plans:
+            plan = plans[plan_key]
+            discount = promo['discount_percent']
+            new_amount = int(plan['amount'] * (100 - discount) / 100)
+            new_display = f"{new_amount // 100:,}".replace(',', ' ')
+            bot.send_message(
+                user_id,
+                t("sub_promo_discount", lang,
+                  code=promo['code'], discount=discount,
+                  plan=t(f"sub_plan_{plan_key}", lang, amount=new_display)),
+                parse_mode='HTML')
+        else:
+            send_content(user_id, t("sub_promo_applied_info", lang,
+                                     code=promo['code'],
+                                     discount=promo['discount_percent']))
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('sub_promo_apply_'))
+def callback_promo_apply(call):
+    """Применение промокода к семье."""
+    parts = call.data.split('_')
+    family_id = int(parts[3])
+    code = parts[4]
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    bot.answer_callback_query(call.id)
+    _apply_promo_to_family(user_id, family_id, get_promo_code(code), lang)
+
+
+def _apply_promo_to_family(user_id: int, family_id: int, promo: dict, lang: str):
+    """Применяет промокод с бесплатными месяцами к семье."""
+    if not promo:
+        send_content(user_id, t("sub_promo_invalid", lang))
+        return
+
+    months = promo['free_months']
+    extend_subscription(family_id, months)
+    use_promo_code(promo['code'])
+
+    parent_id = get_parent_id_by_telegram(user_id)
+    record_payment(
+        family_id=family_id,
+        paid_by_parent_id=parent_id,
+        amount=0,
+        currency='UZS',
+        plan=f'promo_{promo["code"]}',
+        months=months,
+    )
+
+    _notify_family_about_subscription(family_id, months)
+    send_content(user_id, t("sub_promo_success", lang, months=months, code=promo['code']))
+    logger.info(f"Promo {promo['code']} applied: family={family_id}, months={months}, user={user_id}")
+
+
+# ═══════════════════════════════════════════
+#  АДМИН: /cancel_sub — отмена подписки
+# ═══════════════════════════════════════════
+
+@bot.message_handler(commands=['cancel_sub'])
+def cmd_cancel_sub(message):
+    """Админ-команда: /cancel_sub — отменить подписку у семьи."""
+    from src.database_manager import get_parent_role, get_all_families
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        return
+
+    # Быстрый режим: /cancel_sub <family_id>
+    args = message.text.split()
+    if len(args) >= 2:
+        try:
+            family_id = int(args[1])
+            cancel_subscription(family_id)
+            _notify_family_about_cancellation(family_id)
+            send_content(user_id, t("sub_cancelled_admin", lang, family_id=family_id))
+            return
+        except ValueError:
+            pass
+
+    # Интерактивный режим — показать только семьи с активной подпиской
+    families = get_all_families()
+    active_fams = [f for f in families if is_subscription_active(f['id'])]
+    if not active_fams:
+        bot.send_message(user_id, t("sub_cancel_no_active", lang))
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for fam in active_fams:
+        sub = get_family_subscription(fam['id'])
+        sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "—"
+        label = f"❌ #{fam['id']} {fam['family_name']} (до {sub_end})"
+        markup.add(types.InlineKeyboardButton(
+            label, callback_data=f"csub_confirm_{fam['id']}"))
+
+    bot.send_message(user_id, t("sub_cancel_select", lang), reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('csub_confirm_'))
+def callback_cancel_sub_confirm(call):
+    """Подтверждение отмены подписки."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    family_id = int(call.data.replace('csub_confirm_', ''))
+    bot.answer_callback_query(call.id)
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        t("sub_cancel_yes", lang),
+        callback_data=f"csub_do_{family_id}"))
+    markup.add(types.InlineKeyboardButton(
+        t("family_back", lang),
+        callback_data="csub_back"))
+
+    bot.edit_message_text(
+        t("sub_cancel_confirm_prompt", lang, family_id=family_id),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode='HTML'
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('csub_do_'))
+def callback_cancel_sub_execute(call):
+    """Выполнение отмены подписки."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    family_id = int(call.data.replace('csub_do_', ''))
+    cancel_subscription(family_id)
+    _notify_family_about_cancellation(family_id)
+
+    bot.answer_callback_query(call.id,
+        t("sub_cancelled_admin", lang, family_id=family_id), show_alert=True)
+    bot.edit_message_text(
+        t("sub_cancelled_admin", lang, family_id=family_id),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        parse_mode='HTML'
+    )
+    logger.info(f"Admin {user_id} cancelled subscription for family {family_id}")
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'csub_back')
+def callback_cancel_sub_back(call):
+    """Назад из отмены подписки."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+
+
+def _notify_family_about_cancellation(family_id: int):
+    """Уведомляет членов семьи об отмене подписки."""
+    tg_ids = get_family_members_telegram_ids(family_id)
+    for tg_id in tg_ids:
+        try:
+            user_lang = get_user_lang(tg_id)
+            bot.send_message(tg_id, t("sub_cancelled_notify", user_lang),
+                             parse_mode='HTML')
+        except Exception as e:
+            logger.debug(f"Could not notify {tg_id} about cancellation: {e}")
+
+
+# ═══════════════════════════════════════════
+#  АДМИН: /set_prices — управление тарифами
+# ═══════════════════════════════════════════
+
+@bot.message_handler(commands=['set_prices'])
+def cmd_set_prices(message):
+    """Админ-команда: /set_prices — просмотр и изменение тарифов."""
+    from src.database_manager import get_parent_role
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        return
+
+    plans = get_plans()
+    lines = [t("admin_prices_title", lang)]
+    for key, plan in plans.items():
+        lines.append(f"  <b>{key}</b>: {plan['amount_display']} сум ({plan['months']} мес.)")
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for key in plans:
+        markup.add(types.InlineKeyboardButton(
+            f"✏️ {key}", callback_data=f"setprice_{key}"))
+
+    bot.send_message(user_id, "\n".join(lines), parse_mode='HTML', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('setprice_'))
+def callback_set_price(call):
+    """Админ выбрал тариф для редактирования."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    plan_key = call.data.replace('setprice_', '')
+    bot.answer_callback_query(call.id)
+
+    msg = bot.send_message(
+        call.message.chat.id,
+        t("admin_prices_enter", lang, plan=plan_key),
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, _process_price_input, plan_key)
+
+
+def _process_price_input(message, plan_key):
+    """Обрабатывает ввод новой цены."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    try:
+        raw = message.text.strip().replace(' ', '').replace(',', '')
+        amount_uzs = int(raw)
+        if amount_uzs <= 0:
+            raise ValueError
+    except (ValueError, AttributeError):
+        send_content(user_id, t("admin_prices_invalid", lang))
+        return
+
+    plans = get_plans()
+    if plan_key not in plans:
+        send_content(user_id, t("admin_prices_invalid", lang))
+        return
+
+    plans[plan_key]['amount'] = amount_uzs * 100  # UZS -> tiyins
+    plans[plan_key]['amount_display'] = f"{amount_uzs:,}".replace(',', ' ')
+    save_plans_to_db(plans)
+
+    send_content(user_id, t("admin_prices_updated", lang,
+                              plan=plan_key,
+                              amount=plans[plan_key]['amount_display']))
+    logger.info(f"Admin {user_id} updated price for {plan_key} to {amount_uzs} UZS")
+
+
+# ═══════════════════════════════════════════
+#  АДМИН: /promo — управление промокодами
+# ═══════════════════════════════════════════
+
+@bot.message_handler(commands=['promo'])
+def cmd_promo(message):
+    """Админ-команда: /promo — управление промокодами."""
+    from src.database_manager import get_parent_role, list_promo_codes
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        t("admin_promo_create_btn", lang), callback_data="promo_create"))
+    markup.add(types.InlineKeyboardButton(
+        t("admin_promo_list_btn", lang), callback_data="promo_list"))
+
+    bot.send_message(user_id, t("admin_promo_title", lang),
+                     parse_mode='HTML', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'promo_list')
+def callback_promo_list(call):
+    """Показывает список промокодов."""
+    from src.database_manager import get_parent_role, list_promo_codes
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    bot.answer_callback_query(call.id)
+    codes = list_promo_codes()
+
+    if not codes:
+        bot.send_message(user_id, t("admin_promo_empty", lang))
+        return
+
+    lines = [t("admin_promo_list_title", lang)]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for p in codes:
+        expired = "⏰" if p.get('expires_at') else "♾"
+        if p['free_months'] > 0:
+            effect = f"+{p['free_months']} мес"
+        else:
+            effect = f"-{p['discount_percent']}%"
+        lines.append(
+            f"<code>{p['code']}</code> | {effect} | {p['used_count']}/{p['max_uses']} {expired}"
+        )
+        markup.add(types.InlineKeyboardButton(
+            f"🗑 {p['code']}", callback_data=f"promo_del_{p['code']}"))
+
+    bot.send_message(user_id, "\n".join(lines), parse_mode='HTML', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('promo_del_'))
+def callback_promo_delete(call):
+    """Удаление промокода."""
+    from src.database_manager import get_parent_role, delete_promo_code
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    code = call.data.replace('promo_del_', '')
+    delete_promo_code(code)
+    bot.answer_callback_query(call.id, t("admin_promo_deleted", lang, code=code), show_alert=True)
+
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'promo_create')
+def callback_promo_create(call):
+    """Начинает создание промокода."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        t("admin_promo_type_free", lang), callback_data="promo_new_free"))
+    markup.add(types.InlineKeyboardButton(
+        t("admin_promo_type_discount", lang), callback_data="promo_new_discount"))
+
+    bot.send_message(user_id, t("admin_promo_choose_type", lang),
+                     parse_mode='HTML', reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'promo_new_free')
+def callback_promo_new_free(call):
+    """Создание промокода с бесплатными месяцами."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(
+        call.message.chat.id,
+        t("admin_promo_enter_free", lang),
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, _process_promo_free)
+
+
+def _process_promo_free(message):
+    """Обработка: <months> <max_uses> [days_valid]"""
+    from src.database_manager import create_promo_code
+    import secrets
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    try:
+        parts = message.text.strip().split()
+        months = int(parts[0])
+        max_uses = int(parts[1]) if len(parts) > 1 else 1
+        expires_days = int(parts[2]) if len(parts) > 2 else None
+        if months <= 0 or max_uses <= 0:
+            raise ValueError
+    except (ValueError, AttributeError, IndexError):
+        send_content(user_id, t("admin_promo_input_error", lang))
+        return
+
+    code = secrets.token_hex(4).upper()
+    ok = create_promo_code(code, plan='all', free_months=months,
+                            max_uses=max_uses, expires_days=expires_days)
+    if ok:
+        send_content(user_id, t("admin_promo_created", lang,
+                                  code=code, effect=f"+{months} мес",
+                                  max_uses=max_uses))
+    else:
+        send_content(user_id, t("admin_promo_input_error", lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'promo_new_discount')
+def callback_promo_new_discount(call):
+    """Создание промокода со скидкой."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(
+        call.message.chat.id,
+        t("admin_promo_enter_discount", lang),
+        parse_mode='HTML'
+    )
+    bot.register_next_step_handler(msg, _process_promo_discount)
+
+
+def _process_promo_discount(message):
+    """Обработка: <plan> <percent> <max_uses> [days_valid]"""
+    from src.database_manager import create_promo_code
+    import secrets
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+
+    try:
+        parts = message.text.strip().split()
+        plan = parts[0]
+        percent = int(parts[1])
+        max_uses = int(parts[2]) if len(parts) > 2 else 1
+        expires_days = int(parts[3]) if len(parts) > 3 else None
+        if percent <= 0 or percent > 100 or max_uses <= 0:
+            raise ValueError
+    except (ValueError, AttributeError, IndexError):
+        send_content(user_id, t("admin_promo_input_error", lang))
+        return
+
+    code = secrets.token_hex(4).upper()
+    ok = create_promo_code(code, plan=plan, discount_percent=percent,
+                            max_uses=max_uses, expires_days=expires_days)
+    if ok:
+        send_content(user_id, t("admin_promo_created", lang,
+                                  code=code, effect=f"-{percent}%",
+                                  max_uses=max_uses))
+    else:
+        send_content(user_id, t("admin_promo_input_error", lang))
+
+
 def _notify_family_about_subscription(family_id: int, months: int):
     """Уведомляет всех членов семьи о том, что подписка активирована."""
-    from src.database_manager import get_family_members_telegram_ids, get_family_subscription
     sub = get_family_subscription(family_id)
     sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "?"
 

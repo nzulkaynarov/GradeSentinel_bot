@@ -250,6 +250,29 @@ def init_db():
             FOREIGN KEY(paid_by) REFERENCES parents(id)
         )
         ''')
+
+        # 15. Настройки бота (key-value, для тарифов и прочего)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        ''')
+
+        # 16. Промокоды
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS promo_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            plan TEXT NOT NULL,
+            discount_percent INTEGER NOT NULL DEFAULT 0,
+            free_months INTEGER NOT NULL DEFAULT 0,
+            max_uses INTEGER NOT NULL DEFAULT 1,
+            used_count INTEGER NOT NULL DEFAULT 0,
+            expires_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -995,6 +1018,119 @@ def has_any_active_subscription(telegram_id: int) -> bool:
     """Проверяет, есть ли у пользователя хотя бы одна семья с активной подпиской."""
     families = get_families_for_user(telegram_id)
     return any(is_subscription_active(f['id']) for f in families)
+
+
+# ====================
+# Настройки (key-value)
+# ====================
+def get_setting(key: str, default: str = None) -> Optional[str]:
+    """Возвращает значение настройки по ключу."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+
+def set_setting(key: str, value: str):
+    """Устанавливает настройку."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        ''', (key, value))
+
+
+def get_plans_from_db() -> Optional[Dict[str, Any]]:
+    """Возвращает тарифы из БД или None если не заданы."""
+    import json
+    raw = get_setting('plans')
+    if raw:
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return None
+
+
+def save_plans_to_db(plans: Dict[str, Any]):
+    """Сохраняет тарифы в БД."""
+    import json
+    set_setting('plans', json.dumps(plans, ensure_ascii=False))
+
+
+# ====================
+# Промокоды
+# ====================
+def create_promo_code(code: str, plan: str, discount_percent: int = 0,
+                      free_months: int = 0, max_uses: int = 1,
+                      expires_days: int = None) -> bool:
+    """Создаёт промокод. Возвращает True если создан."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            expires_clause = f"datetime('now', '+{expires_days} days')" if expires_days else 'NULL'
+            cursor.execute(f'''
+                INSERT INTO promo_codes (code, plan, discount_percent, free_months, max_uses, expires_at)
+                VALUES (?, ?, ?, ?, ?, {expires_clause})
+            ''', (code.upper(), plan, discount_percent, free_months, max_uses))
+            return True
+        except Exception:
+            return False
+
+
+def get_promo_code(code: str) -> Optional[Dict[str, Any]]:
+    """Возвращает промокод если он валиден (не исчерпан, не истёк)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM promo_codes
+            WHERE code = ? AND used_count < max_uses
+              AND (expires_at IS NULL OR expires_at > datetime('now'))
+        ''', (code.upper(),))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def use_promo_code(code: str) -> bool:
+    """Увеличивает счётчик использований промокода."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE promo_codes SET used_count = used_count + 1
+            WHERE code = ? AND used_count < max_uses
+        ''', (code.upper(),))
+        return cursor.rowcount > 0
+
+
+def list_promo_codes() -> List[Dict[str, Any]]:
+    """Возвращает все промокоды."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM promo_codes ORDER BY created_at DESC')
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def delete_promo_code(code: str) -> bool:
+    """Удаляет промокод."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM promo_codes WHERE code = ?', (code.upper(),))
+        return cursor.rowcount > 0
+
+
+# ====================
+# Отмена подписки
+# ====================
+def cancel_subscription(family_id: int) -> bool:
+    """Аннулирует подписку семьи (устанавливает subscription_end = now)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE families SET subscription_end = datetime('now') WHERE id = ?",
+            (family_id,))
+        return cursor.rowcount > 0
 
 
 def get_all_parents_with_children() -> List[Dict[str, Any]]:
