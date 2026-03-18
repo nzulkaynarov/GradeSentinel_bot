@@ -57,7 +57,7 @@
   "user_panel_support": "💬 Support",
   "user_panel_lang": "⚙️ Language",
   "user_panel_back": "⬅️ Back to menu",
-  "user_panel_empty": "📱 <b>Main Menu</b>\n\nℹ️ You are not linked to any family yet and have no children added.\n\n💡 Ask the family head for an invite link, or contact support.",
+  "user_panel_empty": "📱 <b>Main Menu</b>\n\nℹ️ You are not linked to any family yet.\n\n<b>What to do:</b>\n1. Ask your family head to tap 🔗 <i>Invite relative</i> and send you the link\n2. Or tap 💬 <b>Support</b> below — the admin will help",
 
   "admin_help": "🛠 <b>GradeSentinel Admin Panel</b>\n\nUse the buttons at the bottom to navigate between sections.\nThe bot automatically removes old menus to keep the chat clean.",
   "admin_no_access": "⛔ You don't have access to this command.",

@@ -18,7 +18,12 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
     has_children = has_children_for_grades(chat_id)
 
     if role == 'admin':
-        markup.row(t("btn_admin_panel", lang))
+        # Админ видит управление + оценки (если есть дети) + меню
+        if has_children:
+            markup.row(t("btn_admin_panel", lang), t("btn_grades", lang))
+            markup.row(t("btn_user_menu", lang))
+        else:
+            markup.row(t("btn_admin_panel", lang), t("btn_user_menu", lang))
     elif is_head or has_children:
         if has_children:
             markup.row(t("btn_user_menu", lang), t("btn_grades", lang))
