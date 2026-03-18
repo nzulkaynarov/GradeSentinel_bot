@@ -1,16 +1,19 @@
-# 🚀 Project Antigravity: GradeSentinel
+# Project Antigravity: GradeSentinel
 
-> **Статус:** Инициализация (Проектирование архитектуры)
-> **Версия:** 2.0 (Docker-based)
+> **Статус:** Продакшн (Monetization phase)
+> **Версия:** 2.5 (Docker-based + Telegram Payments)
 > **Девиз:** "Оценки прилетают быстрее, чем их ставят."
 
 ---
 
-## 🛠 Технологический стек "Antigravity"
+## Технологический стек "Antigravity"
 - **Containerization:** Docker + Docker Compose
 - **Backend:** Python 3.10 (Slim Image)
-- **Database:** SQLite (Relational, Many-to-Many)
-- **API:** Google Sheets API v4 + Telegram Bot API
+- **Database:** SQLite (Relational, Many-to-Many, 8 индексов)
+- **API:** Google Sheets API v4 + Telegram Bot API + Telegram Payments API
+- **Payments:** Click / Payme (через Telegram Payments)
+- **AI:** Claude API (Anthropic) — аналитика успеваемости
+- **i18n:** ru / uz / en (JSON locale files)
 - **Deployment:** Raspberry Pi 3B (Home Server)
 
 ---
@@ -40,11 +43,34 @@
 - [x] Настройка автоматического перезапуска (restart: always)
 - [x] Тестирование развертывания (Локально в Docker)
 
-### Этап 5: Мульти-Ролевая Архитектура (Умный доступ) 🧠
+### Этап 5: Мульти-Ролевая Архитектура (Умный доступ)
 - [x] Перенос роли Главы (`head_id`) из пользователя в атрибут Семьи.
 - [x] Поддержка управления несколькими семьями одним человеком.
 - [x] Умный конструктор UI-кнопок (объединение админских, родительских и семейных меню).
 - [x] Бесшовная миграция существующих пользователей.
+
+### Этап 6: Интеллект и UX
+- [x] AI-аналитика через Claude API (по запросу + еженедельный отчёт)
+- [x] Мультиязычность: ru / uz / en (JSON-локали, выбор при /start)
+- [x] Telegram Mini App — дашборд оценок (WebApp + Chart.js)
+- [x] Импорт исторических оценок из листа "Все оценки"
+- [x] Четвертные оценки (quarter_grades)
+- [x] Вечерняя сводка, тихие часы (22:00–07:00), bot_alive
+- [x] Обнаружение изменения оценок (было→стало)
+- [x] /help с контекстной справкой по роли
+- [x] bot.set_my_commands() — регистрация команд в меню Telegram
+
+### Этап 7: Монетизация и Безопасность
+- [x] Telegram Payments API + Click/Payme (3 тарифа: 1/3/12 мес)
+- [x] Таблицы `payments` и `family_invites`
+- [x] Инвайт-ссылки для семей (глава генерирует → родственник присоединяется)
+- [x] Подписка привязана к семье (subscription_end)
+- [x] AI-анализ гейтится подпиской (премиум)
+- [x] Мониторинг только для семей с активной подпиской
+- [x] /grant_sub — ручная выдача подписки (админ)
+- [x] 8 индексов БД для производительности
+- [x] Кэширование оценок: /grades из grade_history вместо live API
+- [x] Rate limiting пользовательских запросов
 
 ---
 

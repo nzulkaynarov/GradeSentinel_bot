@@ -19,14 +19,27 @@
 
 Для обеспечения связи **Many-to-Many** используется реляционная схема SQLite:
 
-
-
 ### Таблицы:
-* **`parents`**: `id`, `fio`, `phone` (unique), `tg_id` (unique), `role` (`admin`, `senior`).
-* **`students`**: `id`, `fio`, `spreadsheet_id`.
-* **`families`**: `id`, `family_name`, `subscription_end`, `head_id` (ссылка на parent_id Главы).
-* **`family_links`**: `family_id`, `parent_id`, `student_id` (связующая таблица).
-* **`grade_history`**: `student_id`, `subject`, `grade`, `date_added`.
+* **`parents`**: `id`, `fio`, `phone` (unique), `telegram_id` (unique), `role` (`admin`, `senior`), `lang` (ru/uz/en).
+* **`students`**: `id`, `fio`, `spreadsheet_id`, `display_name`, `last_snapshot` (JSON).
+* **`families`**: `id`, `family_name`, `head_id` (FK→parents), `subscription_end` (TIMESTAMP — дата окончания подписки).
+* **`family_links`**: `family_id`, `parent_id`, `student_id` (связующая M2M таблица).
+* **`grade_history`**: `id`, `student_id`, `subject`, `raw_text`, `grade_value`, `cell_reference`, `date_added`. Кэш оценок — `/grades` читает отсюда вместо live Google API.
+* **`quarter_grades`**: `id`, `student_id`, `subject`, `quarter`, `grade_value`, `date_added`. Четвертные оценки.
+* **`notification_queue`**: `id`, `telegram_id`, `message`, `created_at`. Очередь тихих часов (22:00–07:00).
+* **`family_invites`**: `id`, `family_id`, `invite_code` (unique), `created_by`, `used_by`, `expires_at`, `is_used`. Одноразовые инвайт-ссылки (48ч).
+* **`payments`**: `id`, `family_id`, `paid_by`, `amount`, `currency`, `plan`, `months`, `telegram_payment_charge_id`, `provider_payment_charge_id`, `created_at`. История платежей через Telegram Payments API (Click/Payme).
+* **`user_states`**: `user_id`, `state`, `data`, `updated_at`. Временные состояния (выбор языка, pending invite).
+
+### Индексы (8 шт):
+* `idx_grade_history_student_date` — (student_id, date_added)
+* `idx_grade_history_student_cell` — (student_id, cell_reference)
+* `idx_family_links_parent` — (parent_id)
+* `idx_family_links_student` — (student_id)
+* `idx_family_links_family` — (family_id)
+* `idx_parents_telegram` — (telegram_id)
+* `idx_notification_queue_tg` — (telegram_id)
+* `idx_quarter_grades_student` — (student_id)
 
 ---
 
@@ -78,6 +91,31 @@
 
 ---
 
+### 3.4 Модуль инвайт-ссылок (Invite)
+* **Генерация:** Глава семьи нажимает "Пригласить родственника" → бот создаёт одноразовую ссылку `t.me/bot?start=inv_<code>` (48ч).
+* **Активация:** Родственник переходит по ссылке → если уже в системе — привязывается к семье. Если новый — авторизация через контакт → привязка.
+* **Безопасность:** Ссылка одноразовая, с expiry. Нет самостоятельной регистрации без инвайта от главы.
+
+### 3.5 Модуль подписок и платежей (Subscription)
+* **Telegram Payments API:** Интеграция с Click/Payme через `PAYMENT_PROVIDER_TOKEN`.
+* **Тарифы:** 1 мес (29 900 UZS), 3 мес (79 900), 12 мес (249 900). Конфигурируются в `subscription.py:PLANS`.
+* **Flow:** Кнопка "Подписка" → статус → выбор тарифа → выбор семьи → инвойс → оплата → `successful_payment` → `extend_subscription()`.
+* **Проверка:** Мониторинг работает только для семей с активной подпиской (`subscription_end > now` или NULL). AI-анализ гейтится `has_any_active_subscription()`.
+* **Админ:** `/grant_sub <family_id> <months>` — ручная выдача подписки.
+
+### 3.6 Модуль AI-аналитики (Analytics)
+* **Claude API** (Anthropic) для анализа успеваемости за 14 дней.
+* **По запросу:** Кнопка "AI-анализ" или `/ai_report`.
+* **Автоматический:** Еженедельный отчёт по воскресеньям в 19:00.
+* **Премиум:** Требует активной подписки (кроме админа).
+
+### 3.7 Мультиязычность (i18n)
+* 3 языка: Русский, O'zbek, English. Файлы: `src/locales/{ru,uz,en}.json`.
+* Выбор при первом `/start`. Смена через кнопку "Язык" в меню.
+
+---
+
 ## 6. План масштабирования
-* Добавление модуля `Web-Dashboard` (на Flask/FastAPI) для визуализации оценок в виде графиков.
-* Интеграция с OpenAI для анализа успеваемости («Твой ребенок стал хуже учиться по физике за последнюю неделю, обрати внимание»).
+* **Web-Dashboard (Mini App):** Визуализация оценок через Telegram WebApp (Chart.js). Реализован прототип.
+* **Расширение платёжных провайдеров:** Добавление Uzcard, Humo.
+* **PostgreSQL:** Миграция при >100 семей для устранения ограничений SQLite.
