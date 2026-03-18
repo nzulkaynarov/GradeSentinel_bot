@@ -205,3 +205,56 @@ def format_grade_change_notification(display_name: str, subject: str,
     )
 
     return msg
+
+
+def format_batched_notification(display_name: str, grades: list,
+                                 spreadsheet_id: str, student_id: int,
+                                 lang: str = 'ru') -> str:
+    """
+    Формирует одно сообщение из нескольких оценок (Smart Batching).
+    grades: список dict с ключами subject, clean_text, grade_value, change_type ('new'|'changed'), old_text
+    """
+    date_str = get_local_date_str()
+
+    # Считаем общую статистику
+    numeric = [g['grade_value'] for g in grades if g.get('grade_value') is not None]
+    avg = sum(numeric) / len(numeric) if numeric else None
+
+    # Определяем общий тон
+    if avg is not None:
+        if avg >= 4.5:
+            tone_emoji = "🌟"
+        elif avg >= 3.5:
+            tone_emoji = "👍"
+        else:
+            tone_emoji = "⚠️"
+    else:
+        tone_emoji = "📝"
+
+    msg = (
+        f"{tone_emoji} <b>{t('notif_batch_title', lang, count=len(grades))}</b>\n"
+        f"🕐 {date_str}\n"
+        f"{t('notif_student', lang, name=display_name)}\n\n"
+    )
+
+    for g in grades:
+        _, emoji = get_emotional_header(g.get('grade_value'), g['clean_text'], lang)
+        if g.get('change_type') == 'changed':
+            msg += f"  {g['subject']}: <b>{g['old_text']}</b> → <b>{g['clean_text']}</b>  {emoji}\n"
+        else:
+            msg += f"  {g['subject']}: <b>{g['clean_text']}</b>  {emoji}\n"
+
+    if avg is not None:
+        msg += f"\n  {t('daily_avg', lang, avg=f'{avg:.1f}')}"
+
+    # Серия пятёрок — проверяем только если последняя оценка 5
+    if numeric and numeric[-1] >= 5:
+        streak = get_streak_count(student_id)
+        if streak >= 2:
+            msg += f"\n{t('notif_streak', lang, count=streak)}"
+
+    msg += (
+        f"\n\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>"
+        f"{t('grades_open_sheet', lang)}</a>"
+    )
+    return msg

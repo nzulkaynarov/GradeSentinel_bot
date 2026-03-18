@@ -39,6 +39,13 @@ def init_db():
                 cursor.execute("UPDATE parents SET role = 'admin' WHERE is_admin = 1")
             logger.info("Database migration: role column added.")
 
+        # Миграция: notify_mode
+        cursor.execute("PRAGMA table_info(parents)")
+        columns_fresh = [column[1] for column in cursor.fetchall()]
+        if 'notify_mode' not in columns_fresh:
+            cursor.execute("ALTER TABLE parents ADD COLUMN notify_mode TEXT DEFAULT 'instant'")
+            logger.info("Database migration: notify_mode column added.")
+
         # 1. Семьи
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS families (
@@ -455,6 +462,22 @@ def set_user_lang(telegram_id: int, lang: str):
         cursor = conn.cursor()
         cursor.execute('UPDATE parents SET lang = ? WHERE telegram_id = ?', (lang, telegram_id))
 
+
+def get_notify_mode(telegram_id: int) -> str:
+    """Возвращает режим уведомлений: 'instant' (по умолчанию) или 'summary_only'."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT notify_mode FROM parents WHERE telegram_id = ?', (telegram_id,))
+        row = cursor.fetchone()
+        return row['notify_mode'] if row and row['notify_mode'] else 'instant'
+
+
+def set_notify_mode(telegram_id: int, mode: str):
+    """Устанавливает режим уведомлений ('instant' или 'summary_only')."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE parents SET notify_mode = ? WHERE telegram_id = ?', (mode, telegram_id))
+
 def get_families_for_head(head_telegram_id: int) -> List[Dict[str, Any]]:
     """Возвращает список семей, в которых данный пользователь является главой."""
     with get_db_connection() as conn:
@@ -855,6 +878,19 @@ def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все оценки студента за вчера."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text
+            FROM grade_history
+            WHERE student_id = ? AND date(date_added) = date('now', '-1 day')
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def has_today_grades_for_parent(telegram_id: int) -> bool:
     """Проверяет, есть ли сегодня хоть одна оценка у детей родителя."""
     with get_db_connection() as conn:
@@ -865,6 +901,19 @@ def has_today_grades_for_parent(telegram_id: int) -> bool:
             JOIN parents p ON fl.parent_id = p.id
             WHERE p.telegram_id = ? AND date(gh.date_added) = date('now')
         ''', (telegram_id,))
+        return cursor.fetchone()['c'] > 0
+
+
+def has_recent_grades_for_parent(telegram_id: int, hours: int = 48) -> bool:
+    """Проверяет, есть ли оценки у детей родителя за последние N часов."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) as c FROM grade_history gh
+            JOIN family_links fl ON gh.student_id = fl.student_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ? AND gh.date_added >= datetime('now', ?)
+        ''', (telegram_id, f'-{hours} hours'))
         return cursor.fetchone()['c'] > 0
 
 
@@ -1131,6 +1180,45 @@ def cancel_subscription(family_id: int) -> bool:
             "UPDATE families SET subscription_end = datetime('now') WHERE id = ?",
             (family_id,))
         return cursor.rowcount > 0
+
+
+def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
+    """Возвращает семьи, чья подписка истекает ровно через N дней (±12ч)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id as family_id, f.family_name, f.subscription_end
+            FROM families f
+            WHERE f.subscription_end IS NOT NULL
+              AND f.subscription_end > datetime('now')
+              AND f.subscription_end <= datetime('now', ?)
+        ''', (f'+{days + 1} days',))
+        results = []
+        from datetime import datetime, timedelta
+        target_date = (datetime.utcnow() + timedelta(days=days)).date()
+        for row in cursor.fetchall():
+            end_str = row['subscription_end']
+            try:
+                end_date = datetime.fromisoformat(end_str).date()
+            except (ValueError, TypeError):
+                continue
+            if end_date == target_date:
+                results.append(dict(row))
+        return results
+
+
+def get_families_expired_today() -> List[Dict[str, Any]]:
+    """Возвращает семьи, чья подписка истекла сегодня."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id as family_id, f.family_name, f.subscription_end
+            FROM families f
+            WHERE f.subscription_end IS NOT NULL
+              AND date(f.subscription_end) = date('now')
+              AND f.subscription_end <= datetime('now')
+        ''')
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def get_all_parents_with_children() -> List[Dict[str, Any]]:

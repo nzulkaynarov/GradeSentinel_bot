@@ -194,7 +194,7 @@ def process_add_child_step(message, f_id):
             t("child_added", lang, name=title, btn_grades=t("btn_grades", lang))
         )
 
-        # Фоновый импорт исторических и четвертных оценок
+        # Фоновый импорт исторических и четвертных оценок + бесплатный AI-анализ
         import threading
         def _bg_import():
             try:
@@ -208,6 +208,19 @@ def process_add_child_step(message, f_id):
                         t("history_imported", lang,
                           count=total, name=display_name)
                     )
+
+                    # Бесплатный первый AI-анализ
+                    import os
+                    if os.environ.get("ANTHROPIC_API_KEY") and total >= 2:
+                        try:
+                            from src.analytics_engine import analyze_student_grades
+                            analysis = analyze_student_grades(s_id, display_name, lang=lang)
+                            if analysis:
+                                msg = t("ai_first_free", lang) + "\n\n"
+                                msg += t("ai_report_title", lang, name=display_name, analysis=analysis)
+                                send_content(message.chat.id, msg)
+                        except Exception as ai_err:
+                            logger.error(f"Free AI analysis failed for {s_id}: {ai_err}")
             except Exception as e:
                 logger.error(f"Background history import failed for student {s_id}: {e}")
         threading.Thread(target=_bg_import, daemon=True).start()

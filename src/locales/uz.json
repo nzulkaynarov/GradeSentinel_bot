@@ -110,6 +110,7 @@
   "child_added": "✅ <b>Bola muvaffaqiyatli qo'shildi!</b>\n\n👤 Ismi: {name}\n📊 Holat: Monitoring faollashtirildi\n\n💡 '{btn_grades}' tugmasi orqali istalgan vaqtda baholarni tekshirishingiz mumkin",
   "child_add_error": "❌ Bola qo'shishda xatolik yuz berdi. Havolani tekshiring va keyinroq urinib ko'ring.",
   "history_imported": "📚 {name} uchun tarixdan <b>{count}</b> ta baho import qilindi. Endi AI-tahlil to'liq ma'lumotlar bilan ishlaydi!",
+  "ai_first_free": "🎁 Bola qo'shilgani munosabati bilan <b>bepul AI-tahlil</b>:",
 
   "member_enter": "Qarindoshning F.I.Sh. va telefon raqamini kiriting (bo'sh joy bilan):\nMisol: <code>Ivanov Ivan 998901234567</code>\n\nYoki 'Bekor qilish' tugmasini bosing.",
   "member_enter_placeholder": "Familiya Ism 998XXXXXXXXX",
@@ -141,6 +142,7 @@
   "notif_value": "📝 Qiymati: <b>{value}</b>",
   "notif_grade_changed": "Baho o'zgartirildi",
   "notif_change": "📝 Avvalgi: <b>{old}</b> → Yangi: <b>{new}</b>",
+  "notif_batch_title": "{count} ta yangi baho",
   "notif_streak": "🔥 Bu ketma-ket {count}-chi beshlik!",
 
   "notif_quarter_title": "Choraklik baho!",
@@ -156,6 +158,11 @@
   "quiet_morning_header": "🌅 <b>Xayrli tong! Tunda {count} ta xabar keldi:</b>\n",
   "daily_summary_title": "📋 <b>Kun yakunlari</b>",
   "daily_avg": "O'rtacha ball: <b>{avg}</b>",
+  "daily_trend_up": "📈 (kecha: {yesterday})",
+  "daily_trend_down": "📉 (kecha: {yesterday})",
+  "daily_trend_same": "(kecha xuddi shunday)",
+  "daily_best": "🏆 Eng yaxshi: {subject} ({grade})",
+  "daily_worst": "⚠️ Diqqat: {subject} ({grade})",
   "daily_total": "Jami yozuvlar: {count}",
   "bot_alive": "✅ <b>Bot faol</b>\n\nBugun hali yangi baho kelmadi. Men kundalikni kuzatayapman va yangi yozuv paydo bo'lishi bilan darhol xabar beraman.",
 
@@ -187,6 +194,15 @@
   "ai_weekly_title": "📊 <b>Haftalik AI-hisobot</b>\n👨‍🎓 {name}\n\n{analysis}",
 
   "ai_prompt": "Sen — maktab AI-tahlilchisissan. {name} o'quvchining oxirgi {days} kun ichidagi baholarini tahlil qil.\n\nJavobni QATIY shu formatda yoz (qalin uchun HTML-teg <b> ishlat):\n\n📊 <b>Xulosa:</b> [baholar soni] ta baho | O'rtacha ball: [X.X]\n5 — [N] ta | 4 — [N] ta | 3 — [N] ta | 2 — [N] ta\n\n✅ <b>Kuchli tomonlar:</b> [eng yaxshi baholi fanlar va ballar]\n\n⚠️ <b>Diqqat:</b> [3/2 baholi fanlar, aniq faktlar]\n— [qisqa tushuntirish, agar muammo bo'lsa]\n\n💡 <b>Tavsiya:</b> [ota-onalar uchun 1-2 aniq maslahat, umumiy gaplar bo'lmasin]\n\nQOIDALAR:\n- Baholarni aniq hisobla, xato qilma\n- FAQAT o'zbek tilida yoz\n- Markdown (** yoki #) ISHLATMA, faqat HTML-teg <b></b>\n- Maksimum 3 ta emoji (📊 ✅ ⚠️ 💡 — faqat blok boshida)\n- Baholar kam bo'lsa — shunday de, trend o'ylab topma\n- Aniq yoz: fan nomlari va ballarni ayt, suv quyma\n- Butun javob — 8 qatordan ko'p bo'lmasin\n\nBaholar:\n{grades}",
+
+  "btn_notifications": "🔔 Bildirishnomalar",
+  "notify_settings_title": "🔔 <b>Bildirishnoma sozlamalari</b>\n\nJoriy rejim: <b>{mode}</b>",
+  "notify_mode_instant": "Tezkor",
+  "notify_mode_summary": "Faqat xulosalar",
+  "notify_btn_instant": "🔔 Tezkor",
+  "notify_btn_summary": "🔕 Faqat xulosalar",
+  "notify_changed_instant": "🔔 Rejim o'zgartirildi: <b>Tezkor bildirishnomalar</b>\n\nHar bir yangi baho haqida darhol xabar olasiz.",
+  "notify_changed_summary": "🔕 Rejim o'zgartirildi: <b>Faqat xulosalar</b>\n\nFaqat kechki xulosa (19:00) keladi. Tezkor bildirishnomalar bo'lmaydi.",
 
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Til o'zbekchaga o'zgartirildi.",
@@ -250,6 +266,10 @@
   "sub_cancel_no_active": "ℹ️ Faol obunali oilalar yo'q.",
   "sub_cancelled_admin": "✅ #{family_id} oilaning obunasi bekor qilindi.",
   "sub_cancelled_notify": "⚠️ <b>Obuna o'chirildi</b>\n\nObunangiz administrator tomonidan bekor qilindi. Uzaytirish uchun yordamga murojaat qiling.",
+
+  "sub_expiry_7d": "⏳ <b>Obuna 7 kundan keyin tugaydi</b>\n\nBildirishnomalar va AI-tahlilga kirishni yo'qotmaslik uchun obunani oldindan yangilang.",
+  "sub_expiry_1d": "⚠️ <b>Obuna ertaga tugaydi!</b>\n\nBaholar monitoringi to'xtamasligi uchun uzaytirishga ulgurib qoling.",
+  "sub_expiry_0d": "❌ <b>Obuna muddati tugadi</b>\n\nBaholar monitoringi to'xtatildi. Uzaytirish uchun 💳 Obuna tugmasini bosing.",
 
   "admin_prices_title": "💰 <b>Joriy tariflar:</b>\n",
   "admin_prices_enter": "✏️ <b>{plan}</b> tarifi uchun yangi narxni kiriting (so'mda, masalan: 29900):",

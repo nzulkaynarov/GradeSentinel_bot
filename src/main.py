@@ -308,8 +308,9 @@ def _show_user_panel(chat_id: int, message_id: int = None):
 
         markup.row(
             types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
-            types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
+            types.InlineKeyboardButton(t("btn_notifications", lang), callback_data="up_notifications"),
         )
+        markup.add(types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"))
 
     if message_id:
         try:
@@ -388,6 +389,50 @@ def callback_up_support(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for support: {e}")
     support_started(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_notifications')
+def callback_up_notifications(call):
+    """Настройки уведомлений."""
+    bot.answer_callback_query(call.id)
+    from src.database_manager import get_notify_mode
+    chat_id = call.message.chat.id
+    lang = get_user_lang(chat_id)
+    current_mode = get_notify_mode(call.from_user.id)
+    mode_label = t("notify_mode_instant", lang) if current_mode == 'instant' else t("notify_mode_summary", lang)
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if current_mode == 'instant':
+        markup.add(types.InlineKeyboardButton(t("notify_btn_summary", lang), callback_data="set_notify_summary_only"))
+    else:
+        markup.add(types.InlineKeyboardButton(t("notify_btn_instant", lang), callback_data="set_notify_instant"))
+    markup.add(types.InlineKeyboardButton(t("user_panel_back", lang), callback_data="up_back"))
+
+    try:
+        bot.edit_message_text(
+            t("notify_settings_title", lang, mode=mode_label),
+            chat_id=chat_id, message_id=call.message.message_id,
+            reply_markup=markup, parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.debug(f"Could not edit notify settings: {e}")
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('set_notify_'))
+def callback_set_notify(call):
+    """Переключает режим уведомлений."""
+    from src.database_manager import set_notify_mode
+    mode = 'instant' if call.data == 'set_notify_instant' else 'summary_only'
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    set_notify_mode(user_id, mode)
+    lang = get_user_lang(user_id)
+
+    key = "notify_changed_instant" if mode == 'instant' else "notify_changed_summary"
+    bot.answer_callback_query(call.id, t(key, lang)[:200])
+
+    _invalidate_panel_cache(chat_id)
+    _show_user_panel(chat_id, call.message.message_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_lang')
