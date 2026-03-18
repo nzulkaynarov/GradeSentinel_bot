@@ -16,12 +16,238 @@ def validate_phone(phone: str) -> bool:
 def is_user_admin(user_id):
     return get_parent_role(user_id) == 'admin'
 
+
+# ═══════════════════════════════════════════
+#  Админ-панель (единая точка входа)
+# ═══════════════════════════════════════════
+
+def cmd_admin_panel(message):
+    """Главная админ-панель с inline-кнопками."""
+    user_id = message.chat.id if hasattr(message, 'chat') else message.from_user.id
+    lang = get_user_lang(user_id)
+
+    if not is_user_admin(user_id):
+        return
+
+    _show_admin_panel(user_id, lang)
+
+
+def _show_admin_panel(chat_id: int, lang: str, message_id: int = None):
+    """Показывает главную админ-панель."""
+    from src.database_manager import get_global_stats
+    stats = get_global_stats()
+
+    text = t("admin_panel_title", lang,
+             families=stats['families'],
+             parents=stats['parents'],
+             students=stats['students'])
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(
+        types.InlineKeyboardButton(t("admin_panel_families", lang), callback_data="ap_families"),
+        types.InlineKeyboardButton(t("admin_panel_new_family", lang), callback_data="ap_new_family"),
+    )
+    markup.row(
+        types.InlineKeyboardButton(t("admin_panel_prices", lang), callback_data="ap_prices"),
+        types.InlineKeyboardButton(t("admin_panel_promo", lang), callback_data="ap_promo"),
+    )
+    markup.row(
+        types.InlineKeyboardButton(t("admin_panel_grant_sub", lang), callback_data="ap_grant_sub"),
+        types.InlineKeyboardButton(t("admin_panel_cancel_sub", lang), callback_data="ap_cancel_sub"),
+    )
+    markup.row(
+        types.InlineKeyboardButton(t("admin_panel_broadcast", lang), callback_data="ap_broadcast"),
+        types.InlineKeyboardButton(t("admin_panel_stats", lang), callback_data="ap_stats"),
+    )
+
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                  reply_markup=markup, parse_mode='HTML')
+            return
+        except Exception:
+            pass
+
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_back')
+def callback_ap_back(call):
+    """Назад в админ-панель."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    _show_admin_panel(call.message.chat.id, lang, call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_families')
+def callback_ap_families(call):
+    """Список семей из админ-панели."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    _show_families_list(call.message.chat.id, lang, call.message.message_id)
+
+
+def _show_families_list(chat_id: int, lang: str, message_id: int = None):
+    """Показывает список семей с inline-кнопками."""
+    families = get_all_families()
+    if not families:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(t("family_back", lang), callback_data="ap_back"))
+        text = t("admin_no_families", lang)
+        if message_id:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                  reply_markup=markup, parse_mode='HTML')
+        else:
+            bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+        return
+
+    markup = types.InlineKeyboardMarkup()
+    for f in families:
+        head = f['head_fio'] if f['head_fio'] else t("admin_head_not_set", lang)
+        btn_text = f"🏠 {f['family_name']} ({head} - {f['child_count']}/5)"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_manage_{f['id']}"))
+    markup.add(types.InlineKeyboardButton(t("family_back", lang), callback_data="ap_back"))
+
+    text = t("admin_families_list", lang)
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                  reply_markup=markup, parse_mode='HTML')
+            return
+        except Exception:
+            pass
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_new_family')
+def callback_ap_new_family(call):
+    """Создание семьи из админ-панели."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    # Удаляем панель и запускаем flow создания семьи
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+    msg = bot.send_message(call.message.chat.id, t("family_create_title", lang),
+                            parse_mode='Markdown', reply_markup=markup)
+    bot.register_next_step_handler(msg, process_family_name)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_prices')
+def callback_ap_prices(call):
+    """Управление тарифами из админ-панели."""
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    from src.handlers.subscription import cmd_set_prices
+    # Создаём фейковый message
+    cmd_set_prices(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_promo')
+def callback_ap_promo(call):
+    """Промокоды из админ-панели."""
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    from src.handlers.subscription import cmd_promo
+    cmd_promo(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_grant_sub')
+def callback_ap_grant_sub(call):
+    """Выдача подписки из админ-панели."""
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    from src.handlers.subscription import cmd_grant_subscription
+    cmd_grant_subscription(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_cancel_sub')
+def callback_ap_cancel_sub(call):
+    """Отмена подписки из админ-панели."""
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    from src.handlers.subscription import cmd_cancel_sub
+    cmd_cancel_sub(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_broadcast')
+def callback_ap_broadcast(call):
+    """Рассылка из админ-панели."""
+    user_id = call.from_user.id
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    from src.handlers.communication import broadcast_started
+    broadcast_started(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_stats')
+def callback_ap_stats(call):
+    """Статистика из админ-панели."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+
+    from src.database_manager import get_global_stats
+    stats = get_global_stats()
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(t("family_back", lang), callback_data="ap_back"))
+
+    bot.edit_message_text(
+        t("status_global", lang, **stats),
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        reply_markup=markup,
+        parse_mode='HTML'
+    )
+
+
+# ═══════════════════════════════════════════
+#  Старые команды (оставлены для совместимости)
+# ═══════════════════════════════════════════
+
 @bot.message_handler(commands=['admin_help'])
 def admin_help(message):
     if not is_user_admin(message.chat.id):
         return
-    lang = get_user_lang(message.chat.id)
-    send_content(message.chat.id, t("admin_help", lang))
+    cmd_admin_panel(message)
 
 @bot.message_handler(commands=['status'])
 def system_status(message):
@@ -29,9 +255,7 @@ def system_status(message):
     lang = get_user_lang(user_id)
 
     if is_user_admin(user_id):
-        from src.database_manager import get_global_stats
-        stats = get_global_stats()
-        send_content(user_id, t("status_global", lang, **stats))
+        cmd_admin_panel(message)
     else:
         from src.database_manager import get_user_stats, is_head_of_any_family, has_children_for_grades
         if not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
@@ -41,7 +265,7 @@ def system_status(message):
 
 @bot.message_handler(commands=['add_family'])
 def cmd_add_family_start(message):
-    user_id = message.from_user.id
+    user_id = message.from_user.id if hasattr(message, 'from_user') and message.from_user else message.chat.id
     lang = get_user_lang(user_id)
     if get_parent_role(user_id) != 'admin':
         bot.send_message(message.chat.id, t("admin_no_access", lang))
@@ -66,18 +290,7 @@ def cmd_list_families(message, user_id=None):
         bot.send_message(message.chat.id, t("admin_no_access", lang))
         return
 
-    families = get_all_families()
-    if not families:
-        send_menu_safe(message.chat.id, t("admin_no_families", lang))
-        return
-
-    markup = types.InlineKeyboardMarkup()
-    for f in families:
-        head = f['head_fio'] if f['head_fio'] else t("admin_head_not_set", lang)
-        btn_text = f"🏠 {f['family_name']} ({head} - {f['child_count']}/5)"
-        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"admin_manage_{f['id']}"))
-
-    send_menu_safe(message.chat.id, t("admin_families_list", lang), inline_markup=markup)
+    _show_families_list(message.chat.id, lang)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_manage_'))
 def callback_admin_manage(call):
@@ -87,7 +300,12 @@ def callback_admin_manage(call):
 
 @bot.callback_query_handler(func=lambda call: call.data == 'back_to_families')
 def callback_back_to_families(call):
-    cmd_list_families(call.message, user_id=call.from_user.id)
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if is_user_admin(user_id):
+        _show_families_list(call.message.chat.id, lang, call.message.message_id)
+    else:
+        cmd_list_families(call.message, user_id=user_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_family_'))
 def callback_delete_family(call):
