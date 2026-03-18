@@ -49,6 +49,7 @@ from src.handlers.communication import support_started, broadcast_started
 from src.handlers.analytics import cmd_ai_report
 from src.handlers.settings import cmd_settings
 from src.handlers.subscription import cmd_subscription
+from src.database_manager import is_head_of_any_family, has_children_for_grades, get_families_for_user, is_subscription_active, get_family_subscription
 
 # ====================
 # Telegram bot setup
@@ -208,6 +209,151 @@ def contact_handler(message):
         bot.send_message(message.chat.id, t("auth_contact_error", lang))
 
 
+# ═══════════════════════════════════════════
+#  Пользовательская панель (единая точка входа)
+# ═══════════════════════════════════════════
+
+def cmd_user_menu(message):
+    """Главная пользовательская панель с inline-кнопками."""
+    user_id = message.chat.id if hasattr(message, 'chat') else message.from_user.id
+    _show_user_panel(user_id)
+
+
+def _show_user_panel(chat_id: int, message_id: int = None):
+    """Показывает пользовательскую панель."""
+    lang = get_user_lang(chat_id)
+    is_head = is_head_of_any_family(chat_id)
+    has_kids = has_children_for_grades(chat_id)
+
+    # Собираем информацию о семьях
+    families = get_families_for_user(chat_id)
+    fam_lines = []
+    for fam in families:
+        active = is_subscription_active(fam['id'])
+        sub = get_family_subscription(fam['id'])
+        if active and sub and sub.get('subscription_end'):
+            status = f"✅ до {sub['subscription_end'][:10]}"
+        else:
+            status = "❌"
+        fam_lines.append(f"🏠 <b>{fam['family_name']}</b> — {status}")
+
+    if fam_lines:
+        fam_text = "\n".join(fam_lines)
+    else:
+        fam_text = t("sub_no_family", lang)
+
+    text = t("user_panel_title", lang, families_info=fam_text)
+
+    markup = types.InlineKeyboardMarkup(row_width=2)
+
+    if has_kids:
+        markup.row(
+            types.InlineKeyboardButton(t("user_panel_grades", lang), callback_data="up_grades"),
+            types.InlineKeyboardButton(t("user_panel_ai", lang), callback_data="up_ai"),
+        )
+
+    if is_head:
+        markup.row(
+            types.InlineKeyboardButton(t("user_panel_family", lang), callback_data="up_family"),
+            types.InlineKeyboardButton(t("user_panel_subscription", lang), callback_data="up_subscription"),
+        )
+    elif has_kids:
+        markup.add(types.InlineKeyboardButton(
+            t("user_panel_subscription", lang), callback_data="up_subscription"))
+
+    markup.row(
+        types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
+        types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
+    )
+
+    if message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=message_id,
+                                  reply_markup=markup, parse_mode='HTML')
+            return
+        except Exception:
+            pass
+
+    bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_back')
+def callback_up_back(call):
+    """Назад в пользовательскую панель."""
+    bot.answer_callback_query(call.id)
+    _show_user_panel(call.message.chat.id, call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_grades')
+def callback_up_grades(call):
+    """Оценки из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    get_grades_command(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_ai')
+def callback_up_ai(call):
+    """AI-анализ из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    cmd_ai_report(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_family')
+def callback_up_family(call):
+    """Управление семьёй из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    cmd_manage_family(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_subscription')
+def callback_up_subscription(call):
+    """Подписка из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    cmd_subscription(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_support')
+def callback_up_support(call):
+    """Поддержка из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    support_started(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_lang')
+def callback_up_lang(call):
+    """Смена языка из пользовательской панели."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception:
+        pass
+    cmd_settings(call.message)
+
+
+# ═══════════════════════════════════════════
+#  Обработка Reply-кнопок главного меню
+# ═══════════════════════════════════════════
+
 @bot.message_handler(func=lambda m: m.text in BUTTON_ACTIONS)
 def handle_menu_buttons(message):
     """Обработчик нажатий на кнопки главного меню (мультиязычный)."""
@@ -229,6 +375,8 @@ def handle_menu_buttons(message):
 
     if action == "admin_panel":
         cmd_admin_panel(message)
+    elif action == "user_menu":
+        cmd_user_menu(message)
     elif action == "status":
         system_status(message)
     elif action == "families":

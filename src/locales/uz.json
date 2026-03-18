@@ -16,6 +16,7 @@
   "btn_make_me_head": "👑 Meni boshiq qilish",
   "btn_assign_other": "👤 Boshqasini tayinlash",
   "btn_admin_panel": "🛠 Boshqaruv",
+  "btn_user_menu": "📱 Menyu",
   "btn_seen": "👀 Ko'rdim",
   "btn_today_all": "📊 Bugungi barchasi",
   "btn_all_children": "📊 Barcha bolalar",
@@ -47,6 +48,14 @@
   "admin_panel_cancel_sub": "❌ Obunani bekor qilish",
   "admin_panel_broadcast": "📢 Tarqatma",
   "admin_panel_stats": "📊 Statistika",
+
+  "user_panel_title": "📱 <b>Bosh menyu</b>\n\n{families_info}\n\nAmalni tanlang:",
+  "user_panel_grades": "📈 Baholar",
+  "user_panel_ai": "🤖 AI-tahlil",
+  "user_panel_family": "🏠 Mening oilam",
+  "user_panel_subscription": "💳 Obuna",
+  "user_panel_support": "💬 Yordam",
+  "user_panel_lang": "⚙️ Til",
 
   "admin_help": "🛠 <b>GradeSentinel administrator paneli</b>\n\nEkran pastidagi tugmalar bo'limlar bo'yicha harakatlanishga yordam beradi.\nBot eski menyularni avtomatik o'chiradi.",
   "admin_no_access": "⛔ Bu buyruqqa kirish huquqingiz yo'q.",

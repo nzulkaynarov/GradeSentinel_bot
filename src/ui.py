@@ -5,7 +5,7 @@ from src.database_manager import get_last_menu_id, update_last_menu_id, get_pare
 from src.i18n import t
 
 def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
-    """Возвращает клавиатуру главного меню в зависимости от сводных ролей пользователя."""
+    """Возвращает клавиатуру главного меню — одна кнопка для быстрого доступа."""
     from src.database_manager import get_parent_role, is_head_of_any_family, has_children_for_grades
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
 
@@ -17,21 +17,10 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
     if role == 'admin':
         markup.row(t("btn_admin_panel", lang))
     elif is_head or has_children:
-        markup.row(t("btn_status", lang))
-
-    if is_head:
-        markup.row(t("btn_my_family", lang))
-
-    if has_children:
-        markup.row(t("btn_grades", lang), t("btn_ai_analysis", lang))
-
-    if is_head or has_children:
-        markup.row(t("btn_subscription", lang))
-
-    if role or is_head or has_children:
-        markup.row(t("btn_support", lang), t("btn_settings", lang))
-
-    if len(markup.keyboard) == 0:
+        markup.row(t("btn_user_menu", lang))
+    elif role:
+        markup.row(t("btn_user_menu", lang))
+    else:
         markup.row(t("btn_waiting", lang))
 
     return markup
