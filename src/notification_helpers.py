@@ -107,6 +107,85 @@ def format_grade_notification(display_name: str, subject: str, clean_text: str,
     return msg
 
 
+QUARTER_NAMES = {1: "1ч", 2: "2ч", 3: "3ч", 4: "4ч", 5: "Год"}
+
+
+def _get_quarter_label(quarter: int, lang: str = 'ru') -> str:
+    """Возвращает локализованное название четверти."""
+    return t(f"quarter_{quarter}", lang)
+
+
+def _get_prev_quarter_value(student_id: int, subject: str, quarter: int) -> Optional[str]:
+    """Находит оценку за предыдущую четверть для сравнения."""
+    if quarter <= 1:
+        return None
+    from src.database_manager import get_db_connection
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT raw_text FROM quarter_grades
+            WHERE student_id = ? AND subject = ? AND quarter = ?
+        ''', (student_id, subject, quarter - 1))
+        row = cursor.fetchone()
+    return row['raw_text'] if row else None
+
+
+def format_quarter_new_notification(display_name: str, subject: str,
+                                     quarter: int, clean_text: str,
+                                     grade_value: Optional[float],
+                                     spreadsheet_id: str,
+                                     student_id: int,
+                                     lang: str = 'ru') -> str:
+    """Формирует уведомление о новой четвертной оценке."""
+    header_text, emoji = get_emotional_header(grade_value, clean_text, lang)
+    q_label = _get_quarter_label(quarter, lang)
+    date_str = get_local_date_str()
+
+    msg = (
+        f"🏆 <b>{t('notif_quarter_title', lang)}</b>\n"
+        f"🕐 {date_str}\n"
+        f"{t('notif_student', lang, name=display_name)}\n"
+        f"{t('notif_subject', lang, subject=subject)}\n"
+        f"📋 {t('notif_quarter_label', lang, quarter=q_label)}\n"
+        f"{t('notif_value', lang, value=clean_text)}  {emoji}\n"
+    )
+
+    prev = _get_prev_quarter_value(student_id, subject, quarter)
+    if prev:
+        msg += f"\n{t('notif_quarter_prev', lang, quarter=_get_quarter_label(quarter - 1, lang), value=prev)}"
+
+    msg += (
+        f"\n\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>"
+        f"{t('grades_open_sheet', lang)}</a>"
+    )
+    return msg
+
+
+def format_quarter_change_notification(display_name: str, subject: str,
+                                        quarter: int, old_text: str,
+                                        new_text: str,
+                                        new_grade_value: Optional[float],
+                                        spreadsheet_id: str,
+                                        student_id: int,
+                                        lang: str = 'ru') -> str:
+    """Формирует уведомление об изменении четвертной оценки."""
+    header_text, emoji = get_emotional_header(new_grade_value, new_text, lang)
+    q_label = _get_quarter_label(quarter, lang)
+    date_str = get_local_date_str()
+
+    msg = (
+        f"✏️🏆 <b>{t('notif_quarter_changed', lang)}</b>\n"
+        f"🕐 {date_str}\n"
+        f"{t('notif_student', lang, name=display_name)}\n"
+        f"{t('notif_subject', lang, subject=subject)}\n"
+        f"📋 {t('notif_quarter_label', lang, quarter=q_label)}\n"
+        f"{t('notif_change', lang, old=old_text, new=new_text)}  {emoji}\n"
+        f"\n<a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>"
+        f"{t('grades_open_sheet', lang)}</a>"
+    )
+    return msg
+
+
 def format_grade_change_notification(display_name: str, subject: str,
                                       old_text: str, new_text: str,
                                       new_grade_value: Optional[float],

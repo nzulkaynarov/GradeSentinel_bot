@@ -143,6 +143,16 @@
   "notif_change": "📝 Was: <b>{old}</b> → Now: <b>{new}</b>",
   "notif_streak": "🔥 That's {count} fives in a row!",
 
+  "notif_quarter_title": "Quarter grade!",
+  "notif_quarter_changed": "Quarter grade changed",
+  "notif_quarter_label": "Quarter: <b>{quarter}</b>",
+  "notif_quarter_prev": "📊 Previous ({quarter}): <b>{value}</b>",
+  "quarter_1": "1st quarter",
+  "quarter_2": "2nd quarter",
+  "quarter_3": "3rd quarter",
+  "quarter_4": "4th quarter",
+  "quarter_5": "Annual",
+
   "quiet_morning_header": "🌅 <b>Good morning! {count} notifications received overnight:</b>\n",
   "daily_summary_title": "📋 <b>Daily Summary</b>",
   "daily_avg": "Average grade: <b>{avg}</b>",

@@ -46,6 +46,7 @@ def _scheduler_loop():
     last_evening_date = None
     last_morning_date = None
     last_alive_date = None
+    last_quarter_check = None
 
     while True:
         try:
@@ -63,6 +64,20 @@ def _scheduler_loop():
             if now.hour == 19 and now.minute < 6 and last_evening_date != today:
                 last_evening_date = today
                 _send_daily_evening_summary()
+
+            # Проверка четвертных оценок каждые 30 минут (в рабочее время 8:00-21:00)
+            if 8 <= now.hour < 21:
+                run_quarter = False
+                if last_quarter_check is None:
+                    run_quarter = True
+                else:
+                    elapsed = (now - last_quarter_check).total_seconds()
+                    if elapsed >= 1800:  # 30 минут
+                        run_quarter = True
+
+                if run_quarter:
+                    last_quarter_check = now
+                    _check_quarter_grades()
 
         except Exception as e:
             logger.error(f"Error in daily scheduler loop: {e}")
@@ -185,6 +200,16 @@ def _send_bot_alive_status():
             logger.error(f"Failed to send alive status to {tg_id}: {e}")
 
     logger.info("Bot alive status sent.")
+
+
+def _check_quarter_grades():
+    """Запускает проверку четвертных оценок через monitor_engine."""
+    try:
+        from src.monitor_engine import check_for_quarter_changes
+        logger.info("Running scheduled quarter grades check...")
+        check_for_quarter_changes()
+    except Exception as e:
+        logger.error(f"Quarter grades check failed: {e}")
 
 
 def _startup_history_import():
