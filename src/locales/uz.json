@@ -183,5 +183,9 @@
   "sub_payment_success": "✅ <b>To'lov muvaffaqiyatli!</b>\n\nObunangiz {months} oyga faollashtirildi.\nLoyihani qo'llab-quvvatlaganingiz uchun rahmat!",
   "sub_required_ai": "🔒 <b>AI-tahlil — premium funksiya</b>\n\nAI-tahlilga kirish uchun faol obuna kerak.\n💳 Obuna tugmasini bosing.",
   "sub_grant_usage": "Foydalanish: /grant_sub &lt;family_id&gt; &lt;months&gt;",
-  "sub_granted": "✅ #{family_id} oilaga {months} oylik obuna berildi."
+  "sub_granted": "✅ #{family_id} oilaga {months} oylik obuna berildi.",
+
+  "help_parent": "📖 <b>Yordam — GradeSentinel</b>\n\n<b>Bot nima qiladi:</b>\nBolalaringizning elektron kundalikdagi baholarini kuzatadi va yangi yozuvlar haqida darhol xabar beradi.\n\n<b>Menyu tugmalari:</b>\n📈 <b>Baholar</b> — bugungi baholarni ko'rish\n🤖 <b>AI-tahlil</b> — 14 kunlik batafsil tahlil (obuna)\n📊 <b>Status</b> — sizning statistikangiz\n💳 <b>Obuna</b> — obunani boshqarish\n💬 <b>Yordam</b> — administratorga yozish\n⚙️ <b>Til</b> — interfeys tilini o'zgartirish\n\n<b>Avtomatika:</b>\n• Kundalik har 5 daqiqada tekshiriladi\n• Kechki kunlik xulosa\n• Haftalik AI-hisobot (yak 19:00)\n\n/help — ushbu yordam",
+  "help_head": "\n\n<b>Siz oila boshlig'isiz. Qo'shimcha imkoniyatlar:</b>\n🏠 <b>Mening oilam</b> — oilani boshqarish:\n  • 🧒 Bola qo'shish (Google Sheet havolasi)\n  • 🔗 Qarindoshni taklif qilish (taklif havolasi)\n  • 📋 Ro'yxat va a'zolarni o'chirish\n  • 🗑 Oilani o'chirish",
+  "help_admin": "\n\n<b>Administrator buyruqlari:</b>\n/add_family — oila yaratish\n/list_families — barcha oilalar ro'yxati\n/grant_sub &lt;id&gt; &lt;oylar&gt; — obuna berish\n/status — global statistika\n📢 <b>Tarqatma</b> — barcha foydalanuvchilarga xabar yuborish"
 }

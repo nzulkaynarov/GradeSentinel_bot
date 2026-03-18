@@ -183,5 +183,9 @@
   "sub_payment_success": "✅ <b>Payment successful!</b>\n\nYour subscription is activated for {months} month(s).\nThank you for supporting the project!",
   "sub_required_ai": "🔒 <b>AI Analysis is a premium feature</b>\n\nAn active subscription is required for AI analytics.\nPress 💳 Subscription to subscribe.",
   "sub_grant_usage": "Usage: /grant_sub &lt;family_id&gt; &lt;months&gt;",
-  "sub_granted": "✅ Subscription granted to family #{family_id} for {months} month(s)."
+  "sub_granted": "✅ Subscription granted to family #{family_id} for {months} month(s).",
+
+  "help_parent": "📖 <b>Help — GradeSentinel</b>\n\n<b>What the bot does:</b>\nMonitors your children's grades in the electronic diary and instantly notifies you about new entries.\n\n<b>Menu buttons:</b>\n📈 <b>Grades</b> — view today's grades\n🤖 <b>AI Analysis</b> — detailed 14-day performance analysis (subscription)\n📊 <b>Status</b> — your statistics\n💳 <b>Subscription</b> — manage subscription\n💬 <b>Support</b> — contact administrator\n⚙️ <b>Language</b> — change interface language\n\n<b>Automation:</b>\n• Diary check every 5 minutes\n• Evening daily summary\n• Weekly AI report (Sun 7PM)\n\n/help — this help page",
+  "help_head": "\n\n<b>You are a family head. Additional features:</b>\n🏠 <b>My Family</b> — family management:\n  • 🧒 Add child (Google Sheet link)\n  • 🔗 Invite relative (invite link)\n  • 📋 List and remove members\n  • 🗑 Delete family",
+  "help_admin": "\n\n<b>Admin commands:</b>\n/add_family — create a family\n/list_families — list all families\n/grant_sub &lt;id&gt; &lt;months&gt; — grant subscription\n/status — global statistics\n📢 <b>Broadcast</b> — send message to all users"
 }

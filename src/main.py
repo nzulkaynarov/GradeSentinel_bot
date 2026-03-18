@@ -53,6 +53,27 @@ from src.handlers.subscription import cmd_subscription
 # ====================
 # Telegram bot setup
 # ====================
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    """Справка по командам бота — адаптируется под роль пользователя."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+    from src.database_manager import is_head_of_any_family
+
+    # Базовая справка для всех
+    text = t("help_parent", lang)
+
+    # Дополнение для глав семей
+    if is_head_of_any_family(user_id):
+        text += t("help_head", lang)
+
+    # Дополнение для админа
+    if get_parent_role(user_id) == 'admin':
+        text += t("help_admin", lang)
+
+    send_menu_safe(user_id, text)
+
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.chat.id
@@ -258,8 +279,25 @@ def main():
     set_scheduler_bot(bot)
     start_daily_schedulers()
 
-    # 6. Start telegram bot blocking main thread
+    # 6. Register bot commands in Telegram menu
+    _register_bot_commands()
+
+    # 7. Start telegram bot blocking main thread
     start_bot()
+
+
+def _register_bot_commands():
+    """Регистрирует команды бота в меню Telegram (кнопка / в чате)."""
+    try:
+        bot.set_my_commands([
+            types.BotCommand("start", "Начать / авторизоваться"),
+            types.BotCommand("help", "Справка по боту"),
+            types.BotCommand("grades", "Оценки за сегодня"),
+            types.BotCommand("status", "Статус и статистика"),
+        ])
+        logger.info("Bot commands registered in Telegram menu.")
+    except Exception as e:
+        logger.warning(f"Could not set bot commands: {e}")
 
 if __name__ == '__main__':
     main()
