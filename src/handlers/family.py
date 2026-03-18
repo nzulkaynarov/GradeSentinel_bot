@@ -32,7 +32,7 @@ def cmd_manage_family(message):
     _send_family_manage_menu(message.chat.id, families[0]['id'])
 
 def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
-    from src.database_manager import get_child_count, get_parent_role
+    from src.database_manager import get_child_count, get_parent_role, is_subscription_active, get_family_subscription
     lang = get_user_lang(chat_id)
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(t("family_invite_btn", lang), callback_data=f"gen_invite_{f_id}"))
@@ -41,6 +41,15 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
 
     role = get_parent_role(chat_id)
     if role == 'admin':
+        # Кнопка подписки со статусом
+        active = is_subscription_active(f_id)
+        sub = get_family_subscription(f_id)
+        if active and sub and sub.get('subscription_end'):
+            sub_label = t("family_sub_btn_active", lang, end=sub['subscription_end'][:10])
+        else:
+            sub_label = t("family_sub_btn_inactive", lang)
+        markup.add(types.InlineKeyboardButton(sub_label, callback_data=f"admin_sub_{f_id}"))
+
         markup.add(types.InlineKeyboardButton(t("family_delete_btn", lang), callback_data=f"delete_family_{f_id}"))
         markup.add(types.InlineKeyboardButton(t("family_back_btn", lang), callback_data="back_to_families"))
 

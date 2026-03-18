@@ -68,6 +68,8 @@
   "family_list_btn": "📋 List & Delete",
   "family_delete_btn": "🗑 Delete family",
   "family_back_btn": "⬅️ Back to families",
+  "family_sub_btn_active": "💳 Subscription (until {end})",
+  "family_sub_btn_inactive": "💳 Subscription (inactive)",
   "family_back": "⬅️ Back",
   "family_children_header": "─── CHILDREN ───",
   "family_members_header": "─── RELATIVES ───",

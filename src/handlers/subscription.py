@@ -255,20 +255,8 @@ def cmd_grant_subscription(message):
     bot.send_message(user_id, t("sub_grant_select_family", lang), reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('gsub_fam_'))
-def callback_grant_select_family(call):
-    """Админ выбрал семью — теперь выбор срока."""
-    from src.database_manager import get_parent_role
-    user_id = call.from_user.id
-    lang = get_user_lang(user_id)
-
-    if get_parent_role(user_id) != 'admin':
-        bot.answer_callback_query(call.id)
-        return
-
-    family_id = int(call.data.replace('gsub_fam_', ''))
-    bot.answer_callback_query(call.id)
-
+def _show_duration_picker(chat_id: int, message_id: int, family_id: int, lang: str):
+    """Показывает inline-кнопки выбора срока подписки."""
     markup = types.InlineKeyboardMarkup(row_width=3)
     markup.add(
         types.InlineKeyboardButton("1 мес", callback_data=f"gsub_do_{family_id}_1"),
@@ -279,13 +267,48 @@ def callback_grant_select_family(call):
         types.InlineKeyboardButton("12 мес", callback_data=f"gsub_do_{family_id}_12"),
         types.InlineKeyboardButton("∞ Навсегда", callback_data=f"gsub_do_{family_id}_999"),
     )
+    markup.add(
+        types.InlineKeyboardButton(t("family_back", lang), callback_data=f"admin_manage_{family_id}"),
+    )
 
     bot.edit_message_text(
         t("sub_grant_select_months", lang, family_id=family_id),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
+        chat_id=chat_id,
+        message_id=message_id,
         reply_markup=markup
     )
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_sub_'))
+def callback_admin_sub_from_menu(call):
+    """Админ нажал 'Подписка' в меню управления семьёй."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    family_id = int(call.data.replace('admin_sub_', ''))
+    bot.answer_callback_query(call.id)
+    _show_duration_picker(call.message.chat.id, call.message.message_id, family_id, lang)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('gsub_fam_'))
+def callback_grant_select_family(call):
+    """Админ выбрал семью из /grant_sub — теперь выбор срока."""
+    from src.database_manager import get_parent_role
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+
+    if get_parent_role(user_id) != 'admin':
+        bot.answer_callback_query(call.id)
+        return
+
+    family_id = int(call.data.replace('gsub_fam_', ''))
+    bot.answer_callback_query(call.id)
+    _show_duration_picker(call.message.chat.id, call.message.message_id, family_id, lang)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('gsub_do_'))
@@ -306,11 +329,11 @@ def callback_grant_execute(call):
 
     _execute_grant(user_id, family_id, months, lang)
 
-    bot.edit_message_text(
-        t("sub_granted", lang, family_id=family_id, months=months),
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id
-    )
+    bot.answer_callback_query(call.id, t("sub_granted", lang, family_id=family_id, months=months), show_alert=True)
+
+    # Возвращаемся в меню управления семьёй с обновлённым статусом подписки
+    from src.handlers.family import _send_family_manage_menu
+    _send_family_manage_menu(call.message.chat.id, family_id, call.message.message_id)
 
 
 def _execute_grant(admin_id: int, family_id: int, months: int, lang: str):

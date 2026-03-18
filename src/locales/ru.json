@@ -68,6 +68,8 @@
   "family_list_btn": "📋 Список и Удаление",
   "family_delete_btn": "🗑 Удалить семью",
   "family_back_btn": "⬅️ К списку семей",
+  "family_sub_btn_active": "💳 Подписка (до {end})",
+  "family_sub_btn_inactive": "💳 Подписка (не активна)",
   "family_back": "⬅️ Назад",
   "family_children_header": "─── ДЕТИ ───",
   "family_members_header": "─── РОДСТВЕННИКИ ───",

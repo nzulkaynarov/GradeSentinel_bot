@@ -68,6 +68,8 @@
   "family_list_btn": "📋 Ro'yxat va O'chirish",
   "family_delete_btn": "🗑 Oilani o'chirish",
   "family_back_btn": "⬅️ Oilalar ro'yxatiga",
+  "family_sub_btn_active": "💳 Obuna ({end} gacha)",
+  "family_sub_btn_inactive": "💳 Obuna (faol emas)",
   "family_back": "⬅️ Orqaga",
   "family_children_header": "─── BOLALAR ───",
   "family_members_header": "─── QARINDOSHLAR ───",
