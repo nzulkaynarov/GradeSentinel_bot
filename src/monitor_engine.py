@@ -6,14 +6,15 @@ from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
     update_student_display_name, queue_notification, get_user_lang,
     get_existing_grade, update_grade, get_active_spreadsheets_with_subscription,
-    upsert_quarter_grade, get_db_connection
+    upsert_quarter_grade, get_db_connection, get_notify_mode
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade
 from src.utils import clean_student_name
 from src.notification_helpers import (
     format_grade_notification, format_grade_change_notification, is_quiet_hours,
-    format_quarter_new_notification, format_quarter_change_notification
+    format_quarter_new_notification, format_quarter_change_notification,
+    format_batched_notification
 )
 from src.i18n import t
 
@@ -34,9 +35,11 @@ def _make_grade_inline_keyboard(student_id: int, lang: str = 'ru') -> types.Inli
     )
     return markup
 
-def send_notification(telegram_ids, message, inline_markup=None):
+def send_notification(telegram_ids, message, inline_markup=None, force=False):
     """
     Отправляет уведомление. В тихие часы (22:00-07:00) копит в очередь.
+    Пользователи в режиме 'summary_only' не получают мгновенных уведомлений
+    (кроме force=True для четвертных оценок).
     message может быть dict {tg_id: msg_text} для мультиязычности или str.
     """
     if not _bot:
@@ -49,6 +52,14 @@ def send_notification(telegram_ids, message, inline_markup=None):
 
     for tg_id in telegram_ids:
         msg_text = message[tg_id] if isinstance(message, dict) else message
+
+        # Проверяем режим уведомлений
+        if not force:
+            notify_mode = get_notify_mode(tg_id)
+            if notify_mode == 'summary_only':
+                logger.info(f"Skipped notification for TG:{tg_id} (summary_only mode)")
+                continue
+
         try:
             if quiet:
                 queue_notification(tg_id, msg_text)
@@ -75,6 +86,13 @@ def check_for_new_grades():
 
     RANGE_NAME = "Сегодня!A1:B50"
 
+    # Smart Batching: собираем все оценки за цикл, отправляем сгруппированно
+    # Ключ: (tg_id, student_id), значение: список grade-записей
+    from collections import defaultdict
+    batch = defaultdict(list)
+    # Метаданные для каждого студента
+    student_meta = {}  # student_id -> {display_name, spreadsheet_id}
+
     for student in students:
         student_id = student['student_id']
         fio = student['fio']
@@ -85,6 +103,8 @@ def check_for_new_grades():
             sheet_title = get_spreadsheet_title(spreadsheet_id)
             display_name = clean_student_name(sheet_title) if sheet_title else fio
             update_student_display_name(student_id, display_name)
+
+        student_meta[student_id] = {'display_name': display_name, 'spreadsheet_id': spreadsheet_id}
 
         logger.info(f"Checking sheet for student: {display_name} (ID: {student_id})")
 
@@ -108,8 +128,6 @@ def check_for_new_grades():
             if not raw_grade:
                 continue
 
-            # Дата в cell_reference — чтобы каждый день создавались новые записи.
-            # Без даты "Сегодня!B2" от вчера блокирует INSERT сегодняшней оценки.
             today = date.today().isoformat()
             cell_reference = f"Сегодня!B{row_idx}:{today}"
 
@@ -120,36 +138,51 @@ def check_for_new_grades():
             if is_new and clean_text:
                 logger.info(f"[NEW GRADE] {display_name} got '{clean_text}' in {subject}")
                 parents_ids = get_parents_for_student(student_id)
-                if parents_ids:
-                    messages = {}
-                    keyboards = {}
-                    for tg_id in parents_ids:
-                        lang = get_user_lang(tg_id)
-                        messages[tg_id] = format_grade_notification(
-                            display_name, subject, clean_text,
-                            grade_value, spreadsheet_id, student_id, lang=lang
-                        )
-                        keyboards[tg_id] = _make_grade_inline_keyboard(student_id, lang)
-                    send_notification(parents_ids, messages, inline_markup=keyboards)
+                for tg_id in parents_ids:
+                    batch[(tg_id, student_id)].append({
+                        'subject': subject, 'clean_text': clean_text,
+                        'grade_value': grade_value, 'change_type': 'new', 'old_text': None
+                    })
             elif not is_new and clean_text:
-                # Проверяем, изменилась ли оценка
                 existing = get_existing_grade(student_id, cell_reference)
                 if existing and existing['raw_text'] != clean_text:
                     old_text = existing['raw_text']
                     update_grade(student_id, cell_reference, grade_value, clean_text)
                     logger.info(f"[GRADE CHANGED] {display_name}: {subject} '{old_text}' -> '{clean_text}'")
                     parents_ids = get_parents_for_student(student_id)
-                    if parents_ids:
-                        messages = {}
-                        keyboards = {}
-                        for tg_id in parents_ids:
-                            lang = get_user_lang(tg_id)
-                            messages[tg_id] = format_grade_change_notification(
-                                display_name, subject, old_text, clean_text,
-                                grade_value, spreadsheet_id, student_id, lang=lang
-                            )
-                            keyboards[tg_id] = _make_grade_inline_keyboard(student_id, lang)
-                        send_notification(parents_ids, messages, inline_markup=keyboards)
+                    for tg_id in parents_ids:
+                        batch[(tg_id, student_id)].append({
+                            'subject': subject, 'clean_text': clean_text,
+                            'grade_value': grade_value, 'change_type': 'changed', 'old_text': old_text
+                        })
+
+    # Отправляем собранные уведомления
+    for (tg_id, student_id), grades in batch.items():
+        meta = student_meta[student_id]
+        lang = get_user_lang(tg_id)
+
+        if len(grades) == 1:
+            # Одна оценка — детальное уведомление (как раньше)
+            g = grades[0]
+            if g['change_type'] == 'changed':
+                msg = format_grade_change_notification(
+                    meta['display_name'], g['subject'], g['old_text'], g['clean_text'],
+                    g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
+                )
+            else:
+                msg = format_grade_notification(
+                    meta['display_name'], g['subject'], g['clean_text'],
+                    g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
+                )
+        else:
+            # 2+ оценок — батч-сообщение
+            msg = format_batched_notification(
+                meta['display_name'], grades,
+                meta['spreadsheet_id'], student_id, lang=lang
+            )
+
+        kb = _make_grade_inline_keyboard(student_id, lang)
+        send_notification([tg_id], {tg_id: msg}, inline_markup={tg_id: kb})
 
 SKIP_SUBJECTS = {'посещаемость', '0', ''}
 
@@ -207,7 +240,6 @@ def check_for_quarter_changes():
 
                 quarter = col_idx  # 1=1ч, 2=2ч, 3=3ч, 4=4ч, 5=год
 
-                from src.data_cleaner import sanitize_grade
                 grade_value, clean_text = sanitize_grade(cell_value)
                 if clean_text is None:
                     continue
@@ -244,7 +276,7 @@ def check_for_quarter_changes():
                             grade_value, spreadsheet_id, student_id, lang=lang
                         )
                         keyboards[tg_id] = _make_quarter_inline_keyboard(student_id, lang)
-                    send_notification(parents_ids, messages, inline_markup=keyboards)
+                    send_notification(parents_ids, messages, inline_markup=keyboards, force=True)
                 else:
                     # Изменение четвертной оценки
                     logger.info(f"[QUARTER CHANGED] {display_name}: {subject} Q{quarter} '{old_text}' -> '{clean_text}'")
@@ -257,7 +289,7 @@ def check_for_quarter_changes():
                             grade_value, spreadsheet_id, student_id, lang=lang
                         )
                         keyboards[tg_id] = _make_quarter_inline_keyboard(student_id, lang)
-                    send_notification(parents_ids, messages, inline_markup=keyboards)
+                    send_notification(parents_ids, messages, inline_markup=keyboards, force=True)
 
     logger.info("Quarter grades check completed.")
 

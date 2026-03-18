@@ -1,8 +1,10 @@
 """
 Фоновые планировщики:
-1. Ежедневная вечерняя сводка (19:00 по местному)
-2. Утренняя рассылка отложенных уведомлений (07:00 по местному)
-3. Статус «бот работает» (15:00 по местному, если нет оценок за день)
+1. Ежедневная вечерняя сводка с трендами (19:00)
+2. Утренняя агрегация отложенных уведомлений (07:00)
+3. Статус «бот работает» (15:00, только если 48ч+ тишины)
+4. Проверка четвертных оценок (12:00, 18:00)
+5. Предупреждение об истечении подписки (10:00)
 """
 import time
 import logging
@@ -47,11 +49,17 @@ def _scheduler_loop():
     last_morning_date = None
     last_alive_date = None
     last_quarter_check = None
+    last_sub_check_date = None
 
     while True:
         try:
             now = _get_local_now()
             today = now.date()
+
+            # Проверка подписок раз в день в 10:00
+            if now.hour == 10 and now.minute < 6 and last_sub_check_date != today:
+                last_sub_check_date = today
+                _check_subscription_expiry()
 
             if now.hour == 7 and now.minute < 6 and last_morning_date != today:
                 last_morning_date = today
@@ -65,17 +73,9 @@ def _scheduler_loop():
                 last_evening_date = today
                 _send_daily_evening_summary()
 
-            # Проверка четвертных оценок каждые 30 минут (в рабочее время 8:00-21:00)
-            if 8 <= now.hour < 21:
-                run_quarter = False
-                if last_quarter_check is None:
-                    run_quarter = True
-                else:
-                    elapsed = (now - last_quarter_check).total_seconds()
-                    if elapsed >= 1800:  # 30 минут
-                        run_quarter = True
-
-                if run_quarter:
+            # Проверка четвертных оценок 2 раза в день: 12:00 и 18:00
+            if now.hour in (12, 18) and now.minute < 6:
+                if last_quarter_check is None or last_quarter_check.date() != today or last_quarter_check.hour != now.hour:
                     last_quarter_check = now
                     _check_quarter_grades()
 
@@ -105,23 +105,57 @@ def _flush_quiet_hours_queue():
 
         lang = get_user_lang(tg_id)
         header = t("quiet_morning_header", lang, count=len(messages))
-        try:
-            _bot.send_message(tg_id, header, parse_mode='HTML')
-            time.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Failed to send morning header to {tg_id}: {e}")
-            continue
 
-        for msg in messages:
+        # Агрегируем в одно сообщение вместо спама отдельными
+        # Каждое сообщение в очереди — полный HTML. Собираем в одно.
+        if len(messages) <= 3:
+            # До 3 — объединяем в одно сообщение
+            combined = header + "\n\n" + "\n\n➖➖➖➖➖➖\n\n".join(messages)
+            # Telegram limit: 4096 chars
+            if len(combined) > 4000:
+                # Если слишком длинное — разбиваем на 2
+                mid = len(messages) // 2
+                part1 = header + "\n\n" + "\n\n➖➖➖➖➖➖\n\n".join(messages[:mid])
+                part2 = "\n\n➖➖➖➖➖➖\n\n".join(messages[mid:])
+                for part in [part1, part2]:
+                    try:
+                        _bot.send_message(tg_id, part, parse_mode='HTML', disable_web_page_preview=True)
+                        time.sleep(0.05)
+                    except Exception as e:
+                        logger.error(f"Failed to send morning part to {tg_id}: {e}")
+            else:
+                try:
+                    _bot.send_message(tg_id, combined, parse_mode='HTML', disable_web_page_preview=True)
+                except Exception as e:
+                    logger.error(f"Failed to send morning summary to {tg_id}: {e}")
+        else:
+            # 4+ сообщений — отправляем заголовок + сообщения порциями по 3
             try:
-                _bot.send_message(tg_id, msg, parse_mode='HTML', disable_web_page_preview=True)
-                time.sleep(0.05)
+                chunk_size = 3
+                for i in range(0, len(messages), chunk_size):
+                    chunk = messages[i:i + chunk_size]
+                    prefix = header + "\n\n" if i == 0 else ""
+                    combined = prefix + "\n\n➖➖➖➖➖➖\n\n".join(chunk)
+                    if len(combined) > 4000:
+                        # Если одна порция слишком большая, шлём по одной
+                        if i == 0:
+                            _bot.send_message(tg_id, header, parse_mode='HTML')
+                            time.sleep(0.05)
+                        for msg in chunk:
+                            _bot.send_message(tg_id, msg, parse_mode='HTML', disable_web_page_preview=True)
+                            time.sleep(0.05)
+                    else:
+                        _bot.send_message(tg_id, combined, parse_mode='HTML', disable_web_page_preview=True)
+                    time.sleep(0.05)
             except Exception as e:
-                logger.error(f"Failed to send queued msg to {tg_id}: {e}")
+                logger.error(f"Failed to send morning messages to {tg_id}: {e}")
 
 
 def _send_daily_evening_summary():
-    from src.database_manager import get_all_parents_with_children, get_today_grades_for_student, get_user_lang
+    from src.database_manager import (
+        get_all_parents_with_children, get_today_grades_for_student,
+        get_yesterday_grades_for_student, get_user_lang
+    )
 
     if not _bot:
         return
@@ -145,15 +179,39 @@ def _send_daily_evening_summary():
 
             lines = [f"👨‍🎓 <b>{child['display_name']}</b>\n"]
             numeric_grades = []
+            subject_grades = {}
 
             for g in grades:
                 lines.append(f"  {g['subject']}: <b>{g['raw_text']}</b>")
                 if g['grade_value'] is not None:
                     numeric_grades.append(g['grade_value'])
+                    subject_grades[g['subject']] = g['grade_value']
 
             if numeric_grades:
                 avg = sum(numeric_grades) / len(numeric_grades)
-                lines.append(f"\n  {t('daily_avg', lang, avg=f'{avg:.1f}')}")
+                avg_line = t('daily_avg', lang, avg=f'{avg:.1f}')
+
+                # Сравнение со вчера
+                yesterday = get_yesterday_grades_for_student(child['student_id'])
+                yesterday_numeric = [g['grade_value'] for g in yesterday if g['grade_value'] is not None]
+                if yesterday_numeric:
+                    y_avg = sum(yesterday_numeric) / len(yesterday_numeric)
+                    if avg > y_avg + 0.05:
+                        avg_line += f" {t('daily_trend_up', lang, yesterday=f'{y_avg:.1f}')}"
+                    elif avg < y_avg - 0.05:
+                        avg_line += f" {t('daily_trend_down', lang, yesterday=f'{y_avg:.1f}')}"
+
+                lines.append(f"\n  {avg_line}")
+
+                # Лучший и худший предмет
+                if len(subject_grades) >= 2:
+                    best_subj = max(subject_grades, key=subject_grades.get)
+                    worst_subj = min(subject_grades, key=subject_grades.get)
+                    if subject_grades[best_subj] > subject_grades[worst_subj]:
+                        lines.append(f"  {t('daily_best', lang, subject=best_subj, grade=int(subject_grades[best_subj]))}")
+                        if subject_grades[worst_subj] <= 3:
+                            lines.append(f"  {t('daily_worst', lang, subject=worst_subj, grade=int(subject_grades[worst_subj]))}")
+
                 lines.append(f"  {t('daily_total', lang, count=len(grades))}")
 
             summaries.append("\n".join(lines))
@@ -173,15 +231,16 @@ def _send_daily_evening_summary():
 
 
 def _send_bot_alive_status():
-    from src.database_manager import get_all_parents_with_children, has_today_grades_for_parent, get_user_lang
+    from src.database_manager import get_all_parents_with_children, has_recent_grades_for_parent, get_user_lang
 
     if not _bot:
         return
 
-    logger.info("Sending bot alive status to parents with no grades today...")
+    logger.info("Checking bot alive status (only for parents with 48h+ silence)...")
 
     parent_data = get_all_parents_with_children()
     notified = set()
+    sent_count = 0
 
     for row in parent_data:
         tg_id = row['telegram_id']
@@ -189,17 +248,61 @@ def _send_bot_alive_status():
             continue
         notified.add(tg_id)
 
-        if has_today_grades_for_parent(tg_id):
+        # Отправляем только если за последние 48 часов не было ни одной оценки
+        if has_recent_grades_for_parent(tg_id, hours=48):
             continue
 
         lang = get_user_lang(tg_id)
         try:
             _bot.send_message(tg_id, t("bot_alive", lang), parse_mode='HTML')
             time.sleep(0.05)
+            sent_count += 1
         except Exception as e:
             logger.error(f"Failed to send alive status to {tg_id}: {e}")
 
-    logger.info("Bot alive status sent.")
+    logger.info(f"Bot alive status: sent to {sent_count} parents (with 48h+ silence).")
+
+
+def _check_subscription_expiry():
+    """Проверяет истечение подписок и предупреждает пользователей."""
+    from src.database_manager import (
+        get_families_expiring_in_days, get_families_expired_today,
+        get_family_members_telegram_ids, get_user_lang
+    )
+
+    if not _bot:
+        return
+
+    warnings = [
+        (7, "sub_expiry_7d"),
+        (1, "sub_expiry_1d"),
+    ]
+
+    for days, key in warnings:
+        families = get_families_expiring_in_days(days)
+        for family in families:
+            tg_ids = get_family_members_telegram_ids(family['family_id'])
+            for tg_id in tg_ids:
+                lang = get_user_lang(tg_id)
+                try:
+                    _bot.send_message(tg_id, t(key, lang), parse_mode='HTML')
+                    time.sleep(0.05)
+                except Exception as e:
+                    logger.error(f"Failed to send sub warning to {tg_id}: {e}")
+
+    # Истёкшие сегодня
+    expired = get_families_expired_today()
+    for family in expired:
+        tg_ids = get_family_members_telegram_ids(family['family_id'])
+        for tg_id in tg_ids:
+            lang = get_user_lang(tg_id)
+            try:
+                _bot.send_message(tg_id, t("sub_expiry_0d", lang), parse_mode='HTML')
+                time.sleep(0.05)
+            except Exception as e:
+                logger.error(f"Failed to send sub expired to {tg_id}: {e}")
+
+    logger.info("Subscription expiry check completed.")
 
 
 def _check_quarter_grades():

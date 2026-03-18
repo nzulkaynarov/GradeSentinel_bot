@@ -110,6 +110,7 @@
   "child_added": "✅ <b>Child successfully added!</b>\n\n👤 Name: {name}\n📊 Status: Monitoring activated\n\n💡 You can check grades anytime using the '{btn_grades}' button",
   "child_add_error": "❌ An error occurred while adding the child. Check the link and try later.",
   "history_imported": "📚 Imported <b>{count}</b> grades from history for {name}. AI analysis will now work with the full picture!",
+  "ai_first_free": "🎁 <b>Free AI analysis</b> for your newly added child:",
 
   "member_enter": "Enter the relative's full name and phone number (separated by space):\nExample: <code>Ivanov Ivan 998901234567</code>\n\nOr press 'Cancel'.",
   "member_enter_placeholder": "Surname Name 998XXXXXXXXX",
@@ -141,6 +142,7 @@
   "notif_value": "📝 Value: <b>{value}</b>",
   "notif_grade_changed": "Grade changed",
   "notif_change": "📝 Was: <b>{old}</b> → Now: <b>{new}</b>",
+  "notif_batch_title": "{count} new grades",
   "notif_streak": "🔥 That's {count} fives in a row!",
 
   "notif_quarter_title": "Quarter grade!",
@@ -156,6 +158,11 @@
   "quiet_morning_header": "🌅 <b>Good morning! {count} notifications received overnight:</b>\n",
   "daily_summary_title": "📋 <b>Daily Summary</b>",
   "daily_avg": "Average grade: <b>{avg}</b>",
+  "daily_trend_up": "📈 (yesterday: {yesterday})",
+  "daily_trend_down": "📉 (yesterday: {yesterday})",
+  "daily_trend_same": "(same as yesterday)",
+  "daily_best": "🏆 Best: {subject} ({grade})",
+  "daily_worst": "⚠️ Attention: {subject} ({grade})",
   "daily_total": "Total records: {count}",
   "bot_alive": "✅ <b>Bot is active</b>\n\nNo new grades received today. I'm monitoring the diary and will notify you as soon as a new entry appears.",
 
@@ -187,6 +194,15 @@
   "ai_weekly_title": "📊 <b>Weekly AI Report</b>\n👨‍🎓 {name}\n\n{analysis}",
 
   "ai_prompt": "You are a school AI analyst. Analyze the grades of student {name} for the last {days} days.\n\nRespond STRICTLY in this format (use HTML tags <b> for bold):\n\n📊 <b>Summary:</b> [number] grades | Average: [X.X]\n5 — [N] | 4 — [N] | 3 — [N] | 2 — [N]\n\n✅ <b>Strengths:</b> [subjects with best grades and scores]\n\n⚠️ <b>Attention:</b> [subjects with 3s/2s, specific facts]\n— [brief explanation of patterns if any]\n\n💡 <b>Recommendation:</b> [1-2 specific tips for parents, no generic advice like 'hire a tutor']\n\nRULES:\n- Count grades accurately, do not make mistakes with numbers\n- Write ONLY in English\n- Do NOT use markdown (** or #), only HTML tags <b></b>\n- Use max 3 emojis (📊 ✅ ⚠️ 💡 — only at block starts)\n- If there are few grades — say so, do not invent trends\n- Be specific: name subjects and scores, avoid filler\n- Entire response — no more than 8 lines\n\nGrades:\n{grades}",
+
+  "btn_notifications": "🔔 Notifications",
+  "notify_settings_title": "🔔 <b>Notification Settings</b>\n\nCurrent mode: <b>{mode}</b>",
+  "notify_mode_instant": "Instant",
+  "notify_mode_summary": "Summary only",
+  "notify_btn_instant": "🔔 Instant",
+  "notify_btn_summary": "🔕 Summary only",
+  "notify_changed_instant": "🔔 Mode changed: <b>Instant notifications</b>\n\nYou will receive a notification for each new grade immediately.",
+  "notify_changed_summary": "🔕 Mode changed: <b>Summary only</b>\n\nYou will only receive the evening summary (7PM). No instant notifications.",
 
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Language changed to English.",
@@ -250,6 +266,10 @@
   "sub_cancel_no_active": "ℹ️ No families with active subscriptions.",
   "sub_cancelled_admin": "✅ Subscription for family #{family_id} has been cancelled.",
   "sub_cancelled_notify": "⚠️ <b>Subscription deactivated</b>\n\nYour subscription has been cancelled by the administrator. Contact support to renew.",
+
+  "sub_expiry_7d": "⏳ <b>Subscription expires in 7 days</b>\n\nRenew early to keep access to notifications and AI analysis.",
+  "sub_expiry_1d": "⚠️ <b>Subscription expires tomorrow!</b>\n\nRenew now to avoid interruption of grade monitoring.",
+  "sub_expiry_0d": "❌ <b>Subscription expired</b>\n\nGrade monitoring has been paused. Press 💳 Subscription to renew.",
 
   "admin_prices_title": "💰 <b>Current pricing:</b>\n",
   "admin_prices_enter": "✏️ Enter new price for <b>{plan}</b> plan (in UZS, e.g.: 29900):",
