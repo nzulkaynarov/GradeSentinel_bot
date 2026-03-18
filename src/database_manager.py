@@ -866,40 +866,43 @@ def get_all_queued_telegram_ids() -> List[int]:
 # Оценки за сегодня (для вечерней сводки)
 # ====================
 def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все оценки студента за сегодня."""
+    """Возвращает все оценки студента за сегодня (по Ташкенту, UTC+5).
+    Дедупликация по предмету: если оценка попала из 'Все оценки' и 'Сегодня',
+    берём самую свежую запись для каждого предмета."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, date_added
+            SELECT subject, grade_value, raw_text, MAX(date_added) as date_added
             FROM grade_history
-            WHERE student_id = ? AND date(date_added) = date('now')
+            WHERE student_id = ? AND date(date_added, '+5 hours') = date('now', '+5 hours')
+            GROUP BY subject
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 
 def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все оценки студента за вчера."""
+    """Возвращает все оценки студента за вчера (по Ташкенту, UTC+5)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT subject, grade_value, raw_text
             FROM grade_history
-            WHERE student_id = ? AND date(date_added) = date('now', '-1 day')
+            WHERE student_id = ? AND date(date_added, '+5 hours') = date('now', '+5 hours', '-1 day')
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 
 def has_today_grades_for_parent(telegram_id: int) -> bool:
-    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя."""
+    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя (по Ташкенту, UTC+5)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT COUNT(*) as c FROM grade_history gh
             JOIN family_links fl ON gh.student_id = fl.student_id
             JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND date(gh.date_added) = date('now')
+            WHERE p.telegram_id = ? AND date(gh.date_added, '+5 hours') = date('now', '+5 hours')
         ''', (telegram_id,))
         return cursor.fetchone()['c'] > 0
 
@@ -1208,14 +1211,14 @@ def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
 
 
 def get_families_expired_today() -> List[Dict[str, Any]]:
-    """Возвращает семьи, чья подписка истекла сегодня."""
+    """Возвращает семьи, чья подписка истекла сегодня (по Ташкенту, UTC+5)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT f.id as family_id, f.family_name, f.subscription_end
             FROM families f
             WHERE f.subscription_end IS NOT NULL
-              AND date(f.subscription_end) = date('now')
+              AND date(f.subscription_end, '+5 hours') = date('now', '+5 hours')
               AND f.subscription_end <= datetime('now')
         ''')
         return [dict(row) for row in cursor.fetchall()]
