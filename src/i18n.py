@@ -48,6 +48,7 @@ def _build_button_actions():
         'btn_support': 'support',
         'btn_broadcast': 'broadcast',
         'btn_settings': 'settings',
+        'btn_subscription': 'subscription',
     }
 
     for lang in SUPPORTED_LANGS:

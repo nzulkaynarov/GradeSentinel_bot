@@ -156,5 +156,36 @@
 
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Language changed to English.",
-  "main_menu": "Main menu"
+  "main_menu": "Main menu",
+
+  "btn_subscription": "💳 Subscription",
+  "family_invite_btn": "🔗 Invite relative",
+
+  "invite_generated": "🔗 <b>Invite link created!</b>\n\nSend this link to your relative:\n<code>{link}</code>\n\nThe link is valid for 48 hours and can be used once.",
+  "invite_invalid": "❌ This invite link is invalid or has already been used.",
+  "invite_expired": "❌ This invite link has expired.",
+  "invite_accepted": "✅ <b>Welcome!</b>\nYou have successfully joined the <b>{family}</b> family.\n\nYou will now receive grade notifications.",
+  "invite_auth_required": "👋 You've been invited to join the <b>{family}</b> family!\n\nPlease share your contact to confirm:",
+
+  "sub_unavailable": "💳 <i>Payment system is temporarily unavailable.</i>",
+  "sub_no_family": "ℹ️ You are not linked to any family.",
+  "sub_status_title": "💳 <b>Subscription Status</b>\n",
+  "sub_family_active": "🏠 <b>{family}</b> — active until <b>{end}</b>",
+  "sub_family_inactive": "🏠 <b>{family}</b> — <i>inactive</i>",
+  "sub_choose_plan": "Choose a subscription plan:",
+  "sub_plan_monthly": "1 month — {amount} UZS",
+  "sub_plan_quarterly": "3 months — {amount} UZS (-11%)",
+  "sub_plan_yearly": "12 months — {amount} UZS (-30%)",
+  "sub_select_family": "Select a family for subscription payment:",
+  "sub_invoice_title": "GradeSentinel Subscription",
+  "sub_invoice_desc": "Subscription for {months} month(s). Price: {amount} UZS.\nAutomatic grade notifications, evening summaries, AI analysis.",
+  "sub_invoice_error": "❌ Could not create payment invoice. Please try later.",
+  "sub_payment_success": "✅ <b>Payment successful!</b>\n\nYour subscription is activated for {months} month(s).\nThank you for supporting the project!",
+  "sub_required_ai": "🔒 <b>AI Analysis is a premium feature</b>\n\nAn active subscription is required for AI analytics.\nPress 💳 Subscription to subscribe.",
+  "sub_grant_usage": "Usage: /grant_sub &lt;family_id&gt; &lt;months&gt;",
+  "sub_granted": "✅ Subscription granted to family #{family_id} for {months} month(s).",
+
+  "help_parent": "📖 <b>Help — GradeSentinel</b>\n\n<b>What the bot does:</b>\nMonitors your children's grades in the electronic diary and instantly notifies you about new entries.\n\n<b>Menu buttons:</b>\n📈 <b>Grades</b> — view today's grades\n🤖 <b>AI Analysis</b> — detailed 14-day performance analysis (subscription)\n📊 <b>Status</b> — your statistics\n💳 <b>Subscription</b> — manage subscription\n💬 <b>Support</b> — contact administrator\n⚙️ <b>Language</b> — change interface language\n\n<b>Automation:</b>\n• Diary check every 5 minutes\n• Evening daily summary\n• Weekly AI report (Sun 7PM)\n\n/help — this help page",
+  "help_head": "\n\n<b>You are a family head. Additional features:</b>\n🏠 <b>My Family</b> — family management:\n  • 🧒 Add child (Google Sheet link)\n  • 🔗 Invite relative (invite link)\n  • 📋 List and remove members\n  • 🗑 Delete family",
+  "help_admin": "\n\n<b>Admin commands:</b>\n/add_family — create a family\n/list_families — list all families\n/grant_sub &lt;id&gt; &lt;months&gt; — grant subscription\n/status — global statistics\n📢 <b>Broadcast</b> — send message to all users"
 }

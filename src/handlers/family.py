@@ -35,7 +35,7 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
     from src.database_manager import get_child_count, get_parent_role
     lang = get_user_lang(chat_id)
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(t("family_add_member_btn", lang), callback_data=f"add_member_{f_id}"))
+    markup.add(types.InlineKeyboardButton(t("family_invite_btn", lang), callback_data=f"gen_invite_{f_id}"))
     markup.add(types.InlineKeyboardButton(t("family_add_child_btn", lang), callback_data=f"add_child_{f_id}"))
     markup.add(types.InlineKeyboardButton(t("family_list_btn", lang), callback_data=f"list_edit_{f_id}"))
 
@@ -113,6 +113,13 @@ def callback_del_student(call):
 def callback_back_manage(call):
     f_id = int(call.data.split('_')[2])
     _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('gen_invite_'))
+def callback_gen_invite(call):
+    f_id = int(call.data.split('_')[2])
+    bot.answer_callback_query(call.id)
+    from src.handlers.invite import generate_invite_link
+    generate_invite_link(call.message.chat.id, f_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_child_'))
 def callback_add_child(call):
@@ -275,34 +282,22 @@ def get_grades_command(message):
 
 
 def _show_student_grades(chat_id: int, student: dict):
-    from src.google_sheets import get_sheet_data, get_spreadsheet_title
-    from src.data_cleaner import sanitize_grade
+    from src.database_manager import get_today_grades_for_student
     from src.utils import clean_student_name
     lang = get_user_lang(chat_id)
 
     fio = student['fio']
     spreadsheet_id = student['spreadsheet_id']
+    display_name = student.get('display_name') or clean_student_name(fio)
 
-    sheet_title = get_spreadsheet_title(spreadsheet_id)
-    display_name = clean_student_name(sheet_title) if sheet_title else fio
-
-    data = get_sheet_data(spreadsheet_id, "Сегодня!A1:B50")
-    if not data:
-        send_content(chat_id, t("grades_fetch_error", lang, name=display_name))
-        return
+    grades = get_today_grades_for_student(student['id'])
 
     report_lines = [t("grades_title", lang, name=display_name)]
     grades_found = False
 
-    for row in data[1:]:
-        if not isinstance(row, list) or len(row) < 2: continue
-        subject = str(row[0]).strip()
-        raw_grade = str(row[1]).strip()
-        if not raw_grade or not subject: continue
-
-        _, clean_text = sanitize_grade(raw_grade)
-        if clean_text:
-            report_lines.append(f"🔹 {subject}: <b>{clean_text}</b>")
+    for g in grades:
+        if g['raw_text']:
+            report_lines.append(f"🔹 {g['subject']}: <b>{g['raw_text']}</b>")
             grades_found = True
 
     if not grades_found:

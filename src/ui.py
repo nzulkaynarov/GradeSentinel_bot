@@ -26,6 +26,9 @@ def get_main_menu(chat_id: int) -> types.ReplyKeyboardMarkup:
     if has_children:
         markup.row(t("btn_grades", lang), t("btn_ai_analysis", lang))
 
+    if is_head or has_children:
+        markup.row(t("btn_subscription", lang))
+
     if role or is_head or has_children:
         markup.row(t("btn_support", lang), t("btn_settings", lang))
 

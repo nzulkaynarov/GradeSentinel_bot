@@ -39,6 +39,8 @@ import src.handlers.family
 import src.handlers.communication
 import src.handlers.analytics
 import src.handlers.settings
+import src.handlers.subscription
+import src.handlers.invite
 
 # For direct routing in main menu
 from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start
@@ -46,15 +48,45 @@ from src.handlers.family import cmd_manage_family, get_grades_command
 from src.handlers.communication import support_started, broadcast_started
 from src.handlers.analytics import cmd_ai_report
 from src.handlers.settings import cmd_settings
+from src.handlers.subscription import cmd_subscription
 
 # ====================
 # Telegram bot setup
 # ====================
+@bot.message_handler(commands=['help'])
+def send_help(message):
+    """Справка по командам бота — адаптируется под роль пользователя."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+    from src.database_manager import is_head_of_any_family
+
+    # Базовая справка для всех
+    text = t("help_parent", lang)
+
+    # Дополнение для глав семей
+    if is_head_of_any_family(user_id):
+        text += t("help_head", lang)
+
+    # Дополнение для админа
+    if get_parent_role(user_id) == 'admin':
+        text += t("help_admin", lang)
+
+    send_menu_safe(user_id, text)
+
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     user_id = message.chat.id
     lang = get_user_lang(user_id)
     admin_id_env = os.environ.get("ADMIN_ID")
+
+    # Проверяем deep link (инвайт)
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].startswith('inv_'):
+        invite_code = args[1][4:]
+        from src.handlers.invite import handle_invite_deeplink
+        handle_invite_deeplink(message, invite_code)
+        return
 
     # Автоматическая авторизация админа
     if admin_id_env and str(user_id) == str(admin_id_env):
@@ -115,12 +147,21 @@ def contact_handler(message):
         phone = message.contact.phone_number
         user_id = message.chat.id
 
-        # Проверяем, был ли предвыбор языка
+        # Проверяем состояние пользователя (язык или инвайт)
         from src.database_manager import get_user_state, clear_user_state, set_user_lang
         state = get_user_state(user_id)
         chosen_lang = state.get('data') if state and state.get('state') == 'pending_lang' else None
+        pending_invite = state.get('data') if state and state.get('state') == 'pending_invite' else None
+
         if chosen_lang:
             clear_user_state(user_id)
+
+        # Если это инвайт — обрабатываем через invite handler
+        if pending_invite:
+            clear_user_state(user_id)
+            from src.handlers.invite import process_invite_after_contact
+            if process_invite_after_contact(user_id, phone, pending_invite):
+                return
 
         parent = get_parent_by_phone(phone)
 
@@ -202,6 +243,8 @@ def handle_menu_buttons(message):
         support_started(message)
     elif action == "broadcast":
         broadcast_started(message)
+    elif action == "subscription":
+        cmd_subscription(message)
     elif action == "settings":
         cmd_settings(message)
 
@@ -236,8 +279,25 @@ def main():
     set_scheduler_bot(bot)
     start_daily_schedulers()
 
-    # 6. Start telegram bot blocking main thread
+    # 6. Register bot commands in Telegram menu
+    _register_bot_commands()
+
+    # 7. Start telegram bot blocking main thread
     start_bot()
+
+
+def _register_bot_commands():
+    """Регистрирует команды бота в меню Telegram (кнопка / в чате)."""
+    try:
+        bot.set_my_commands([
+            types.BotCommand("start", "Начать / авторизоваться"),
+            types.BotCommand("help", "Справка по боту"),
+            types.BotCommand("grades", "Оценки за сегодня"),
+            types.BotCommand("status", "Статус и статистика"),
+        ])
+        logger.info("Bot commands registered in Telegram menu.")
+    except Exception as e:
+        logger.warning(f"Could not set bot commands: {e}")
 
 if __name__ == '__main__':
     main()
