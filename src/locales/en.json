@@ -155,7 +155,7 @@
   "quarter_4": "4th quarter",
   "quarter_5": "Annual",
 
-  "quiet_morning_header": "🌅 <b>Good morning! {count} notifications received overnight:</b>\n",
+  "quiet_morning_header": "🌅 <b>Good morning! {count} grades received overnight:</b>",
   "daily_summary_title": "📋 <b>Daily Summary</b>",
   "daily_avg": "Average grade: <b>{avg}</b>",
   "daily_trend_up": "📈 (yesterday: {yesterday})",

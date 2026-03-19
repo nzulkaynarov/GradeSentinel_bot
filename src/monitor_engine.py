@@ -129,8 +129,9 @@ def check_for_new_grades():
                 continue
 
             # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню
+            # Ключ: предмет + дата (не row_idx, т.к. строки могут сдвигаться при вставке/удалении)
             tashkent_today = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
-            cell_reference = f"Сегодня!B{row_idx}:{tashkent_today}"
+            cell_reference = f"Сегодня!{subject}:{tashkent_today}"
 
             grade_value, clean_text = sanitize_grade(raw_grade)
 
