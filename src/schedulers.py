@@ -86,7 +86,12 @@ def _scheduler_loop():
 
 
 def _flush_quiet_hours_queue():
-    from src.database_manager import get_all_queued_telegram_ids, get_and_clear_queued_notifications, get_user_lang
+    """Утренняя сводка: агрегирует ночные оценки по ученикам вместо свалки сырых сообщений."""
+    from src.database_manager import (
+        get_all_queued_telegram_ids, get_and_clear_queued_notifications,
+        get_user_lang, get_students_for_parent, get_overnight_grades_for_student,
+    )
+    from src.notification_helpers import get_emotional_header
 
     if not _bot:
         return
@@ -99,56 +104,88 @@ def _flush_quiet_hours_queue():
     logger.info(f"Flushing quiet hours queue for {len(tg_ids)} users.")
 
     for tg_id in tg_ids:
-        messages = get_and_clear_queued_notifications(tg_id)
-        if not messages:
+        # Очищаем очередь (обязательно, даже если сводка пустая)
+        queued_messages = get_and_clear_queued_notifications(tg_id)
+        if not queued_messages:
             continue
 
         lang = get_user_lang(tg_id)
-        header = t("quiet_morning_header", lang, count=len(messages))
 
-        # Агрегируем в одно сообщение вместо спама отдельными
-        # Каждое сообщение в очереди — полный HTML. Собираем в одно.
-        if len(messages) <= 3:
-            # До 3 — объединяем в одно сообщение
-            combined = header + "\n\n" + "\n\n➖➖➖➖➖➖\n\n".join(messages)
+        # Собираем реальную сводку из БД (дедуплицировано по предмету)
+        students = get_students_for_parent(tg_id)
+        student_blocks = []
+        total_grades = 0
+
+        for student in students:
+            grades = get_overnight_grades_for_student(student['id'])
+            if not grades:
+                continue
+
+            total_grades += len(grades)
+            display_name = student.get('display_name') or student['fio']
+            spreadsheet_id = student.get('spreadsheet_id', '')
+
+            lines = [f"👨‍🎓 <b>{display_name}</b>\n"]
+            numeric_grades = []
+
+            for g in grades:
+                _, emoji = get_emotional_header(g['grade_value'], g['raw_text'], lang)
+                lines.append(f"  {g['subject']}: <b>{g['raw_text']}</b>  {emoji}")
+                if g['grade_value'] is not None:
+                    numeric_grades.append(g['grade_value'])
+
+            if numeric_grades:
+                avg = sum(numeric_grades) / len(numeric_grades)
+                lines.append(f"\n  {t('daily_avg', lang, avg=f'{avg:.1f}')}")
+
+            if spreadsheet_id:
+                lines.append(
+                    f"\n  <a href='https://docs.google.com/spreadsheets/d/{spreadsheet_id}'>"
+                    f"{t('grades_open_sheet', lang)}</a>"
+                )
+
+            student_blocks.append("\n".join(lines))
+
+        if student_blocks:
+            header = t("quiet_morning_header", lang, count=total_grades)
+            msg = header + "\n\n" + "\n\n".join(student_blocks)
+
             # Telegram limit: 4096 chars
-            if len(combined) > 4000:
-                # Если слишком длинное — разбиваем на 2
-                mid = len(messages) // 2
-                part1 = header + "\n\n" + "\n\n➖➖➖➖➖➖\n\n".join(messages[:mid])
-                part2 = "\n\n➖➖➖➖➖➖\n\n".join(messages[mid:])
-                for part in [part1, part2]:
-                    try:
-                        _bot.send_message(tg_id, part, parse_mode='HTML', disable_web_page_preview=True)
+            if len(msg) > 4000:
+                # Шлём по одному ученику
+                try:
+                    _bot.send_message(tg_id, header, parse_mode='HTML')
+                    time.sleep(0.05)
+                    for block in student_blocks:
+                        _bot.send_message(tg_id, block, parse_mode='HTML',
+                                          disable_web_page_preview=True)
                         time.sleep(0.05)
-                    except Exception as e:
-                        logger.error(f"Failed to send morning part to {tg_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to send morning summary to {tg_id}: {e}")
             else:
                 try:
-                    _bot.send_message(tg_id, combined, parse_mode='HTML', disable_web_page_preview=True)
+                    _bot.send_message(tg_id, msg, parse_mode='HTML',
+                                      disable_web_page_preview=True)
                 except Exception as e:
                     logger.error(f"Failed to send morning summary to {tg_id}: {e}")
         else:
-            # 4+ сообщений — отправляем заголовок + сообщения порциями по 3
+            # Нет оценок в БД (возможно, четвертные или другие уведомления) —
+            # отправляем оригинальные сообщения из очереди как fallback
+            header = t("quiet_morning_header", lang, count=len(queued_messages))
+            combined = header + "\n\n" + "\n\n➖➖➖➖➖➖\n\n".join(queued_messages)
             try:
-                chunk_size = 3
-                for i in range(0, len(messages), chunk_size):
-                    chunk = messages[i:i + chunk_size]
-                    prefix = header + "\n\n" if i == 0 else ""
-                    combined = prefix + "\n\n➖➖➖➖➖➖\n\n".join(chunk)
-                    if len(combined) > 4000:
-                        # Если одна порция слишком большая, шлём по одной
-                        if i == 0:
-                            _bot.send_message(tg_id, header, parse_mode='HTML')
-                            time.sleep(0.05)
-                        for msg in chunk:
-                            _bot.send_message(tg_id, msg, parse_mode='HTML', disable_web_page_preview=True)
-                            time.sleep(0.05)
-                    else:
-                        _bot.send_message(tg_id, combined, parse_mode='HTML', disable_web_page_preview=True)
+                if len(combined) > 4000:
+                    _bot.send_message(tg_id, header, parse_mode='HTML')
                     time.sleep(0.05)
+                    for qm in queued_messages:
+                        _bot.send_message(tg_id, qm, parse_mode='HTML',
+                                          disable_web_page_preview=True)
+                        time.sleep(0.05)
+                else:
+                    _bot.send_message(tg_id, combined, parse_mode='HTML',
+                                      disable_web_page_preview=True)
             except Exception as e:
-                logger.error(f"Failed to send morning messages to {tg_id}: {e}")
+                logger.error(f"Failed to send fallback morning messages to {tg_id}: {e}")
 
 
 def _send_daily_evening_summary():

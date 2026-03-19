@@ -155,7 +155,7 @@
   "quarter_4": "4-я четверть",
   "quarter_5": "Годовая",
 
-  "quiet_morning_header": "🌅 <b>Доброе утро! За ночь поступило {count} уведомлений:</b>",
+  "quiet_morning_header": "🌅 <b>Доброе утро! За ночь поступило {count} оценок:</b>",
   "daily_summary_title": "📋 <b>Итоги дня</b>",
   "daily_avg": "Средний балл: <b>{avg}</b>",
   "daily_trend_up": "📈 (вчера: {yesterday})",

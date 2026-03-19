@@ -155,7 +155,7 @@
   "quarter_4": "4-chorak",
   "quarter_5": "Yillik",
 
-  "quiet_morning_header": "🌅 <b>Xayrli tong! Tunda {count} ta xabar keldi:</b>\n",
+  "quiet_morning_header": "🌅 <b>Xayrli tong! Tunda {count} ta baho keldi:</b>",
   "daily_summary_title": "📋 <b>Kun yakunlari</b>",
   "daily_avg": "O'rtacha ball: <b>{avg}</b>",
   "daily_trend_up": "📈 (kecha: {yesterday})",

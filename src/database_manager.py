@@ -881,6 +881,27 @@ def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_overnight_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает оценки студента, добавленные за ночь (с 22:00 до 07:00 по Ташкенту).
+    Дедупликация по предмету: берём последнюю запись."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Берём оценки добавленные с 22:00 вчера по Ташкенту (17:00 UTC) до сейчас
+        # datetime('now','+5 hours','start of day','-2 hours','-5 hours')
+        #   = полночь Ташкента → -2ч = 22:00 вчера Ташкент → -5ч = 17:00 вчера UTC
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, cell_reference,
+                   MAX(date_added) as date_added
+            FROM grade_history
+            WHERE student_id = ?
+              AND date_added >= datetime('now', '+5 hours', 'start of day', '-2 hours', '-5 hours')
+              AND date_added <= datetime('now')
+            GROUP BY subject
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
     """Возвращает все оценки студента за вчера (по Ташкенту, UTC+5)."""
     with get_db_connection() as conn:
