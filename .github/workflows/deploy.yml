@@ -1,41 +1,39 @@
-name: Deploy to Raspberry Pi
+name: Deploy to VPS
 
 on:
   push:
     branches:
-      - main # Деплой только при пуше в основную ветку
+      - main
 
 jobs:
   deploy:
-    runs-on: self-hosted # Команда GitHub'у использовать твою малину
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Очистка старых root-файлов базы перед checkout
-        run: |
-          sudo rm -rf data/ || true
-          sudo rm -rf config/ || true
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
 
-      - name: Перенос файлов репозитория
-        uses: actions/checkout@v4
+            cd ~/GradeSentinel_bot
 
-      - name: Создание конфигурационных файлов из секретов
-        run: |
-          # Создаем .env
-          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
-          echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
-          echo "ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}" >> .env
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
-          echo "WEBAPP_URL=${{ secrets.WEBAPP_URL }}" >> .env
-          echo "WEBAPP_PORT=${{ secrets.WEBAPP_PORT }}" >> .env
-          
-          # Создаем папку config (если её нет)
-          mkdir -p config
-          
-          # Записываем JSON-ключ Google Sheets в файл напрямую из секрета
-          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > config/credentials.json
+            # Обновляем код
+            git fetch origin main
+            git reset --hard origin/main
 
-      - name: Сборка и перезапуск Docker
+            # Создаём .env из секретов (хранятся на сервере в ~/.env.gradesentinel)
+            cp ~/.env.gradesentinel .env
 
-        run: |
-          docker compose down || true
-          docker compose up -d --build
+            # Пересобираем и перезапускаем
+            docker compose down
+            docker compose up -d --build
+
+            # Чистим старые образы
+            docker image prune -f
+
+            echo "✅ Deploy complete: $(date)"
