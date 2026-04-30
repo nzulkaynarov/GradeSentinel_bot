@@ -11,7 +11,7 @@ from src.database_manager import (
     get_parent_role, get_students_for_parent, get_active_spreadsheets,
     get_parents_for_student, get_user_lang
 )
-from src.analytics_engine import analyze_student_grades, generate_weekly_summary
+from src.analytics_engine import analyze_student_grades, generate_weekly_summary, AIAnalyticsError
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,12 @@ def _handle_ai_report(user_id: int):
         student_id = student['id']
         display_name = student.get('display_name') or student['fio']
 
-        analysis = analyze_student_grades(student_id, display_name, lang=lang)
+        try:
+            analysis = analyze_student_grades(student_id, display_name, lang=lang)
+        except AIAnalyticsError:
+            send_content(user_id, t("ai_error", lang, name=display_name))
+            continue
+
         if analysis:
             msg = t("ai_report_title", lang, name=display_name, analysis=analysis)
             send_content(user_id, msg)

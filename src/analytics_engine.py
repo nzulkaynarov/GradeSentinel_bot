@@ -10,6 +10,15 @@ logger = logging.getLogger(__name__)
 
 _client = None
 
+# Короткий таймаут: пользователь не должен ждать 10 минут (SDK дефолт), если
+# Anthropic тормозит или сеть на Pi моргает. 30 сек хватает для max_tokens=800.
+_API_TIMEOUT_SECONDS = 30.0
+
+
+class AIAnalyticsError(Exception):
+    """Поднимается, когда Anthropic API недоступен или вернул ошибку.
+    Отличается от 'оценок мало' (там просто None) — handler показывает разный текст."""
+
 
 def _get_client() -> Optional[anthropic.Anthropic]:
     global _client
@@ -21,14 +30,17 @@ def _get_client() -> Optional[anthropic.Anthropic]:
         logger.warning("ANTHROPIC_API_KEY not set. AI analytics disabled.")
         return None
 
-    _client = anthropic.Anthropic(api_key=api_key)
+    _client = anthropic.Anthropic(api_key=api_key, timeout=_API_TIMEOUT_SECONDS)
     return _client
 
 
 def analyze_student_grades(student_id: int, student_name: str, days: int = 14, lang: str = 'ru') -> Optional[str]:
     """
     Анализирует оценки студента за последние N дней через Claude API.
-    Промпт генерируется на языке пользователя.
+
+    Возвращает текст анализа, или None если данных недостаточно.
+    Поднимает AIAnalyticsError при ошибке API/сети — чтобы handler мог
+    показать пользователю осмысленное сообщение, а не "недостаточно данных".
     """
     client = _get_client()
     if not client:
@@ -62,21 +74,29 @@ def analyze_student_grades(student_id: int, student_name: str, days: int = 14, l
 
     try:
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-haiku-4-5",
             max_tokens=800,
             messages=[{
                 "role": "user",
-                "content": prompt
-            }]
+                "content": prompt,
+            }],
         )
         return message.content[0].text
+    except anthropic.APITimeoutError as e:
+        logger.error(f"Anthropic API timeout after {_API_TIMEOUT_SECONDS}s", exc_info=e)
+        raise AIAnalyticsError("timeout") from e
     except anthropic.APIError as e:
-        logger.error(f"Anthropic API error: {e}")
-        return None
+        logger.error(f"Anthropic API error: {e}", exc_info=e)
+        raise AIAnalyticsError(str(e)) from e
     except Exception as e:
-        logger.error(f"Unexpected error in AI analytics: {e}")
-        return None
+        logger.error("Unexpected error in AI analytics", exc_info=e)
+        raise AIAnalyticsError(str(e)) from e
 
 
 def generate_weekly_summary(student_id: int, student_name: str, lang: str = 'ru') -> Optional[str]:
-    return analyze_student_grades(student_id, student_name, days=7, lang=lang)
+    """Используется планировщиком воскресной рассылки — глотаем API-ошибки,
+    чтобы один зависший Anthropic не валил всю рассылку."""
+    try:
+        return analyze_student_grades(student_id, student_name, days=7, lang=lang)
+    except AIAnalyticsError:
+        return None

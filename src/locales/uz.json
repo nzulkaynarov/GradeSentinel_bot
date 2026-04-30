@@ -194,6 +194,7 @@
   "ai_loading": "🤖 <i>Baholarni tahlil qilayapman... Bu bir necha soniya davom etishi mumkin.</i>",
   "ai_report_title": "🤖 <b>AI-tahlil: {name}</b>\n📅 Davr: oxirgi 14 kun\n\n{analysis}",
   "ai_not_enough_data": "📊 <b>{name}</b>\nℹ️ Tahlil qilish uchun yetarli ma'lumot yo'q (14 kun ichida kamida 2 ta baho kerak).",
+  "ai_error": "📊 <b>{name}</b>\n⚠️ AI-xizmatdan javob olinmadi. Keyinroq urinib ko'ring yoki yordam xizmatiga yozing.",
   "ai_weekly_title": "📊 <b>Haftalik AI-hisobot</b>\n👨‍🎓 {name}\n\n{analysis}",
 
   "ai_prompt": "Sen — maktab AI-tahlilchisissan. {name} o'quvchining oxirgi {days} kun ichidagi baholarini tahlil qil.\n\nJavobni QATIY shu formatda yoz (qalin uchun HTML-teg <b> ishlat):\n\n📊 <b>Xulosa:</b> [baholar soni] ta baho | O'rtacha ball: [X.X]\n5 — [N] ta | 4 — [N] ta | 3 — [N] ta | 2 — [N] ta\n\n✅ <b>Kuchli tomonlar:</b> [eng yaxshi baholi fanlar va ballar]\n\n⚠️ <b>Diqqat:</b> [3/2 baholi fanlar, aniq faktlar]\n— [qisqa tushuntirish, agar muammo bo'lsa]\n\n💡 <b>Tavsiya:</b> [ota-onalar uchun 1-2 aniq maslahat, umumiy gaplar bo'lmasin]\n\nQOIDALAR:\n- Baholarni aniq hisobla, xato qilma\n- FAQAT o'zbek tilida yoz\n- Markdown (** yoki #) ISHLATMA, faqat HTML-teg <b></b>\n- Maksimum 3 ta emoji (📊 ✅ ⚠️ 💡 — faqat blok boshida)\n- Baholar kam bo'lsa — shunday de, trend o'ylab topma\n- Aniq yoz: fan nomlari va ballarni ayt, suv quyma\n- Butun javob — 8 qatordan ko'p bo'lmasin\n\nBaholar:\n{grades}",
