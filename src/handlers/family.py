@@ -3,7 +3,8 @@ from typing import Optional, Tuple
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import get_user_lang, can_manage_family
+from src.database_manager import get_user_lang
+from src.db.auth import can_manage_family
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ def _parse_int_args(call_data: str, prefix: str, count: int) -> Optional[Tuple[i
         return None
 
 
-def _check_family_access(call, family_id: int) -> bool:
+def _check_family_access(call: types.CallbackQuery, family_id: int) -> bool:
     """Проверяет, что пользователь имеет право управлять данной семьёй.
     При отсутствии прав отвечает alert и возвращает False."""
     if can_manage_family(call.from_user.id, family_id):
@@ -235,8 +236,9 @@ def process_add_child_step(message, f_id):
             send_menu_safe(message.chat.id, t("child_url_no_id", lang))
             return
 
+        from src.config import MAX_CHILDREN_PER_FAMILY
         current_count = get_child_count(f_id)
-        if current_count >= 5:
+        if current_count >= MAX_CHILDREN_PER_FAMILY:
             send_menu_safe(message.chat.id, t("child_limit_reached", lang, count=current_count))
             return
 

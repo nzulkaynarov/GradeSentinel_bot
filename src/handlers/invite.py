@@ -39,7 +39,8 @@ def generate_invite_link(chat_id: int, family_id: int):
         bot.send_message(chat_id, t("family_account_not_found", lang))
         return
 
-    code = create_invite(family_id, parent_id, expires_hours=48)
+    from src.config import INVITE_EXPIRES_HOURS
+    code = create_invite(family_id, parent_id, expires_hours=INVITE_EXPIRES_HOURS)
     username = _get_bot_username()
     link = f"https://t.me/{username}?start=inv_{code}"
 

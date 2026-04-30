@@ -109,7 +109,8 @@ def _run_job_safe(job: str, marker: str, func):
             func()
             _set_marker(job, marker)
         except Exception as e:
-            logger.error(f"Scheduler job '{job}' failed: {e}", exc_info=True)
+            from src.error_reporter import report
+            report(f"scheduler.{job}", e, marker=marker)
     finally:
         lock.release()
 
@@ -143,7 +144,8 @@ def _scheduler_loop():
                 _run_job_safe('cleanup', today_str, _run_weekly_cleanup)
 
         except Exception as e:
-            logger.error(f"Error in daily scheduler loop: {e}", exc_info=True)
+            from src.error_reporter import report
+            report("scheduler.loop", e)
 
         time.sleep(180)
 
@@ -417,16 +419,17 @@ def _check_quarter_grades():
 
 def _run_weekly_cleanup():
     """Архивирование старых оценок и чистка истёкших инвайтов/очередей.
-    Безопасно вызывать в любое время."""
-    from src.database_manager import (
+    Безопасно вызывать в любое время. Параметры по умолчанию из src/config.py."""
+    from src.db.maintenance import (
         archive_old_grades, cleanup_old_notification_queue, cleanup_expired_invites
     )
     try:
-        archive_old_grades(days=180)
-        cleanup_old_notification_queue(hours=48)
-        cleanup_expired_invites(days=30)
+        archive_old_grades()
+        cleanup_old_notification_queue()
+        cleanup_expired_invites()
     except Exception as e:
-        logger.error(f"Weekly cleanup failed: {e}", exc_info=True)
+        from src.error_reporter import report
+        report("scheduler.weekly_cleanup", e)
 
 
 def _startup_history_import():

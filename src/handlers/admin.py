@@ -6,8 +6,9 @@ from src.ui import send_menu_safe, send_content
 from src.database_manager import (
     get_parent_role, get_all_families, add_family, add_parent,
     link_parent_to_family, get_db_connection, get_user_lang,
-    delete_family_cascade, get_families_for_head,
+    get_families_for_head,
 )
+from src.db.maintenance import delete_family_cascade
 from src.i18n import t
 
 logger = logging.getLogger(__name__)

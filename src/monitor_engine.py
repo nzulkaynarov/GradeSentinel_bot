@@ -4,6 +4,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from collections import defaultdict
+from typing import Optional
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
@@ -26,16 +27,18 @@ logger = logging.getLogger(__name__)
 
 _bot = None
 
+from src.config import (
+    FETCH_WORKERS as _FETCH_WORKERS,
+    SHEET_FAILURE_THRESHOLD as _FAILURE_THRESHOLD,
+    SHEET_FAILURE_ALERT_COOLDOWN_HOURS as _FAILURE_ALERT_COOLDOWN_HOURS,
+)
+
 # Защита от перекрытия циклов polling
 _polling_lock = threading.Lock()
 # Учёт consecutive failures по ученикам — для алерта при «зависшей» таблице
 _student_failure_counts: dict = defaultdict(int)
-_FAILURE_THRESHOLD = 5
 # Предотвращаем повторные алерты по одному и тому же ученику чаще раза в день
 _last_failure_alert: dict = {}
-_FAILURE_ALERT_COOLDOWN_HOURS = 24
-# Воркеров для параллельного fetch'а Google Sheets
-_FETCH_WORKERS = 8
 
 def set_bot_instance(bot):
     global _bot
@@ -374,13 +377,17 @@ def check_for_quarter_changes():
     logger.info("Quarter grades check completed.")
 
 
-def start_polling(interval_seconds=300):
+def start_polling(interval_seconds: Optional[int] = None):
+    from src.config import POLLING_INTERVAL
+    from src.error_reporter import report
+    if interval_seconds is None:
+        interval_seconds = POLLING_INTERVAL
     logger.info(f"Starting GradeSentinel monitor engine (interval: {interval_seconds}s)")
     while True:
         try:
             check_for_new_grades()
         except Exception as e:
-            logger.error(f"Error during polling cycle: {e}")
+            report("monitor.cycle", e)
 
         logger.info(f"Sleeping for {interval_seconds} seconds...")
         time.sleep(interval_seconds)

@@ -214,10 +214,10 @@ def callback_sub_plan(call):
 #  ЭКРАН 4: Выбор способа оплаты
 # ═══════════════════════════════════════════
 
-def _check_user_can_pay_for_family(call, family_id: int) -> bool:
+def _check_user_can_pay_for_family(call: types.CallbackQuery, family_id: int) -> bool:
     """Проверяет, что пользователь — член семьи или админ.
     Иначе отвечает alert и возвращает False."""
-    from src.database_manager import is_member_of_family, get_parent_role
+    from src.db.auth import is_member_of_family, get_parent_role
     user_id = call.from_user.id
     if get_parent_role(user_id) == 'admin' or is_member_of_family(user_id, family_id):
         return True

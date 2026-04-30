@@ -21,8 +21,8 @@ from src.database_manager import (
     get_grade_history_for_student_all,
     get_parent_role,
     get_quarter_grades,
-    is_student_under_active_subscription,
 )
+from src.db.auth import is_student_under_active_subscription
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

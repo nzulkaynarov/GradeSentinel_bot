@@ -12,18 +12,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Rate limiting: max 5 requests per 10 seconds per user
-_rate_limit_store: dict = defaultdict(list)
-_rate_limit_lock = threading.Lock()
-RATE_LIMIT_MAX = 5
-RATE_LIMIT_WINDOW = 10  # seconds
-_RATE_LIMIT_GC_INTERVAL = 600  # секунд между чисткой неактивных пользователей
-_last_rate_limit_gc = 0.0
+# Конфиг и rate limiter вынесены в отдельные модули
+from src.config import (
+    RATE_LIMIT_MAX, RATE_LIMIT_WINDOW,
+    PANEL_CACHE_TTL, POLLING_INTERVAL, HEARTBEAT_INTERVAL,
+)
+from src.rate_limiter import is_rate_limited
 
-# Simple TTL cache for user panel data (reduces DB queries)
 _panel_cache: dict = {}  # {chat_id: (timestamp, data_dict)}
 _panel_cache_lock = threading.Lock()
-PANEL_CACHE_TTL = 30  # seconds
 
 
 def _get_panel_data(chat_id: int) -> dict:
@@ -60,35 +57,6 @@ def _invalidate_panel_cache(chat_id: int):
     """Invalidates panel cache for a user (call after data changes). Thread-safe."""
     with _panel_cache_lock:
         _panel_cache.pop(chat_id, None)
-
-
-def _rate_limit_gc(now: float):
-    """Очищает записи неактивных пользователей. Должна вызываться под локом."""
-    global _last_rate_limit_gc
-    if now - _last_rate_limit_gc < _RATE_LIMIT_GC_INTERVAL:
-        return
-    _last_rate_limit_gc = now
-    stale_users = [
-        uid for uid, ts_list in _rate_limit_store.items()
-        if not ts_list or now - ts_list[-1] > RATE_LIMIT_WINDOW * 6
-    ]
-    for uid in stale_users:
-        _rate_limit_store.pop(uid, None)
-    if stale_users:
-        logger.debug(f"Rate limit GC: removed {len(stale_users)} stale entries")
-
-
-def is_rate_limited(user_id: int) -> bool:
-    """Проверяет, превышен ли лимит запросов для пользователя. Thread-safe."""
-    now = time.time()
-    with _rate_limit_lock:
-        _rate_limit_gc(now)
-        timestamps = _rate_limit_store[user_id]
-        _rate_limit_store[user_id] = [ts for ts in timestamps if now - ts < RATE_LIMIT_WINDOW]
-        if len(_rate_limit_store[user_id]) >= RATE_LIMIT_MAX:
-            return True
-        _rate_limit_store[user_id].append(now)
-        return False
 
 from src.bot_instance import bot
 from src.ui import send_menu_safe
@@ -533,12 +501,12 @@ def handle_menu_buttons(message):
 _HEARTBEAT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", ".heartbeat"
 )
-_HEARTBEAT_INTERVAL = 30  # секунд между обновлениями файла
 
 
 def _heartbeat_loop():
-    """Раз в N секунд touch'ит файл /app/data/.heartbeat. Docker healthcheck смотрит его mtime —
-    если файл «протух» (>3 минут без обновлений), значит main thread/polling завис."""
+    """Раз в N секунд touch'ит файл data/.heartbeat. Docker healthcheck смотрит mtime —
+    если файл «протух» (>3 минут без обновлений), значит main thread/polling завис.
+    Интервал берётся из config.HEARTBEAT_INTERVAL."""
     while True:
         try:
             os.makedirs(os.path.dirname(_HEARTBEAT_PATH), exist_ok=True)
@@ -546,7 +514,7 @@ def _heartbeat_loop():
                 f.write(str(int(time.time())))
         except Exception as e:
             logger.warning(f"Heartbeat write failed: {e}")
-        time.sleep(_HEARTBEAT_INTERVAL)
+        time.sleep(HEARTBEAT_INTERVAL)
 
 
 def start_bot():
@@ -558,6 +526,10 @@ def start_bot():
 def main():
     logger.info("Initializing GradeSentinel v2.0...")
 
+    # 0. Error reporter (Sentry hook, no-op без SENTRY_DSN)
+    from src.error_reporter import _try_init_sentry
+    _try_init_sentry()
+
     # 1. Init DB
     init_db()
 
@@ -568,7 +540,7 @@ def main():
     from src.monitor_engine import set_bot_instance
     set_bot_instance(bot)
 
-    monitor_thread = threading.Thread(target=start_polling, args=(300,), daemon=True)
+    monitor_thread = threading.Thread(target=start_polling, args=(POLLING_INTERVAL,), daemon=True)
     monitor_thread.start()
     logger.info("Monitor engine thread started with bot integration.")
 

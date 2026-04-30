@@ -1229,8 +1229,10 @@ def has_any_active_subscription(telegram_id: int) -> bool:
 # ====================
 # Настройки (key-value)
 # ====================
-def archive_old_grades(days: int = 180) -> int:
+def archive_old_grades(days: Optional[int] = None) -> int:
     """Переносит оценки старше N дней из grade_history в grade_history_archive.
+
+    days по умолчанию берётся из config.GRADE_ARCHIVE_DAYS.
 
     Атомарно по отношению к параллельным INSERT'ам: переносим только конкретные
     id, отобранные SELECT'ом, а не запрос по `date_added < cutoff` в каждом
@@ -1238,6 +1240,9 @@ def archive_old_grades(days: int = 180) -> int:
     INSERT — или удалить ту, что прилетела между запросами).
     Возвращает число перенесённых записей.
     """
+    if days is None:
+        from src.config import GRADE_ARCHIVE_DAYS
+        days = GRADE_ARCHIVE_DAYS
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # BEGIN IMMEDIATE — запрашиваем write-lock сразу, чтобы между SELECT и
@@ -1277,8 +1282,12 @@ def archive_old_grades(days: int = 180) -> int:
         return moved
 
 
-def cleanup_old_notification_queue(hours: int = 48) -> int:
-    """Удаляет нерасфлушенные сообщения старше N часов (страховка от утечек)."""
+def cleanup_old_notification_queue(hours: Optional[int] = None) -> int:
+    """Удаляет нерасфлушенные сообщения старше N часов (страховка от утечек).
+    hours по умолчанию из config.NOTIFICATION_QUEUE_TTL_HOURS."""
+    if hours is None:
+        from src.config import NOTIFICATION_QUEUE_TTL_HOURS
+        hours = NOTIFICATION_QUEUE_TTL_HOURS
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -1290,8 +1299,12 @@ def cleanup_old_notification_queue(hours: int = 48) -> int:
         return cursor.rowcount
 
 
-def cleanup_expired_invites(days: int = 30) -> int:
-    """Удаляет инвайты, истекшие более N дней назад."""
+def cleanup_expired_invites(days: Optional[int] = None) -> int:
+    """Удаляет инвайты, истекшие более N дней назад.
+    days по умолчанию из config.EXPIRED_INVITE_TTL_DAYS."""
+    if days is None:
+        from src.config import EXPIRED_INVITE_TTL_DAYS
+        days = EXPIRED_INVITE_TTL_DAYS
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''

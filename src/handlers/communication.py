@@ -241,6 +241,7 @@ def process_broadcast_confirmation(call):
         for tg_id in users:
             if str(tg_id) == str(target_user_id):
                 continue
+            from src.config import BROADCAST_MAX_RETRY_AFTER
             ok, exc = send_with_retry(
                 bot.copy_message,
                 tg_id,
@@ -248,7 +249,7 @@ def process_broadcast_confirmation(call):
                 message_id=src_msg_id,
                 max_attempts=3,
                 base_delay=0.05,
-                max_retry_after=30,
+                max_retry_after=BROADCAST_MAX_RETRY_AFTER,
             )
             if ok:
                 success_count += 1
@@ -259,8 +260,9 @@ def process_broadcast_confirmation(call):
                 else:
                     logger.error(f"Failed to broadcast to {tg_id}: {exc}")
                 fail_count += 1
-            # Базовая пауза между сообщениями (~25 msg/sec)
-            time.sleep(0.04)
+            # Базовая пауза между сообщениями (см. config.BROADCAST_DELAY_SECONDS)
+            from src.config import BROADCAST_DELAY_SECONDS
+            time.sleep(BROADCAST_DELAY_SECONDS)
 
         try:
             bot.send_message(

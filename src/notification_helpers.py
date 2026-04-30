@@ -9,11 +9,9 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from src.i18n import t
+from src.config import TIMEZONE_OFFSET_HOURS, QUIET_HOURS_START, QUIET_HOURS_END
 
 logger = logging.getLogger(__name__)
-
-# Часовой пояс Ташкента: UTC+5
-TIMEZONE_OFFSET_HOURS = 5
 
 
 def _get_local_now() -> datetime:
@@ -26,13 +24,17 @@ def get_local_hour() -> int:
 
 
 def get_local_date_str() -> str:
-    """Возвращает дату/время по Ташкенту: '18.03.2026 14:35'."""
+    """Возвращает дату/время по локальному часовому поясу."""
     return _get_local_now().strftime('%d.%m.%Y %H:%M')
 
 
 def is_quiet_hours() -> bool:
+    """True для интервала [QUIET_HOURS_START..24) ∪ [0..QUIET_HOURS_END)."""
     hour = get_local_hour()
-    return hour >= 22 or hour < 7
+    if QUIET_HOURS_START <= QUIET_HOURS_END:
+        # Окно внутри одних суток (нетипично, но поддерживаем)
+        return QUIET_HOURS_START <= hour < QUIET_HOURS_END
+    return hour >= QUIET_HOURS_START or hour < QUIET_HOURS_END
 
 
 def get_emotional_header(grade_value: Optional[float], clean_text: str, lang: str = 'ru') -> Tuple[str, str]:
