@@ -27,35 +27,46 @@ PAYME_TOKEN = os.environ.get("PAYME_PROVIDER_TOKEN", "")
 LEGACY_TOKEN = os.environ.get("PAYMENT_PROVIDER_TOKEN", "")
 CARD_NUMBER = os.environ.get("PAYMENT_CARD_NUMBER", "")
 CARD_HOLDER = os.environ.get("PAYMENT_CARD_HOLDER", "")
+# Telegram Stars: включается флагом без provider_token (Stars — внутренняя валюта).
+STARS_ENABLED = os.environ.get("STARS_ENABLED", "").lower() in ("1", "true", "yes")
 
 # Собираем доступные способы оплаты
 PROVIDERS = {}
 if CLICK_TOKEN:
-    PROVIDERS['click'] = {'token': CLICK_TOKEN, 'label': '💳 Click'}
+    PROVIDERS['click'] = {'token': CLICK_TOKEN, 'label': '💳 Click', 'currency': 'UZS'}
 if PAYME_TOKEN:
-    PROVIDERS['payme'] = {'token': PAYME_TOKEN, 'label': '💳 Payme'}
+    PROVIDERS['payme'] = {'token': PAYME_TOKEN, 'label': '💳 Payme', 'currency': 'UZS'}
 if not PROVIDERS and LEGACY_TOKEN:
     # Если новые токены не заданы, но есть старый — используем его
-    PROVIDERS['payment'] = {'token': LEGACY_TOKEN, 'label': '💳 Оплатить'}
+    PROVIDERS['payment'] = {'token': LEGACY_TOKEN, 'label': '💳 Оплатить', 'currency': 'UZS'}
+# Stars — отдельная ветка: без provider_token, currency=XTR. Подходит для зарубежных
+# пользователей (диаспора), у которых нет узбекских платёжных систем.
+if STARS_ENABLED:
+    PROVIDERS['stars'] = {'token': '', 'label': '⭐ Telegram Stars', 'currency': 'XTR'}
 HAS_CARD_TRANSFER = bool(CARD_NUMBER)
 HAS_ANY_PAYMENT = bool(PROVIDERS) or HAS_CARD_TRANSFER
 
-# Тарифные планы по умолчанию (суммы в тийинах — 1 UZS = 100 тийин для Telegram Payments API)
+# Тарифные планы по умолчанию (суммы в тийинах — 1 UZS = 100 тийин для Telegram Payments API).
+# stars_amount — стоимость в Stars (целое число). Курс прикинут под 29 900 UZS ≈ $2.4 ≈ 100 ⭐
+# (1 ⭐ ≈ $0.013–0.024). Админ может править через таблицу settings.
 DEFAULT_PLANS = {
     'monthly': {
         'months': 1,
         'amount': 29900_00,
         'amount_display': '29 900',
+        'stars_amount': 100,
     },
     'quarterly': {
         'months': 3,
         'amount': 79900_00,
         'amount_display': '79 900',
+        'stars_amount': 270,
     },
     'yearly': {
         'months': 12,
         'amount': 249900_00,
         'amount_display': '249 900',
+        'stars_amount': 850,
     },
 }
 
@@ -320,6 +331,38 @@ def callback_pay_via_provider(call):
     plan = plans[plan_key]
 
     title = t("sub_invoice_title", lang)
+
+    # Telegram Stars — отдельная ветка: currency=XTR, без provider_token,
+    # сумма указывается в Stars (без умножения на 100), сумма берётся из stars_amount плана.
+    if provider_key == 'stars':
+        stars_amount = plan.get('stars_amount')
+        if not stars_amount:
+            logger.error(f"Plan {plan_key} has no stars_amount configured")
+            bot.send_message(call.message.chat.id, t("sub_invoice_error", lang))
+            return
+        description = t("sub_invoice_desc_stars", lang,
+                        months=plan['months'], amount=stars_amount)
+        prices = [types.LabeledPrice(
+            label=t(f"sub_plan_{plan_key}_stars", lang, amount=stars_amount),
+            amount=stars_amount,
+        )]
+        try:
+            bot.send_invoice(
+                chat_id=call.message.chat.id,
+                title=title,
+                description=description,
+                invoice_payload=f"{family_id}:{plan_key}:{plan['months']}",
+                provider_token="",  # Stars не использует provider_token
+                currency='XTR',
+                prices=prices,
+                start_parameter=f"sub_{plan_key}_stars",
+                is_flexible=False,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send Stars invoice: {e}")
+            bot.send_message(call.message.chat.id, t("sub_invoice_error", lang))
+        return
+
     description = t("sub_invoice_desc", lang,
                      months=plan['months'], amount=plan['amount_display'])
 
@@ -335,7 +378,7 @@ def callback_pay_via_provider(call):
             description=description,
             invoice_payload=f"{family_id}:{plan_key}:{plan['months']}",
             provider_token=provider['token'],
-            currency='UZS',
+            currency=provider.get('currency', 'UZS'),
             prices=prices,
             start_parameter=f"sub_{plan_key}",
             is_flexible=False,
