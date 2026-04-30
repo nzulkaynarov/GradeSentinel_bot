@@ -12,27 +12,35 @@ jobs:
     steps:
       - name: Очистка старых root-файлов базы перед checkout
         run: |
-          sudo rm -rf data/ || true
-          sudo rm -rf config/ || true
+          # data/ и config/ могут остаться root-owned после Docker bind-mount'ов.
+          # Без этого checkout/файловые операции в следующих шагах падают с EACCES.
+          sudo rm -rf data/ config/ .env || true
 
       - name: Перенос файлов репозитория
         uses: actions/checkout@v4
 
       - name: Создание конфигурационных файлов из секретов
         run: |
-          # Создаем .env
-          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
-          echo "ADMIN_ID=${{ secrets.ADMIN_ID }}" >> .env
-          echo "ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}" >> .env
-          echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
-          echo "WEBAPP_URL=${{ secrets.WEBAPP_URL }}" >> .env
-          echo "WEBAPP_PORT=${{ secrets.WEBAPP_PORT }}" >> .env
-          
-          # Создаем папку config (если её нет)
+          # На случай если "Очистка" не удалила leftover'ы (sudo без пароля
+          # может быть не настроен) — пробуем ещё раз без sudo. После checkout
+          # rm на gitignored config/ безопасен.
+          rm -rf .env config/ 2>/dev/null || true
+
           mkdir -p config
-          
-          # Записываем JSON-ключ Google Sheets в файл напрямую из секрета
-          echo '${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}' > config/credentials.json
+
+          cat > .env <<EOF
+          BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+          ADMIN_ID=${{ secrets.ADMIN_ID }}
+          ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          WEBAPP_URL=${{ secrets.WEBAPP_URL }}
+          WEBAPP_PORT=${{ secrets.WEBAPP_PORT }}
+          EOF
+
+          # heredoc с одиночными кавычками — не интерполирует $ внутри JSON.
+          cat > config/credentials.json <<'CREDS_EOF'
+          ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          CREDS_EOF
 
       - name: Сборка и перезапуск Docker
 
