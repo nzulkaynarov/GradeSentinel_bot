@@ -9,14 +9,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Создаём непривилегированного пользователя
-RUN useradd --create-home --shell /bin/bash bot
-
-# Копируем код и создаём data/config директории до chown
+# Копируем код и создаём data/config директории
 COPY . .
-RUN mkdir -p /app/data /app/config && chown -R bot:bot /app
+RUN mkdir -p /app/data /app/config
 
-USER bot
+# NOTE: Раньше здесь был `USER bot` для запуска из-под непривилегированного юзера.
+# Но named volume `sentinel_data` от прошлых деплоев был root-owned, и bot user
+# не мог писать в /app/data (SQLite, heartbeat) — контейнер крашился по кругу.
+# Возвращаем root до тех пор, пока не появится entrypoint с gosu+chown на старте.
 
 # Healthcheck читает /app/data/.heartbeat — main thread пишет в этот файл каждые 30 сек.
 # Если mtime > 180 сек, считаем что polling завис → Docker перезапустит (restart: always).
