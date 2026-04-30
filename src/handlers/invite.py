@@ -67,9 +67,12 @@ def handle_invite_deeplink(message, invite_code: str):
     parent_id = get_parent_id_by_telegram(user_id)
 
     if parent_id:
-        # Уже в системе — просто привязываем к семье
+        # Уже в системе — атомарно используем инвайт (защита от гонки),
+        # затем привязываем к семье
+        if not use_invite(invite_code, parent_id):
+            bot.send_message(user_id, t("invite_expired", lang))
+            return
         link_parent_to_family(family_id, parent_id)
-        use_invite(invite_code, parent_id)
         send_menu_safe(user_id, t("invite_accepted", lang, family=family_name))
         logger.info(f"Existing user {user_id} joined family {family_id} via invite")
     else:
@@ -110,8 +113,11 @@ def process_invite_after_contact(user_id: int, phone: str, invite_code: str):
         parent_id = add_parent(f"User_{user_id}", phone, role='senior')
         update_parent_telegram_id(phone, user_id)
 
+    # Атомарно используем инвайт (защита от гонки), затем привязываем к семье
+    if not use_invite(invite_code, parent_id):
+        bot.send_message(user_id, t("invite_expired", lang))
+        return False
     link_parent_to_family(family_id, parent_id)
-    use_invite(invite_code, parent_id)
 
     send_menu_safe(user_id, t("invite_accepted", lang, family=family_name))
     logger.info(f"New user {user_id} joined family {family_id} via invite after auth")

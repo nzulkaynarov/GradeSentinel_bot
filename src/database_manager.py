@@ -10,41 +10,58 @@ DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 @contextmanager
 def get_db_connection():
-    """Контекстный менеджер для безопасного подключения к БД."""
+    """Контекстный менеджер для безопасного подключения к БД.
+
+    Коммитит только при успешном выходе из блока. При исключении делает rollback,
+    чтобы избежать частично применённых транзакций.
+    """
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute('PRAGMA foreign_keys=ON;')
     conn.row_factory = sqlite3.Row
     try:
         yield conn
-    finally:
         conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception as rb_err:
+            logger.error(f"Rollback failed: {rb_err}")
+        raise
+    finally:
         conn.close()
+
+def _table_exists(cursor, table: str) -> bool:
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+    return cursor.fetchone() is not None
+
 
 def init_db():
     """Инициализация таблиц базы данных."""
     # Ensure data directory exists
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        
-        # Миграция: проверяем наличие колонки role в parents
-        cursor.execute("PRAGMA table_info(parents)")
-        columns = [column[1] for column in cursor.fetchall()]
-        if 'phone' in columns and 'role' not in columns:
-            # Проверяем, был ли старый is_admin
-            is_admin_exists = 'is_admin' in columns
-            cursor.execute("ALTER TABLE parents ADD COLUMN role TEXT DEFAULT 'senior'")
-            if is_admin_exists:
-                cursor.execute("UPDATE parents SET role = 'admin' WHERE is_admin = 1")
-            logger.info("Database migration: role column added.")
 
-        # Миграция: notify_mode
-        cursor.execute("PRAGMA table_info(parents)")
-        columns_fresh = [column[1] for column in cursor.fetchall()]
-        if 'notify_mode' not in columns_fresh:
-            cursor.execute("ALTER TABLE parents ADD COLUMN notify_mode TEXT DEFAULT 'instant'")
-            logger.info("Database migration: notify_mode column added.")
+        # Миграция: проверяем наличие колонки role в parents (только для существующих БД)
+        if _table_exists(cursor, 'parents'):
+            cursor.execute("PRAGMA table_info(parents)")
+            columns = [column[1] for column in cursor.fetchall()]
+            if 'phone' in columns and 'role' not in columns:
+                # Проверяем, был ли старый is_admin
+                is_admin_exists = 'is_admin' in columns
+                cursor.execute("ALTER TABLE parents ADD COLUMN role TEXT DEFAULT 'senior'")
+                if is_admin_exists:
+                    cursor.execute("UPDATE parents SET role = 'admin' WHERE is_admin = 1")
+                logger.info("Database migration: role column added.")
+
+            # Миграция: notify_mode
+            cursor.execute("PRAGMA table_info(parents)")
+            columns_fresh = [column[1] for column in cursor.fetchall()]
+            if 'notify_mode' not in columns_fresh:
+                cursor.execute("ALTER TABLE parents ADD COLUMN notify_mode TEXT DEFAULT 'instant'")
+                logger.info("Database migration: notify_mode column added.")
 
         # 1. Семьи
         cursor.execute('''
@@ -60,7 +77,10 @@ def init_db():
         # Миграция 2: Добавляем head_id в families если его нет
         cursor.execute("PRAGMA table_info(families)")
         columns_families = [column[1] for column in cursor.fetchall()]
-        if 'head_id' not in columns_families:
+        # Существуют ли таблицы parents и family_links — для миграции данных
+        parents_exists = _table_exists(cursor, 'parents')
+        links_exists = _table_exists(cursor, 'family_links')
+        if 'head_id' not in columns_families and parents_exists and links_exists:
             cursor.execute("ALTER TABLE families ADD COLUMN head_id INTEGER")
             logger.info("Database migration: head_id column added to families.")
             
@@ -208,11 +228,12 @@ def init_db():
         ''')
 
         # 11. Миграция: колонка lang для мультиязычности
-        cursor.execute("PRAGMA table_info(parents)")
-        columns = [col[1] for col in cursor.fetchall()]
-        if 'lang' not in columns:
-            cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
-            logger.info("Database migration: lang column added to parents.")
+        if _table_exists(cursor, 'parents'):
+            cursor.execute("PRAGMA table_info(parents)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'lang' not in columns:
+                cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
+                logger.info("Database migration: lang column added to parents.")
 
         # 12. Индексы для производительности
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_date ON grade_history(student_id, date_added)')
@@ -280,6 +301,21 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+
+        # 17. Архив старых оценок (для контроля размера БД)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS grade_history_archive (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            subject TEXT NOT NULL,
+            grade_value REAL,
+            raw_text TEXT NOT NULL,
+            cell_reference TEXT NOT NULL,
+            date_added TIMESTAMP NOT NULL,
+            archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_archive_student_date ON grade_history_archive(student_id, date_added)')
                 
 def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
     """
@@ -496,6 +532,57 @@ def is_head_of_any_family(telegram_id: int) -> bool:
     families = get_families_for_head(telegram_id)
     return len(families) > 0
 
+
+def is_head_of_family(telegram_id: int, family_id: int) -> bool:
+    """Проверяет, является ли пользователь главой конкретной семьи."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 1 FROM families f
+            JOIN parents p ON f.head_id = p.id
+            WHERE p.telegram_id = ? AND f.id = ?
+        ''', (telegram_id, family_id))
+        return cursor.fetchone() is not None
+
+
+def is_member_of_family(telegram_id: int, family_id: int) -> bool:
+    """Проверяет, является ли пользователь членом семьи (через family_links)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 1 FROM family_links fl
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ? AND fl.family_id = ?
+            LIMIT 1
+        ''', (telegram_id, family_id))
+        return cursor.fetchone() is not None
+
+
+def can_manage_family(telegram_id: int, family_id: int) -> bool:
+    """Может ли пользователь управлять семьёй (admin или head этой семьи)."""
+    if get_parent_role(telegram_id) == 'admin':
+        return True
+    return is_head_of_family(telegram_id, family_id)
+
+
+def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все семьи, к которым привязан ученик."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT f.id, f.family_name, f.subscription_end
+            FROM families f
+            JOIN family_links fl ON fl.family_id = f.id
+            WHERE fl.student_id = ?
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def is_student_under_active_subscription(student_id: int) -> bool:
+    """True, если хотя бы одна семья ученика имеет активную подписку."""
+    families = get_families_for_student(student_id)
+    return any(is_subscription_active(f['id']) for f in families)
+
 def set_family_head(family_id: int, parent_id: int):
     """Делает родителя главой семьи."""
     with get_db_connection() as conn:
@@ -672,16 +759,62 @@ def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
     return False
 
 def delete_student_from_family(family_id: int, student_id: int):
-    """Удаляет ребенка из конкретной семьи."""
+    """Удаляет ребенка из конкретной семьи. Если студент больше ни к кому не
+    привязан — каскадно удаляет его и все связанные данные."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM family_links WHERE family_id = ? AND student_id = ?', (family_id, student_id))
-        
-        # Если студент больше ни к кому не привязан, можно удалить его совсем
+
+        # Если студент больше ни к кому не привязан, удаляем его совсем со всеми данными
         cursor.execute('SELECT COUNT(*) as count FROM family_links WHERE student_id = ?', (student_id,))
         if cursor.fetchone()['count'] == 0:
-            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
             cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
+            cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (student_id,))
+            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+
+
+def delete_family_cascade(family_id: int) -> bool:
+    """Удаляет семью со всеми связанными данными в одной транзакции.
+
+    Чистит: payments, family_invites, family_links, осиротевших students
+    (вместе с их grade_history и quarter_grades), и саму запись families.
+
+    Возвращает True если семья удалена, False если её не существовало.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT id FROM families WHERE id = ?', (family_id,))
+        if not cursor.fetchone():
+            return False
+
+        # Сначала находим студентов, которые останутся осиротевшими после удаления связей
+        cursor.execute('''
+            SELECT DISTINCT student_id FROM family_links
+            WHERE family_id = ? AND student_id IS NOT NULL
+        ''', (family_id,))
+        student_ids = [row['student_id'] for row in cursor.fetchall()]
+
+        # Удаляем связи
+        cursor.execute('DELETE FROM family_links WHERE family_id = ?', (family_id,))
+
+        # Студенты, у которых не осталось других семей — удаляем со всеми данными
+        for s_id in student_ids:
+            cursor.execute('SELECT COUNT(*) as cnt FROM family_links WHERE student_id = ?', (s_id,))
+            if cursor.fetchone()['cnt'] == 0:
+                cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (s_id,))
+                cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (s_id,))
+                cursor.execute('DELETE FROM students WHERE id = ?', (s_id,))
+
+        # Связанные с семьёй данные
+        cursor.execute('DELETE FROM payments WHERE family_id = ?', (family_id,))
+        cursor.execute('DELETE FROM family_invites WHERE family_id = ?', (family_id,))
+
+        # И сама семья
+        cursor.execute('DELETE FROM families WHERE id = ?', (family_id,))
+
+        logger.info(f"Family {family_id} cascade-deleted (orphaned students: {len(student_ids)})")
+        return True
 
 def get_global_stats() -> Dict[str, Any]:
     """Возвращает глобальную статистику системы для администраторов."""
@@ -1096,6 +1229,80 @@ def has_any_active_subscription(telegram_id: int) -> bool:
 # ====================
 # Настройки (key-value)
 # ====================
+def archive_old_grades(days: int = 180) -> int:
+    """Переносит оценки старше N дней из grade_history в grade_history_archive.
+
+    Атомарно по отношению к параллельным INSERT'ам: переносим только конкретные
+    id, отобранные SELECT'ом, а не запрос по `date_added < cutoff` в каждом
+    statement'е (иначе DELETE мог бы захватить запись, которая не попала в
+    INSERT — или удалить ту, что прилетела между запросами).
+    Возвращает число перенесённых записей.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # BEGIN IMMEDIATE — запрашиваем write-lock сразу, чтобы между SELECT и
+        # DELETE никто не вставил новые строки в обозреваемый диапазон
+        cursor.execute('BEGIN IMMEDIATE')
+        cutoff = f'-{int(days)} days'
+        cursor.execute(
+            'SELECT id FROM grade_history WHERE date_added < datetime("now", ?)',
+            (cutoff,),
+        )
+        ids = [row['id'] for row in cursor.fetchall()]
+        if not ids:
+            return 0
+
+        # Переносим именно эти id (порциями по 500, чтобы не упереться в лимит
+        # параметров SQLite — обычно 999, но safer)
+        moved = 0
+        chunk_size = 500
+        for i in range(0, len(ids), chunk_size):
+            chunk = ids[i:i + chunk_size]
+            placeholders = ','.join('?' * len(chunk))
+            cursor.execute(
+                f'''INSERT INTO grade_history_archive
+                    (student_id, subject, grade_value, raw_text, cell_reference, date_added)
+                    SELECT student_id, subject, grade_value, raw_text, cell_reference, date_added
+                    FROM grade_history
+                    WHERE id IN ({placeholders})''',
+                chunk,
+            )
+            moved += cursor.rowcount
+            cursor.execute(
+                f'DELETE FROM grade_history WHERE id IN ({placeholders})',
+                chunk,
+            )
+
+        logger.info(f"Archived {moved} grades older than {days} days")
+        return moved
+
+
+def cleanup_old_notification_queue(hours: int = 48) -> int:
+    """Удаляет нерасфлушенные сообщения старше N часов (страховка от утечек)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM notification_queue
+            WHERE created_at < datetime('now', ?)
+        ''', (f'-{int(hours)} hours',))
+        if cursor.rowcount > 0:
+            logger.info(f"Cleaned {cursor.rowcount} stale notifications older than {hours}h")
+        return cursor.rowcount
+
+
+def cleanup_expired_invites(days: int = 30) -> int:
+    """Удаляет инвайты, истекшие более N дней назад."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM family_invites
+            WHERE expires_at < datetime('now', ?)
+        ''', (f'-{int(days)} days',))
+        if cursor.rowcount > 0:
+            logger.info(f"Cleaned {cursor.rowcount} expired invites")
+        return cursor.rowcount
+
+
 def get_setting(key: str, default: str = None) -> Optional[str]:
     """Возвращает значение настройки по ключу."""
     with get_db_connection() as conn:
@@ -1138,18 +1345,27 @@ def save_plans_to_db(plans: Dict[str, Any]):
 # ====================
 def create_promo_code(code: str, plan: str, discount_percent: int = 0,
                       free_months: int = 0, max_uses: int = 1,
-                      expires_days: int = None) -> bool:
+                      expires_days: Optional[int] = None) -> bool:
     """Создаёт промокод. Возвращает True если создан."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
-            expires_clause = f"datetime('now', '+{expires_days} days')" if expires_days else 'NULL'
-            cursor.execute(f'''
-                INSERT INTO promo_codes (code, plan, discount_percent, free_months, max_uses, expires_at)
-                VALUES (?, ?, ?, ?, ?, {expires_clause})
-            ''', (code.upper(), plan, discount_percent, free_months, max_uses))
+            if expires_days is not None:
+                modifier = f'+{int(expires_days)} days'
+                cursor.execute('''
+                    INSERT INTO promo_codes
+                        (code, plan, discount_percent, free_months, max_uses, expires_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now', ?))
+                ''', (code.upper(), plan, discount_percent, free_months, max_uses, modifier))
+            else:
+                cursor.execute('''
+                    INSERT INTO promo_codes
+                        (code, plan, discount_percent, free_months, max_uses, expires_at)
+                    VALUES (?, ?, ?, ?, ?, NULL)
+                ''', (code.upper(), plan, discount_percent, free_months, max_uses))
             return True
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to create promo code: {e}")
             return False
 
 

@@ -1,4 +1,7 @@
 {
+  "default_student_name": "Новый ученик",
+  "unknown_family": "Неизвестно",
+  "unknown_phone": "Неизвестен",
   "btn_status": "📊 Статус",
   "btn_families": "🏠 Семьи",
   "btn_new_family": "➕ Новая семья",

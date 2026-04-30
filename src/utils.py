@@ -1,5 +1,16 @@
 import re
 
+
+def mask_phone(phone: str) -> str:
+    """Маскирует телефон до последних 4 цифр для логов: 998901234567 → ***4567."""
+    if not phone:
+        return "***"
+    digits = re.sub(r'\D', '', phone)
+    if len(digits) <= 4:
+        return "***"
+    return f"***{digits[-4:]}"
+
+
 def clean_student_name(title: str) -> str:
     """
     Чистит название таблицы для красивого вывода.

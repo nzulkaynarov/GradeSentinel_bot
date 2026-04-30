@@ -3,7 +3,11 @@ import logging
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import get_parent_role, get_all_families, add_family, add_parent, link_parent_to_family, get_db_connection, get_user_lang
+from src.database_manager import (
+    get_parent_role, get_all_families, add_family, add_parent,
+    link_parent_to_family, get_db_connection, get_user_lang,
+    delete_family_cascade, get_families_for_head,
+)
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -294,8 +298,13 @@ def cmd_list_families(message, user_id=None):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_manage_'))
 def callback_admin_manage(call):
-    from src.handlers.family import _send_family_manage_menu
-    f_id = int(call.data.split('_')[2])
+    from src.handlers.family import _send_family_manage_menu, _parse_int_args, _check_family_access
+    args = _parse_int_args(call.data, 'admin_manage_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == 'back_to_families')
@@ -309,7 +318,14 @@ def callback_back_to_families(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_family_'))
 def callback_delete_family(call):
-    f_id = int(call.data.split('_')[2])
+    if not is_user_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, t("admin_no_access", get_user_lang(call.from_user.id)), show_alert=True)
+        return
+    from src.handlers.family import _parse_int_args
+    args = _parse_int_args(call.data, 'delete_family_', 1)
+    if not args:
+        return
+    f_id = args[0]
     lang = get_user_lang(call.from_user.id)
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(t("admin_delete_confirm_btn", lang), callback_data=f"confirm_delete_family_{f_id}"))
@@ -318,13 +334,19 @@ def callback_delete_family(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('confirm_delete_family_'))
 def callback_confirm_delete_family(call):
-    f_id = int(call.data.split('_')[3])
+    if not is_user_admin(call.from_user.id):
+        bot.answer_callback_query(call.id, t("admin_no_access", get_user_lang(call.from_user.id)), show_alert=True)
+        return
+    parts = call.data.split('_')
+    if len(parts) < 4:
+        return
+    try:
+        f_id = int(parts[3])
+    except ValueError:
+        return
     lang = get_user_lang(call.from_user.id)
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM family_links WHERE family_id = ?", (f_id,))
-        cursor.execute("DELETE FROM families WHERE id = ?", (f_id,))
-        conn.commit()
+
+    delete_family_cascade(f_id)
 
     bot.answer_callback_query(call.id, t("admin_deleted", lang))
     cmd_list_families(call.message, user_id=call.from_user.id)

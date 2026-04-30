@@ -142,3 +142,18 @@ src/
 8 индексов на часто используемые столбцы (grade_history, family_links, parents, и др.).
 
 *(Подробная архитектура: `Docs/Project_overview.md`)*
+
+---
+
+## Разработка с Claude Code
+
+Проект использует [Claude Code](https://claude.com/claude-code) как основной AI-помощник для разработки.
+
+- `CLAUDE.md` в корне — контекст проекта (стек, архитектура, конвенции, опасные места). Загружается автоматически в каждой сессии.
+- `.claude/settings.json` — общие разрешения и переменные окружения для команд.
+- `.claude/settings.local.json` — локальные оверрайды (в `.gitignore`).
+
+Полезные slash-команды:
+- `/init` — пересобрать `CLAUDE.md` после крупного рефакторинга.
+- `/security-review` — security-проверка текущей ветки перед PR.
+- `/review` — review pull request.

@@ -1,4 +1,7 @@
 {
+  "default_student_name": "Yangi o'quvchi",
+  "unknown_family": "Noma'lum",
+  "unknown_phone": "Noma'lum",
   "btn_status": "📊 Holat",
   "btn_families": "🏠 Oilalar",
   "btn_new_family": "➕ Yangi oila",

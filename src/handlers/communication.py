@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import threading
 from telebot import types
@@ -12,11 +13,44 @@ from src.database_manager import (
 )
 from src.i18n import t
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Кэш telebot Message в памяти. Параллельно chat_id+message_id сохраняем в
+# user_states — если бот упал на confirm-step (между «введи текст» и нажатием
+# «Подтвердить»), при следующем старте восстановим исходный пост через
+# bot.copy_message (Telegram сообщения не пропадают).
+#
+# ВАЖНО: рассылка, упавшая ПОСРЕДИ выполнения, НЕ возобновляется. user_states
+# очищается перед стартом потока — иначе после рестарта часть пользователей
+# получили бы сообщение дважды. Дубликаты для пользователей хуже, чем
+# недопотерянная админская рассылка.
 _broadcast_pending: Dict[int, Any] = {}
+
+
+def _save_broadcast_pending(user_id: int, message) -> None:
+    """Сохраняет данные broadcast в БД (переживает рестарт)."""
+    payload = json.dumps({
+        'chat_id': message.chat.id,
+        'message_id': message.message_id,
+    })
+    set_user_state(user_id, "confirming_broadcast", payload)
+    _broadcast_pending[user_id] = message
+
+
+def _load_broadcast_pending(user_id: int) -> Optional[Dict[str, int]]:
+    """Загружает данные broadcast из БД (для случая, когда in-memory кэш пуст)."""
+    state = get_user_state(user_id)
+    if not state or state.get('state') != 'confirming_broadcast':
+        return None
+    raw = state.get('data')
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return None
 
 def get_admin_group_id():
     group_id = os.environ.get("ADMIN_GROUP_ID")
@@ -58,9 +92,10 @@ def receive_support_message(message):
     clear_user_state(user_id)
 
     user_info = get_user_info_by_tg_id(user_id)
-    familia = ", ".join(user_info['families']) if user_info and user_info.get('families') else "Неизвестно"
+    # Заголовок для админа всегда на русском (admin удобство)
+    familia = ", ".join(user_info['families']) if user_info and user_info.get('families') else t("unknown_family", "ru")
     fio = user_info['fio'] if user_info else message.from_user.first_name
-    phone = user_info['phone'] if user_info else "Неизвестен"
+    phone = user_info['phone'] if user_info else t("unknown_phone", "ru")
 
     # Заголовок для админов всегда на русском (для удобства админа)
     header = t("support_admin_header", "ru", fio=fio, phone=phone, families=familia, tg_id=user_id)
@@ -144,8 +179,7 @@ def confirm_broadcast_message(message):
         send_menu_safe(user_id, t("broadcast_cancelled", lang))
         return
 
-    set_user_state(user_id, "confirming_broadcast")
-    _broadcast_pending[user_id] = message
+    _save_broadcast_pending(user_id, message)
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(t("broadcast_confirm_btn", lang), callback_data="broadcast_confirm"))
@@ -173,43 +207,76 @@ def process_broadcast_confirmation(call):
         return
 
     if call.data == "broadcast_cancel":
-        clear_user_state(user_id)
         _broadcast_pending.pop(user_id, None)
+        clear_user_state(user_id)
         bot.edit_message_text(t("broadcast_cancelled", lang), user_id, call.message.message_id)
         send_menu_safe(user_id, t("main_menu", lang))
         return
 
     bot.edit_message_text(t("broadcast_started", lang), user_id, call.message.message_id)
 
+    # Сначала пробуем in-memory кэш, затем восстанавливаем из БД
     original_message = _broadcast_pending.pop(user_id, None)
+    fallback = None
+    if not original_message:
+        fallback = _load_broadcast_pending(user_id)
     clear_user_state(user_id)
 
-    if not original_message:
+    if not original_message and not fallback:
         bot.send_message(user_id, t("broadcast_no_message", lang))
         send_menu_safe(user_id, t("main_menu", lang))
         return
 
-    def _do_broadcast(target_user_id, msg_obj):
+    # Источник сообщения для copy_message
+    source_chat_id = original_message.chat.id if original_message else fallback['chat_id']
+    source_message_id = original_message.message_id if original_message else fallback['message_id']
+
+    def _do_broadcast(target_user_id, src_chat_id, src_msg_id):
+        from src.telegram_utils import send_with_retry
         users = get_all_telegram_ids()
         success_count = 0
         fail_count = 0
+        blocked_count = 0
 
         for tg_id in users:
             if str(tg_id) == str(target_user_id):
                 continue
-            try:
-                bot.copy_message(tg_id, from_chat_id=target_user_id, message_id=msg_obj.message_id)
+            ok, exc = send_with_retry(
+                bot.copy_message,
+                tg_id,
+                from_chat_id=src_chat_id,
+                message_id=src_msg_id,
+                max_attempts=3,
+                base_delay=0.05,
+                max_retry_after=30,
+            )
+            if ok:
                 success_count += 1
-                time.sleep(0.05)
-            except Exception as e:
-                logger.error(f"Failed to broadcast to {tg_id}: {e}")
+            else:
+                code = getattr(exc, 'error_code', None)
+                if code == 403:
+                    blocked_count += 1
+                else:
+                    logger.error(f"Failed to broadcast to {tg_id}: {exc}")
                 fail_count += 1
+            # Базовая пауза между сообщениями (~25 msg/sec)
+            time.sleep(0.04)
 
-        bot.send_message(
-            target_user_id,
-            t("broadcast_done", lang, success=success_count, fail=fail_count),
-            parse_mode="HTML"
+        try:
+            bot.send_message(
+                target_user_id,
+                t("broadcast_done", lang, success=success_count, fail=fail_count),
+                parse_mode="HTML"
+            )
+            send_menu_safe(target_user_id, t("main_menu", lang))
+        except Exception as e:
+            logger.error(f"Failed to send broadcast report to admin {target_user_id}: {e}")
+        logger.info(
+            f"Broadcast finished: success={success_count} fail={fail_count} blocked={blocked_count}"
         )
-        send_menu_safe(target_user_id, t("main_menu", lang))
 
-    threading.Thread(target=_do_broadcast, args=(user_id, original_message), daemon=True).start()
+    threading.Thread(
+        target=_do_broadcast,
+        args=(user_id, source_chat_id, source_message_id),
+        daemon=True,
+    ).start()

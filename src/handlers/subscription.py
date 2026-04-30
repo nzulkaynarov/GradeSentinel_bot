@@ -214,12 +214,34 @@ def callback_sub_plan(call):
 #  ЭКРАН 4: Выбор способа оплаты
 # ═══════════════════════════════════════════
 
+def _check_user_can_pay_for_family(call, family_id: int) -> bool:
+    """Проверяет, что пользователь — член семьи или админ.
+    Иначе отвечает alert и возвращает False."""
+    from src.database_manager import is_member_of_family, get_parent_role
+    user_id = call.from_user.id
+    if get_parent_role(user_id) == 'admin' or is_member_of_family(user_id, family_id):
+        return True
+    lang = get_user_lang(user_id)
+    bot.answer_callback_query(call.id, t("admin_no_access", lang), show_alert=True)
+    logger.warning(
+        f"Unauthorized payment callback: user={user_id} data={call.data} family_id={family_id}"
+    )
+    return False
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('sub_fam_'))
 def callback_select_family_for_sub(call):
     """Пользователь выбрал семью → способ оплаты."""
     parts = call.data.split('_')
-    family_id = int(parts[2])
+    if len(parts) < 4:
+        return
+    try:
+        family_id = int(parts[2])
+    except ValueError:
+        return
     plan_key = parts[3]
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
     lang = get_user_lang(call.from_user.id)
     bot.answer_callback_query(call.id)
     _show_payment_methods(call.message.chat.id, call.message.message_id,
@@ -277,9 +299,16 @@ def callback_pay_via_provider(call):
     """Пользователь выбрал Click/Payme → отправляем Invoice."""
     parts = call.data.split('_')
     # sub_pay_click_3_monthly → ['sub', 'pay', 'click', '3', 'monthly']
+    if len(parts) < 5:
+        return
     provider_key = parts[2]
-    family_id = int(parts[3])
+    try:
+        family_id = int(parts[3])
+    except ValueError:
+        return
     plan_key = parts[4]
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
     lang = get_user_lang(call.from_user.id)
     bot.answer_callback_query(call.id)
 
@@ -320,12 +349,19 @@ def callback_pay_via_provider(call):
 #  Ручной перевод на карту
 # ═══════════════════════════════════════════
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('sub_card_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('sub_card_') and not call.data.startswith('sub_card_done_') and not call.data.startswith('sub_card_confirm_') and not call.data.startswith('sub_card_reject_'))
 def callback_card_transfer(call):
     """Показывает реквизиты для ручного перевода."""
     parts = call.data.split('_')
-    family_id = int(parts[2])
+    if len(parts) < 4:
+        return
+    try:
+        family_id = int(parts[2])
+    except ValueError:
+        return
     plan_key = parts[3]
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
     lang = get_user_lang(call.from_user.id)
     bot.answer_callback_query(call.id)
 
@@ -360,8 +396,15 @@ def callback_card_transfer(call):
 def callback_card_done(call):
     """Пользователь нажал 'Я оплатил' — уведомляем админа."""
     parts = call.data.split('_')
-    family_id = int(parts[3])
+    if len(parts) < 5:
+        return
+    try:
+        family_id = int(parts[3])
+    except ValueError:
+        return
     plan_key = parts[4]
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
     user_id = call.from_user.id
     lang = get_user_lang(user_id)
     bot.answer_callback_query(call.id)

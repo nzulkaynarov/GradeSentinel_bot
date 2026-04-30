@@ -7,6 +7,8 @@ config/*.json
 # База данных (чтобы не затереть рабочую базу пустой версией из гита)
 data/*.db
 data/*.sqlite3
+*.db
+*.sqlite3
 
 # Логи
 logs/*.log
@@ -25,3 +27,11 @@ ENV/
 # OS файлы
 .DS_Store
 Thumbs.db
+
+# Claude Code локальные настройки и временные файлы
+.claude/settings.local.json
+.claude/.session/
+.claude/cache/
+
+# Excel с реальными данными ребёнка — не должны быть в репо
+*.xlsx

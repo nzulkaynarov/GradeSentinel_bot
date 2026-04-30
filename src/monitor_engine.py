@@ -1,6 +1,9 @@
 import time
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from collections import defaultdict
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
@@ -22,6 +25,17 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 _bot = None
+
+# Защита от перекрытия циклов polling
+_polling_lock = threading.Lock()
+# Учёт consecutive failures по ученикам — для алерта при «зависшей» таблице
+_student_failure_counts: dict = defaultdict(int)
+_FAILURE_THRESHOLD = 5
+# Предотвращаем повторные алерты по одному и тому же ученику чаще раза в день
+_last_failure_alert: dict = {}
+_FAILURE_ALERT_COOLDOWN_HOURS = 24
+# Воркеров для параллельного fetch'а Google Sheets
+_FETCH_WORKERS = 8
 
 def set_bot_instance(bot):
     global _bot
@@ -76,47 +90,111 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False):
         except Exception as e:
             logger.error(f"Failed to send notification to {tg_id}: {e}")
 
+def _record_student_failure(student_id: int, display_name: str):
+    """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу."""
+    _student_failure_counts[student_id] += 1
+    count = _student_failure_counts[student_id]
+    if count >= _FAILURE_THRESHOLD:
+        last_alert = _last_failure_alert.get(student_id)
+        now = datetime.utcnow()
+        if last_alert is None or (now - last_alert).total_seconds() > _FAILURE_ALERT_COOLDOWN_HOURS * 3600:
+            _last_failure_alert[student_id] = now
+            logger.error(
+                f"[SHEET STUCK] student_id={student_id} ({display_name}): "
+                f"{count} consecutive failures fetching data"
+            )
+
+
+def _record_student_success(student_id: int):
+    """Сбрасывает счётчик неудач при успешном чтении."""
+    if student_id in _student_failure_counts:
+        _student_failure_counts.pop(student_id, None)
+
+
+def _fetch_student_sheet(student: dict, range_name: str):
+    """Worker: загружает данные таблицы одного ученика. Возвращает (student, data, display_name).
+    Гарантирует что одна сломанная таблица не валит весь цикл — все исключения ловятся."""
+    student_id = student['student_id']
+    fio = student['fio']
+    spreadsheet_id = student['spreadsheet_id']
+
+    display_name = student.get('display_name')
+    if not display_name:
+        try:
+            sheet_title = get_spreadsheet_title(spreadsheet_id)
+        except Exception as e:
+            logger.error(f"Title fetch failed for student {student_id}: {e}")
+            sheet_title = None
+        display_name = clean_student_name(sheet_title) if sheet_title else fio
+        try:
+            update_student_display_name(student_id, display_name)
+        except Exception as e:
+            logger.error(f"Failed to update display_name for {student_id}: {e}")
+
+    try:
+        data = get_sheet_data(spreadsheet_id, range_name)
+    except Exception as e:
+        logger.error(f"Unexpected error fetching data for {display_name} (id={student_id}): {e}")
+        _record_student_failure(student_id, display_name)
+        return student, None, display_name
+
+    if data is None:
+        _record_student_failure(student_id, display_name)
+    else:
+        _record_student_success(student_id)
+
+    return student, data, display_name
+
+
 def check_for_new_grades():
+    if not _polling_lock.acquire(blocking=False):
+        logger.warning("Previous polling cycle still running, skipping this iteration")
+        return
+    try:
+        _check_for_new_grades_impl()
+    finally:
+        _polling_lock.release()
+
+
+def _check_for_new_grades_impl():
     students = get_active_spreadsheets_with_subscription()
     if not students:
         logger.info("No active students with spreadsheets found.")
         return
 
-    logger.info(f"Starting check for {len(students)} students.")
+    logger.info(f"Starting check for {len(students)} students (parallel, workers={_FETCH_WORKERS}).")
 
     RANGE_NAME = "Сегодня!A1:B50"
 
     # Smart Batching: собираем все оценки за цикл, отправляем сгруппированно
-    # Ключ: (tg_id, student_id), значение: список grade-записей
-    from collections import defaultdict
     batch = defaultdict(list)
     # Метаданные для каждого студента
     student_meta = {}  # student_id -> {display_name, spreadsheet_id}
 
-    for student in students:
+    # Параллельная загрузка данных — одна сломанная таблица не блокирует остальные
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as executor:
+        futures = {executor.submit(_fetch_student_sheet, s, RANGE_NAME): s for s in students}
+        fetched = []
+        for future in as_completed(futures):
+            try:
+                fetched.append(future.result())
+            except Exception as e:
+                s = futures[future]
+                logger.error(f"Worker crashed for student_id={s.get('student_id')}: {e}")
+
+    # Дальнейшая обработка — последовательная (все DB-операции)
+    for student, data, display_name in fetched:
         student_id = student['student_id']
         fio = student['fio']
         spreadsheet_id = student['spreadsheet_id']
 
-        display_name = student.get('display_name')
-        if not display_name:
-            sheet_title = get_spreadsheet_title(spreadsheet_id)
-            display_name = clean_student_name(sheet_title) if sheet_title else fio
-            update_student_display_name(student_id, display_name)
-
         student_meta[student_id] = {'display_name': display_name, 'spreadsheet_id': spreadsheet_id}
-
-        logger.info(f"Checking sheet for student: {display_name} (ID: {student_id})")
-
-        try:
-            data = get_sheet_data(spreadsheet_id, RANGE_NAME)
-        except Exception as e:
-            logger.error(f"Unexpected error fetching data for {display_name}: {e}")
-            continue
 
         if data is None:
             logger.warning(f"Data fetch returned None for {display_name}. Skipping this cycle.")
             continue
+
+        logger.info(f"Processing sheet for student: {display_name} (ID: {student_id})")
 
         for row_idx, row in enumerate(data[1:], start=2):
             if not isinstance(row, list) or len(row) < 2:

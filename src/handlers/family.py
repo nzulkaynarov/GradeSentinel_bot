@@ -1,11 +1,41 @@
 import logging
+from typing import Optional, Tuple
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import get_user_lang
+from src.database_manager import get_user_lang, can_manage_family
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_int_args(call_data: str, prefix: str, count: int) -> Optional[Tuple[int, ...]]:
+    """Безопасный парсинг callback_data вида 'prefix_arg1_arg2_...'.
+    Возвращает кортеж int-ов или None если формат неверный."""
+    if not call_data.startswith(prefix):
+        return None
+    rest = call_data[len(prefix):]
+    parts = rest.split('_')
+    if len(parts) != count:
+        return None
+    try:
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return None
+
+
+def _check_family_access(call, family_id: int) -> bool:
+    """Проверяет, что пользователь имеет право управлять данной семьёй.
+    При отсутствии прав отвечает alert и возвращает False."""
+    if can_manage_family(call.from_user.id, family_id):
+        return True
+    lang = get_user_lang(call.from_user.id)
+    bot.answer_callback_query(call.id, t("admin_no_access", lang), show_alert=True)
+    logger.warning(
+        f"Unauthorized callback access: user={call.from_user.id} "
+        f"data={call.data} family_id={family_id}"
+    )
+    return False
 
 @bot.message_handler(commands=['manage_family'])
 def cmd_manage_family(message):
@@ -65,13 +95,23 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('open_manage_'))
 def callback_open_manage(call):
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'open_manage_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('list_edit_'))
 def callback_list_edit(call):
     from src.database_manager import get_family_members, get_family_students
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'list_edit_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     lang = get_user_lang(call.from_user.id)
 
     members = get_family_members(f_id)
@@ -100,9 +140,13 @@ def callback_list_edit(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_par_'))
 def callback_del_parent(call):
     from src.database_manager import delete_parent_from_family
+    args = _parse_int_args(call.data, 'del_par_', 2)
+    if not args:
+        return
+    f_id, p_id = args
+    if not _check_family_access(call, f_id):
+        return
     lang = get_user_lang(call.from_user.id)
-    parts = call.data.split('_')
-    f_id, p_id = int(parts[2]), int(parts[3])
 
     if delete_parent_from_family(f_id, p_id):
         bot.answer_callback_query(call.id, t("family_member_deleted", lang))
@@ -113,9 +157,13 @@ def callback_del_parent(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('del_stud_'))
 def callback_del_student(call):
     from src.database_manager import delete_student_from_family
+    args = _parse_int_args(call.data, 'del_stud_', 2)
+    if not args:
+        return
+    f_id, s_id = args
+    if not _check_family_access(call, f_id):
+        return
     lang = get_user_lang(call.from_user.id)
-    parts = call.data.split('_')
-    f_id, s_id = int(parts[2]), int(parts[3])
 
     delete_student_from_family(f_id, s_id)
     bot.answer_callback_query(call.id, t("family_child_deleted", lang))
@@ -123,19 +171,34 @@ def callback_del_student(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('back_manage_'))
 def callback_back_manage(call):
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'back_manage_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     _send_family_manage_menu(call.message.chat.id, f_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('gen_invite_'))
 def callback_gen_invite(call):
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'gen_invite_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     bot.answer_callback_query(call.id)
     from src.handlers.invite import generate_invite_link
     generate_invite_link(call.message.chat.id, f_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_child_'))
 def callback_add_child(call):
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'add_child_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     lang = get_user_lang(call.from_user.id)
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
@@ -184,7 +247,7 @@ def process_add_child_step(message, f_id):
             title = None
 
         if not title:
-            title = "Новый ученик"
+            title = t("default_student_name", lang)
 
         from src.utils import clean_student_name
         display_name = clean_student_name(title)
@@ -233,7 +296,12 @@ def process_add_child_step(message, f_id):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
-    f_id = int(call.data.split('_')[2])
+    args = _parse_int_args(call.data, 'add_member_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
     lang = get_user_lang(call.from_user.id)
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,

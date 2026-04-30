@@ -21,6 +21,7 @@ from src.database_manager import (
     get_grade_history_for_student_all,
     get_parent_role,
     get_quarter_grades,
+    is_student_under_active_subscription,
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -91,9 +92,9 @@ def api_students():
     ])
 
 
-@app.route("/api/grades/<int:student_id>")
-def api_grades(student_id):
-    """Returns grade history for a specific student."""
+def _authorize_student_access(student_id: int):
+    """Возвращает telegram_id если у пользователя есть доступ к ученику
+    И у его семьи активная подписка. Иначе вызывает abort()."""
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     try:
         user = validate_init_data(init_data)
@@ -102,11 +103,24 @@ def api_grades(student_id):
         logger.warning(f"WebApp auth failed: {e}")
         abort(401)
 
-    # Verify this user has access to this student
     students = get_students_for_parent(telegram_id)
     student_ids = [s["id"] for s in students]
     if student_id not in student_ids:
         abort(403)
+
+    # Админ обходит проверку подписки
+    if get_parent_role(telegram_id) != 'admin':
+        if not is_student_under_active_subscription(student_id):
+            logger.info(f"WebApp denied: tg={telegram_id} student={student_id} (no active subscription)")
+            abort(402)  # Payment Required
+
+    return telegram_id
+
+
+@app.route("/api/grades/<int:student_id>")
+def api_grades(student_id):
+    """Returns grade history for a specific student."""
+    _authorize_student_access(student_id)
 
     days = request.args.get("days", 30, type=int)
     days = min(days, 365)  # Increased cap: full year with historical import
@@ -125,18 +139,7 @@ def api_grades(student_id):
 @app.route("/api/quarters/<int:student_id>")
 def api_quarters(student_id):
     """Returns quarter grades for a specific student."""
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
-    try:
-        user = validate_init_data(init_data)
-        telegram_id = user["id"]
-    except (ValueError, KeyError) as e:
-        logger.warning(f"WebApp auth failed: {e}")
-        abort(401)
-
-    students = get_students_for_parent(telegram_id)
-    student_ids = [s["id"] for s in students]
-    if student_id not in student_ids:
-        abort(403)
+    _authorize_student_access(student_id)
 
     quarters = get_quarter_grades(student_id)
     return jsonify(quarters)

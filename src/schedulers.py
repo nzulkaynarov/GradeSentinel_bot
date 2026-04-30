@@ -44,43 +44,106 @@ def start_daily_schedulers():
     import_thread.start()
 
 
-def _scheduler_loop():
-    last_evening_date = None
-    last_morning_date = None
-    last_alive_date = None
-    last_quarter_check = None
-    last_sub_check_date = None
+_job_locks = {
+    'evening': threading.Lock(),
+    'morning': threading.Lock(),
+    'alive': threading.Lock(),
+    'quarter': threading.Lock(),
+    'subscription': threading.Lock(),
+    'cleanup': threading.Lock(),
+}
 
+# In-memory кэш маркеров: {job: marker}. Источник правды — БД (settings),
+# но проверяем сначала память, чтобы не делать read на каждом tick'е (180с).
+# При первом запуске после рестарта лениво подгружаем из БД (см. _check_marker).
+_marker_cache: dict = {}
+_marker_cache_lock = threading.Lock()
+
+
+def _last_run_key(job: str) -> str:
+    return f"scheduler_last_{job}"
+
+
+def _check_marker(job: str, marker: str) -> bool:
+    """True, если задача с таким маркером УЖЕ выполнялась.
+
+    Сначала смотрим в память; если пусто — лениво читаем из БД (один раз
+    после рестарта). DB-write делаем только в _set_marker (после успеха).
+    """
+    with _marker_cache_lock:
+        cached = _marker_cache.get(job)
+        if cached is not None:
+            return cached == marker
+
+    # Холодный кэш — читаем БД один раз
+    from src.database_manager import get_setting
+    db_marker = get_setting(_last_run_key(job), "") or ""
+    with _marker_cache_lock:
+        # На случай гонки — не перезаписываем уже выставленный другим потоком
+        if job not in _marker_cache:
+            _marker_cache[job] = db_marker
+    return db_marker == marker
+
+
+def _set_marker(job: str, marker: str):
+    """Записывает маркер в БД и в кэш. Вызывается после успешного выполнения job'а."""
+    from src.database_manager import set_setting
+    set_setting(_last_run_key(job), marker)
+    with _marker_cache_lock:
+        _marker_cache[job] = marker
+
+
+def _run_job_safe(job: str, marker: str, func):
+    """Запускает job под локом с проверкой, что задача ещё не выполнена сегодня.
+    Маркер хранится в settings (переживает рестарт) + кэшируется в памяти
+    (избегаем read на каждом tick'е)."""
+    lock = _job_locks[job]
+    if not lock.acquire(blocking=False):
+        logger.warning(f"Scheduler job '{job}' already running, skipping overlap")
+        return
+    try:
+        if _check_marker(job, marker):
+            return  # уже выполнялось
+        logger.info(f"Scheduler running job '{job}' (marker={marker})")
+        try:
+            func()
+            _set_marker(job, marker)
+        except Exception as e:
+            logger.error(f"Scheduler job '{job}' failed: {e}", exc_info=True)
+    finally:
+        lock.release()
+
+
+def _scheduler_loop():
     while True:
         try:
             now = _get_local_now()
-            today = now.date()
+            today_str = now.date().isoformat()
 
             # Проверка подписок раз в день в 10:00
-            if now.hour == 10 and now.minute < 6 and last_sub_check_date != today:
-                last_sub_check_date = today
-                _check_subscription_expiry()
+            if now.hour == 10 and now.minute < 6:
+                _run_job_safe('subscription', today_str, _check_subscription_expiry)
 
-            if now.hour == 7 and now.minute < 6 and last_morning_date != today:
-                last_morning_date = today
-                _flush_quiet_hours_queue()
+            if now.hour == 7 and now.minute < 6:
+                _run_job_safe('morning', today_str, _flush_quiet_hours_queue)
 
-            if now.hour == 15 and now.minute < 6 and last_alive_date != today:
-                last_alive_date = today
-                _send_bot_alive_status()
+            if now.hour == 15 and now.minute < 6:
+                _run_job_safe('alive', today_str, _send_bot_alive_status)
 
-            if now.hour == 19 and now.minute < 6 and last_evening_date != today:
-                last_evening_date = today
-                _send_daily_evening_summary()
+            if now.hour == 19 and now.minute < 6:
+                _run_job_safe('evening', today_str, _send_daily_evening_summary)
 
             # Проверка четвертных оценок 2 раза в день: 12:00 и 18:00
             if now.hour in (12, 18) and now.minute < 6:
-                if last_quarter_check is None or last_quarter_check.date() != today or last_quarter_check.hour != now.hour:
-                    last_quarter_check = now
-                    _check_quarter_grades()
+                marker = f"{today_str}_{now.hour}"
+                _run_job_safe('quarter', marker, _check_quarter_grades)
+
+            # Еженедельная чистка БД (воскресенье, 03:00 по Ташкенту)
+            if now.weekday() == 6 and now.hour == 3 and now.minute < 6:
+                _run_job_safe('cleanup', today_str, _run_weekly_cleanup)
 
         except Exception as e:
-            logger.error(f"Error in daily scheduler loop: {e}")
+            logger.error(f"Error in daily scheduler loop: {e}", exc_info=True)
 
         time.sleep(180)
 
@@ -350,6 +413,20 @@ def _check_quarter_grades():
         check_for_quarter_changes()
     except Exception as e:
         logger.error(f"Quarter grades check failed: {e}")
+
+
+def _run_weekly_cleanup():
+    """Архивирование старых оценок и чистка истёкших инвайтов/очередей.
+    Безопасно вызывать в любое время."""
+    from src.database_manager import (
+        archive_old_grades, cleanup_old_notification_queue, cleanup_expired_invites
+    )
+    try:
+        archive_old_grades(days=180)
+        cleanup_old_notification_queue(hours=48)
+        cleanup_expired_invites(days=30)
+    except Exception as e:
+        logger.error(f"Weekly cleanup failed: {e}", exc_info=True)
 
 
 def _startup_history_import():
