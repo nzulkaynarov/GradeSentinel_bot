@@ -27,6 +27,26 @@ from src.db.auth import is_student_under_active_subscription
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Sentry (опционально). Активен только если SENTRY_DSN задан в env.
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("ENVIRONMENT", "production"),
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.0,
+            send_default_pii=False,
+        )
+        logger.info("WebApp Sentry initialized")
+    except ImportError:
+        logger.warning("SENTRY_DSN задан, но sentry_sdk не установлен")
+    except Exception as e:
+        logger.error(f"Sentry init failed: {e}")
+
 app = Flask(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")

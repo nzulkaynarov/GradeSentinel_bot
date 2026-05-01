@@ -3,11 +3,17 @@ from typing import Optional, Tuple
 from telebot import types
 from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
-from src.database_manager import get_user_lang
+from src.database_manager import (
+    get_user_lang, set_user_state, get_user_state, clear_user_state,
+)
 from src.db.auth import can_manage_family
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
+
+# Имена state'ов для multi-step flow (в БД user_states.state)
+STATE_AWAITING_CHILD_URL = "awaiting_child_url"
+STATE_AWAITING_MEMBER_INFO = "awaiting_member_info"
 
 
 def _parse_int_args(call_data: str, prefix: str, count: int) -> Optional[Tuple[int, ...]]:
@@ -202,12 +208,31 @@ def callback_add_child(call):
         return
     lang = get_user_lang(call.from_user.id)
 
+    # Сохраняем state в БД — переживёт рестарт бота посередине flow
+    set_user_state(call.from_user.id, STATE_AWAITING_CHILD_URL, str(f_id))
+
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
                                         input_field_placeholder=t("child_url_placeholder", lang))
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
 
-    msg = bot.send_message(call.message.chat.id, t("child_enter_url", lang), reply_markup=markup)
-    bot.register_next_step_handler(msg, process_add_child_step, f_id)
+    bot.send_message(call.message.chat.id, t("child_enter_url", lang), reply_markup=markup)
+
+
+@bot.message_handler(
+    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_CHILD_URL,
+    content_types=['text']
+)
+def receive_child_url(message):
+    """Обрабатывает текст после нажатия 'Добавить ребёнка'. Persistent через user_states."""
+    state = get_user_state(message.chat.id)
+    try:
+        f_id = int(state.get('data', '0'))
+    except (TypeError, ValueError):
+        clear_user_state(message.chat.id)
+        return
+    clear_user_state(message.chat.id)
+    process_add_child_step(message, f_id)
+
 
 def process_add_child_step(message, f_id):
     from src.database_manager import add_student, link_student_to_family, get_child_count
@@ -306,17 +331,36 @@ def callback_add_member(call):
         return
     lang = get_user_lang(call.from_user.id)
 
+    # Persistent state — переживёт рестарт
+    set_user_state(call.from_user.id, STATE_AWAITING_MEMBER_INFO, str(f_id))
+
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
                                         input_field_placeholder=t("member_enter_placeholder", lang))
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
 
-    msg = bot.send_message(
+    bot.send_message(
         call.message.chat.id,
         t("member_enter", lang),
         parse_mode='HTML',
         reply_markup=markup
     )
-    bot.register_next_step_handler(msg, process_add_member_step, f_id)
+
+
+@bot.message_handler(
+    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_MEMBER_INFO,
+    content_types=['text']
+)
+def receive_member_info(message):
+    """Обрабатывает 'ФИО телефон' после нажатия 'Добавить родственника'. Persistent."""
+    state = get_user_state(message.chat.id)
+    try:
+        f_id = int(state.get('data', '0'))
+    except (TypeError, ValueError):
+        clear_user_state(message.chat.id)
+        return
+    clear_user_state(message.chat.id)
+    process_add_member_step(message, f_id)
+
 
 def process_add_member_step(message, f_id):
     from src.database_manager import add_parent, link_parent_to_family

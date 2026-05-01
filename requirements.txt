@@ -7,5 +7,8 @@ python-dotenv==1.0.1
 anthropic>=0.50,<1.0
 flask==3.0.3
 
+# Опциональный observability — активен только если задан SENTRY_DSN в env
+sentry-sdk==2.18.0
+
 # Dev / тесты — не ставятся в проде, но нужны локально
 pytest==8.3.3
