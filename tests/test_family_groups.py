@@ -1,0 +1,80 @@
+"""Тесты family_groups — БД-слой и авторизация."""
+import pytest
+import src.database_manager as dbm
+from src.db.groups import (
+    link_group_to_family, get_family_for_group,
+    get_groups_for_family, get_groups_for_student, unlink_group,
+)
+
+
+def _make_family(temp_db, name="F", phone_suffix="01"):
+    head_id = dbm.add_parent(f"Head_{phone_suffix}", f"99890000000{phone_suffix}", role='senior')
+    fam_id = dbm.add_family(name)
+    dbm.set_family_head(fam_id, head_id)
+    dbm.link_parent_to_family(fam_id, head_id)
+    return fam_id, head_id
+
+
+def test_link_group_basic(temp_db):
+    fam_id, head_id = _make_family(temp_db)
+    ok = link_group_to_family(fam_id, -100123, "Family Chat", head_id)
+    assert ok is True
+
+    found = get_family_for_group(-100123)
+    assert found is not None
+    assert found['family_id'] == fam_id
+    assert found['family_name'] == "F"
+
+
+def test_chat_id_is_unique(temp_db):
+    """Один chat_id нельзя привязать к двум семьям."""
+    f1, h1 = _make_family(temp_db, "F1", "10")
+    f2, h2 = _make_family(temp_db, "F2", "20")
+
+    assert link_group_to_family(f1, -200, "Chat", h1) is True
+    assert link_group_to_family(f2, -200, "Chat", h2) is False
+
+
+def test_one_family_can_have_many_groups(temp_db):
+    fam_id, head_id = _make_family(temp_db, "F", "30")
+    assert link_group_to_family(fam_id, -300, "Chat A", head_id) is True
+    assert link_group_to_family(fam_id, -301, "Chat B", head_id) is True
+
+    groups = get_groups_for_family(fam_id)
+    assert set(groups) == {-300, -301}
+
+
+def test_get_groups_for_student(temp_db):
+    """Если ребёнок в нескольких семьях — get_groups_for_student возвращает все группы (uniq)."""
+    f1, h1 = _make_family(temp_db, "F1", "40")
+    f2, h2 = _make_family(temp_db, "F2", "41")
+
+    student_id = dbm.add_student("Kid", "ss-kid")
+    dbm.link_student_to_family(f1, student_id)
+    dbm.link_student_to_family(f2, student_id)
+
+    link_group_to_family(f1, -400, "Chat F1", h1)
+    link_group_to_family(f2, -401, "Chat F2", h2)
+
+    groups = get_groups_for_student(student_id)
+    assert set(groups) == {-400, -401}
+
+
+def test_unlink_group(temp_db):
+    fam_id, head_id = _make_family(temp_db, "F", "50")
+    link_group_to_family(fam_id, -500, "Chat", head_id)
+
+    assert unlink_group(-500) is True
+    assert unlink_group(-500) is False  # уже отвязан
+    assert get_family_for_group(-500) is None
+
+
+def test_cascade_delete_family_removes_groups(temp_db):
+    """При удалении семьи — связанные группы тоже должны исчезнуть."""
+    from src.db.maintenance import delete_family_cascade
+    fam_id, head_id = _make_family(temp_db, "F", "60")
+    link_group_to_family(fam_id, -600, "Chat", head_id)
+
+    delete_family_cascade(fam_id)
+
+    assert get_family_for_group(-600) is None

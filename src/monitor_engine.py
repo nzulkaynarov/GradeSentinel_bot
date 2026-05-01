@@ -93,6 +93,46 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False):
         except Exception as e:
             logger.error(f"Failed to send notification to {tg_id}: {e}")
 
+
+def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_tg_ids):
+    """Шлёт сообщение в групповые чаты, привязанные к семьям ученика.
+    Язык — берём от первого родителя в `parent_tg_ids` (вся семья обычно одного языка)."""
+    from src.db.groups import get_groups_for_student
+    try:
+        chat_ids = get_groups_for_student(student_id)
+    except Exception as e:
+        logger.error(f"Failed to fetch groups for student {student_id}: {e}")
+        return
+    if not chat_ids:
+        return
+
+    # Выбираем версию сообщения. Если message — dict, берём по первому родителю.
+    # Если все варианты совпадают — пофиг чьим языком пользоваться.
+    if isinstance(message, dict):
+        first_tg = next(iter(parent_tg_ids), None) if parent_tg_ids else None
+        msg_text = message.get(first_tg) if first_tg in message else next(iter(message.values()), "")
+    else:
+        msg_text = message
+
+    if isinstance(inline_markup, dict):
+        first_tg = next(iter(parent_tg_ids), None) if parent_tg_ids else None
+        kb = inline_markup.get(first_tg) if first_tg in inline_markup else None
+    else:
+        kb = inline_markup
+
+    for chat_id in chat_ids:
+        try:
+            _bot.send_message(
+                chat_id, msg_text, parse_mode='HTML',
+                disable_web_page_preview=True,
+                reply_markup=kb,
+            )
+            logger.info(f"Group notification sent to chat={chat_id} (student={student_id})")
+        except Exception as e:
+            # Бот мог быть кикнут или потерять права — не валим уведомления родителям из-за этого.
+            # При persistent 403 событие `left_chat_member` сработает и автоматически отвяжет группу.
+            logger.warning(f"Failed to send group notification to {chat_id}: {e}")
+
 def _record_student_failure(student_id: int, display_name: str):
     """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу."""
     _student_failure_counts[student_id] += 1
@@ -267,6 +307,36 @@ def _check_for_new_grades_impl():
         kb = _make_grade_inline_keyboard(student_id, lang)
         send_notification([tg_id], {tg_id: msg}, inline_markup={tg_id: kb})
 
+    # Рассылка в семейные групповые чаты — отдельным проходом по уникальным
+    # студентам, чтобы группа не получила N копий одного уведомления (по числу
+    # родителей). Берём представительного родителя для языка/клавиатуры.
+    seen_students = {}
+    for (tg_id, sid), grades in batch.items():
+        if sid not in seen_students:
+            seen_students[sid] = (tg_id, grades)
+    for sid, (rep_tg_id, grades) in seen_students.items():
+        meta = student_meta[sid]
+        lang = get_user_lang(rep_tg_id)
+        if len(grades) == 1:
+            g = grades[0]
+            if g['change_type'] == 'changed':
+                msg = format_grade_change_notification(
+                    meta['display_name'], g['subject'], g['old_text'], g['clean_text'],
+                    g['grade_value'], meta['spreadsheet_id'], sid, lang=lang
+                )
+            else:
+                msg = format_grade_notification(
+                    meta['display_name'], g['subject'], g['clean_text'],
+                    g['grade_value'], meta['spreadsheet_id'], sid, lang=lang
+                )
+        else:
+            msg = format_batched_notification(
+                meta['display_name'], grades,
+                meta['spreadsheet_id'], sid, lang=lang
+            )
+        kb = _make_grade_inline_keyboard(sid, lang)
+        _send_to_groups_for_student(sid, msg, kb, parent_tg_ids=[rep_tg_id])
+
 SKIP_SUBJECTS = {'посещаемость', '0', ''}
 
 
@@ -360,6 +430,11 @@ def check_for_quarter_changes():
                         )
                         keyboards[tg_id] = _make_quarter_inline_keyboard(student_id, lang)
                     send_notification(parents_ids, messages, inline_markup=keyboards, force=True)
+                    # Дублируем в групповые чаты семьи (язык берём от первого родителя)
+                    rep_tg = parents_ids[0]
+                    _send_to_groups_for_student(
+                        student_id, messages[rep_tg], keyboards[rep_tg], parent_tg_ids=[rep_tg]
+                    )
                 else:
                     # Изменение четвертной оценки
                     logger.info(f"[QUARTER CHANGED] {display_name}: {subject} Q{quarter} '{old_text}' -> '{clean_text}'")
@@ -373,6 +448,10 @@ def check_for_quarter_changes():
                         )
                         keyboards[tg_id] = _make_quarter_inline_keyboard(student_id, lang)
                     send_notification(parents_ids, messages, inline_markup=keyboards, force=True)
+                    rep_tg = parents_ids[0]
+                    _send_to_groups_for_student(
+                        student_id, messages[rep_tg], keyboards[rep_tg], parent_tg_ids=[rep_tg]
+                    )
 
     logger.info("Quarter grades check completed.")
 

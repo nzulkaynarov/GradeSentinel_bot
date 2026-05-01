@@ -72,6 +72,7 @@ import src.handlers.analytics
 import src.handlers.settings
 import src.handlers.subscription
 import src.handlers.invite
+import src.handlers.group
 
 # For direct routing in main menu
 from src.handlers.admin import system_status, cmd_list_families, cmd_add_family_start, cmd_admin_panel

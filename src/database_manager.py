@@ -302,7 +302,25 @@ def init_db():
         )
         ''')
 
-        # 17. Архив старых оценок (для контроля размера БД)
+        # 17. Семейные групповые чаты — куда дублируются уведомления об оценках.
+        # Один chat_id может быть привязан только к одной семье (UNIQUE),
+        # одна семья может иметь несколько групп (например, чат с обоими бабушками+дедушками
+        # и отдельный мини-чат родителей).
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS family_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL UNIQUE,
+            chat_title TEXT,
+            added_by INTEGER NOT NULL,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(family_id) REFERENCES families(id),
+            FOREIGN KEY(added_by) REFERENCES parents(id)
+        )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_groups_family ON family_groups(family_id)')
+
+        # 18. Архив старых оценок (для контроля размера БД)
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS grade_history_archive (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -809,6 +827,7 @@ def delete_family_cascade(family_id: int) -> bool:
         # Связанные с семьёй данные
         cursor.execute('DELETE FROM payments WHERE family_id = ?', (family_id,))
         cursor.execute('DELETE FROM family_invites WHERE family_id = ?', (family_id,))
+        cursor.execute('DELETE FROM family_groups WHERE family_id = ?', (family_id,))
 
         # И сама семья
         cursor.execute('DELETE FROM families WHERE id = ?', (family_id,))
@@ -1229,6 +1248,68 @@ def has_any_active_subscription(telegram_id: int) -> bool:
 # ====================
 # Настройки (key-value)
 # ====================
+# ====================
+# Семейные групповые чаты (бот в чате семьи)
+# ====================
+def link_group_to_family(family_id: int, chat_id: int, chat_title: str, added_by_parent_id: int) -> bool:
+    """Привязывает Telegram-группу к семье. Возвращает True если привязка создана,
+    False если этот chat_id уже привязан (к этой или другой семье)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT INTO family_groups (family_id, chat_id, chat_title, added_by)
+                VALUES (?, ?, ?, ?)
+            ''', (family_id, chat_id, chat_title, added_by_parent_id))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает {'family_id', 'family_name'} для chat_id или None."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT fg.family_id, f.family_name
+            FROM family_groups fg
+            JOIN families f ON f.id = fg.family_id
+            WHERE fg.chat_id = ?
+        ''', (chat_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def get_groups_for_family(family_id: int) -> List[int]:
+    """Возвращает список chat_id привязанных к данной семье."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT chat_id FROM family_groups WHERE family_id = ?', (family_id,))
+        return [row['chat_id'] for row in cursor.fetchall()]
+
+
+def get_groups_for_student(student_id: int) -> List[int]:
+    """Возвращает все chat_id групп, где это уведомление о ребёнке должно появиться.
+    Берём все семьи студента и все их группы (с дедупликацией)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT fg.chat_id
+            FROM family_groups fg
+            JOIN family_links fl ON fl.family_id = fg.family_id
+            WHERE fl.student_id = ?
+        ''', (student_id,))
+        return [row['chat_id'] for row in cursor.fetchall()]
+
+
+def unlink_group(chat_id: int) -> bool:
+    """Удаляет привязку группы. True если удалили, False если её и не было."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM family_groups WHERE chat_id = ?', (chat_id,))
+        return cursor.rowcount > 0
+
+
 def archive_old_grades(days: Optional[int] = None) -> int:
     """Переносит оценки старше N дней из grade_history в grade_history_archive.
 
