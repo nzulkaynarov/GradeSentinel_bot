@@ -394,13 +394,18 @@ def process_add_member_step(message, f_id):
 
 @bot.message_handler(commands=['grades'])
 def get_grades_command(message):
-    user_id = message.chat.id
+    # ВАЖНО: используем from_user.id, а не chat.id, иначе в группе command
+    # выполняется от имени chat_id группы (отрицательный id), и students не находятся.
+    user_id = message.from_user.id if getattr(message, 'from_user', None) else message.chat.id
+    chat_id = message.chat.id
     lang = get_user_lang(user_id)
     from src.database_manager import get_students_for_parent
 
     students = get_students_for_parent(user_id)
     if not students:
-        bot.send_message(user_id, t("grades_no_students", lang))
+        # Отвечаем туда, где была команда (в группе — в группу, в личке — в личку),
+        # но искали по from_user.id (правильный источник истины).
+        bot.send_message(chat_id, t("grades_no_students", lang))
         return
 
     if len(students) > 1:
@@ -414,10 +419,10 @@ def get_grades_command(message):
         markup.add(types.InlineKeyboardButton(
             t("btn_all_children", lang), callback_data="show_grades_all"
         ))
-        send_menu_safe(user_id, t("grades_select_child", lang), inline_markup=markup)
+        send_menu_safe(chat_id, t("grades_select_child", lang), inline_markup=markup)
     else:
-        _show_student_grades(user_id, students[0])
-        _show_webapp_button(user_id)
+        _show_student_grades(chat_id, students[0])
+        _show_webapp_button(chat_id)
 
 
 def _show_student_grades(chat_id: int, student: dict):

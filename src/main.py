@@ -562,15 +562,42 @@ def main():
 
 
 def _register_bot_commands():
-    """Регистрирует команды бота в меню Telegram (кнопка / в чате)."""
+    """Регистрирует команды бота в меню Telegram (кнопка / в чате).
+
+    Разные scope для приватных и групповых чатов:
+    - в личке: /start /help /grades /status;
+    - в группе: /set_thread /unlink_group (управление привязкой к семье).
+    Без scope-разделения в группе подсказывались бы /grades и /status, которые там не работают."""
     try:
+        # Default scope — на случай если новый scope-API не поддержан
         bot.set_my_commands([
             types.BotCommand("start", "Начать / авторизоваться"),
             types.BotCommand("help", "Справка по боту"),
             types.BotCommand("grades", "Оценки за сегодня"),
             types.BotCommand("status", "Статус и статистика"),
         ])
-        logger.info("Bot commands registered in Telegram menu.")
+
+        # Private chats — пользовательские команды
+        bot.set_my_commands(
+            [
+                types.BotCommand("start", "Начать / авторизоваться"),
+                types.BotCommand("help", "Справка по боту"),
+                types.BotCommand("grades", "Оценки за сегодня"),
+                types.BotCommand("status", "Статус и статистика"),
+            ],
+            scope=types.BotCommandScopeAllPrivateChats(),
+        )
+
+        # Group chats — управление привязкой к семье
+        bot.set_my_commands(
+            [
+                types.BotCommand("set_thread", "Указать тему по ссылке"),
+                types.BotCommand("unlink_group", "Отвязать чат от семьи"),
+            ],
+            scope=types.BotCommandScopeAllGroupChats(),
+        )
+
+        logger.info("Bot commands registered (private + group scopes).")
     except Exception as e:
         logger.warning(f"Could not set bot commands: {e}")
 

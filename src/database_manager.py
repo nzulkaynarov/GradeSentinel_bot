@@ -701,8 +701,20 @@ def get_all_families() -> List[Dict[str, Any]]:
     return []
 
 def get_students_for_parent(telegram_id: int, family_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Возвращает список всех студентов {id, fio, spreadsheet_id, display_name}, привязанных к telegram_id.
-    Если указан family_id, фильтрует только по этой семье."""
+    """Возвращает список всех студентов {id, fio, spreadsheet_id, display_name},
+    видимых данному пользователю.
+
+    Источников два — UNION:
+    1) Прямая связь через family_links (parent ↔ student).
+    2) Глава семьи (families.head_id) — даже если он не залинкован
+       явно через family_links, студенты его семьи всё равно его. Иначе
+       при создании семьи через `cmd_add_family` (где назначается head_id,
+       но не всегда добавляется family_links для главы) глава не видел
+       детей своей семьи. Это был реальный bug.
+
+    Админ — отдельная история: ему доступны все студенты только в админ-панели,
+    через `/grades` админ видит детей только тех семей где он head/parent.
+    """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if family_id:
@@ -710,16 +722,19 @@ def get_students_for_parent(telegram_id: int, family_id: Optional[int] = None) -
                 SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON fl.parent_id = p.id
-                WHERE p.telegram_id = ? AND fl.family_id = ?
+                JOIN parents p ON p.telegram_id = ?
+                LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
+                WHERE fl.family_id = ?
+                  AND (fl.parent_id = p.id OR f.head_id = p.id)
             ''', (telegram_id, family_id))
         else:
             cursor.execute('''
                 SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON fl.parent_id = p.id
-                WHERE p.telegram_id = ?
+                JOIN parents p ON p.telegram_id = ?
+                LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
+                WHERE fl.parent_id = p.id OR f.head_id = p.id
             ''', (telegram_id,))
         return [dict(row) for row in cursor.fetchall()]
     return []
