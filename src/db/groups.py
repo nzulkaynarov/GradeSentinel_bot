@@ -5,6 +5,7 @@ from src.database_manager import (
     get_groups_for_family,
     get_groups_for_student,
     unlink_group,
+    update_group_thread,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "get_groups_for_family",
     "get_groups_for_student",
     "unlink_group",
+    "update_group_thread",
 ]

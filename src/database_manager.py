@@ -1326,6 +1326,18 @@ def unlink_group(chat_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+def update_group_thread(chat_id: int, message_thread_id: Optional[int]) -> bool:
+    """Меняет тему привязанной группы (для супергрупп с темами).
+    Передать None чтобы сбросить (писать в General)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE family_groups SET message_thread_id = ? WHERE chat_id = ?',
+            (message_thread_id, chat_id),
+        )
+        return cursor.rowcount > 0
+
+
 def archive_old_grades(days: Optional[int] = None) -> int:
     """Переносит оценки старше N дней из grade_history в grade_history_archive.
 

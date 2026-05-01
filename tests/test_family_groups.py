@@ -85,6 +85,40 @@ def test_link_without_thread_id_defaults_to_none(temp_db):
     assert found['message_thread_id'] is None
 
 
+def test_update_group_thread_sets_and_clears(temp_db):
+    from src.db.groups import update_group_thread
+    fam_id, head_id = _make_family(temp_db, "Forum", "90")
+    link_group_to_family(fam_id, -900, "Forum", head_id)
+
+    # Установить
+    assert update_group_thread(-900, 42) is True
+    assert get_family_for_group(-900)['message_thread_id'] == 42
+
+    # Сбросить
+    assert update_group_thread(-900, None) is True
+    assert get_family_for_group(-900)['message_thread_id'] is None
+
+    # Несуществующий chat
+    assert update_group_thread(-9999, 1) is False
+
+
+@pytest.mark.parametrize("link,expected", [
+    ("https://t.me/c/1234567890/123", 123),
+    ("https://t.me/c/1234567890/123/456", 123),  # link на сообщение в теме
+    ("https://t.me/mygroup/789", 789),
+    ("https://t.me/mygroup/789/1011", 789),
+    ("http://t.me/c/1/55", 55),
+    ("  https://t.me/c/1/55  ", 55),  # пробелы по краям
+    ("not a link", None),
+    ("https://example.com/c/1/2", None),
+    ("", None),
+    ("https://t.me/c/abc/def", None),  # нечисловой topic
+])
+def test_parse_topic_link(link, expected):
+    from src.group_utils import parse_topic_link
+    assert parse_topic_link(link) == expected
+
+
 def test_unlink_group(temp_db):
     fam_id, head_id = _make_family(temp_db, "F", "50")
     link_group_to_family(fam_id, -500, "Chat", head_id)
