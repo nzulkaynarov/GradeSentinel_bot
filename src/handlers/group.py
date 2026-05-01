@@ -259,7 +259,8 @@ def cmd_unlink_group(message: types.Message):
         return
 
     if unlink_group(chat_id):
-        bot.reply_to(message, t("group_unlinked", lang, family=existing['family_name']))
+        bot.reply_to(message, t("group_unlinked", lang, family=existing['family_name']),
+                      parse_mode='HTML')
         logger.info(f"Group {chat_id} unlinked by user {user_id}")
     else:
         bot.reply_to(message, t("group_not_linked", lang))
@@ -291,17 +292,17 @@ def cmd_set_thread(message: types.Message):
     if len(parts) < 2 or not parts[1].strip():
         # Сброс — пишем в General
         update_group_thread(chat_id, None)
-        bot.reply_to(message, t("group_thread_cleared", lang))
+        bot.reply_to(message, t("group_thread_cleared", lang), parse_mode='HTML')
         return
 
     link = parts[1].strip()
     thread_id = _parse_topic_link(link)
     if thread_id is None:
-        bot.reply_to(message, t("group_thread_link_invalid", lang))
+        bot.reply_to(message, t("group_thread_link_invalid", lang), parse_mode='HTML')
         return
 
     update_group_thread(chat_id, thread_id)
-    bot.reply_to(message, t("group_thread_set", lang, thread_id=thread_id))
+    bot.reply_to(message, t("group_thread_set", lang, thread_id=thread_id), parse_mode='HTML')
     logger.info(f"Group {chat_id} thread set to {thread_id} by user {user_id}")
 
 
@@ -355,7 +356,8 @@ def _process_topic_link(message: types.Message, user_id: int):
     if thread_id is None:
         # Не валидная ссылка — попросим прислать ещё раз. Не очищаем state.
         try:
-            bot.reply_to(message, t("group_thread_link_invalid_retry", lang))
+            bot.reply_to(message, t("group_thread_link_invalid_retry", lang),
+                          parse_mode='HTML')
         except Exception:
             pass
         return
@@ -363,7 +365,7 @@ def _process_topic_link(message: types.Message, user_id: int):
     update_group_thread(chat_id, thread_id)
     clear_user_state(user_id)
     try:
-        bot.reply_to(message, t("group_thread_set", lang, thread_id=thread_id))
+        bot.reply_to(message, t("group_thread_set", lang, thread_id=thread_id), parse_mode='HTML')
     except Exception as e:
         logger.debug(f"Failed to reply to topic link confirmation: {e}")
     logger.info(f"Group {chat_id} thread set to {thread_id} by user {user_id} (via state flow)")

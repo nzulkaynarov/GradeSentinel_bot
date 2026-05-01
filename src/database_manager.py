@@ -1249,15 +1249,22 @@ def is_subscription_active(family_id: int) -> bool:
 
 
 def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все семьи, к которым привязан пользователь."""
+    """Возвращает все семьи, к которым относится пользователь.
+
+    Источников два — UNION:
+    1) Через family_links (parent ↔ family).
+    2) Через families.head_id (если глава не залинкован явно).
+    Это тот же класс багов, что в get_students_for_parent — глава семьи мог
+    не появиться в family_links и считался «никем».
+    """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT DISTINCT f.id, f.family_name, f.subscription_end, f.head_id
             FROM families f
-            JOIN family_links fl ON f.id = fl.family_id
-            JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ?
+            JOIN parents p ON p.telegram_id = ?
+            LEFT JOIN family_links fl ON fl.family_id = f.id AND fl.parent_id = p.id
+            WHERE fl.parent_id = p.id OR f.head_id = p.id
         ''', (telegram_id,))
         return [dict(row) for row in cursor.fetchall()]
 

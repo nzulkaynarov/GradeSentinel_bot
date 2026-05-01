@@ -67,3 +67,31 @@ def test_filter_by_family_id(temp_db):
     only_f1 = dbm.get_students_for_parent(700704, family_id=f1)
     assert len(only_f1) == 1
     assert only_f1[0]['id'] == s1
+
+
+def test_head_sees_family_via_head_id_only(temp_db):
+    """get_families_for_user должен видеть семью через head_id даже без family_links.
+    Это второй симптом того же бага — кнопка ⏳Ожидание привязки висела
+    у главы семьи, потому что get_families_for_user возвращал пустой список."""
+    head_id = dbm.add_parent("Head", "998900000800", role='senior')
+    dbm.update_parent_telegram_id("998900000800", 700800)
+
+    fam_id = dbm.add_family("F-Head-Only")
+    dbm.set_family_head(fam_id, head_id)
+    # НЕ делаем link_parent_to_family — эмулируем bug
+
+    families = dbm.get_families_for_user(700800)
+    assert len(families) == 1
+    assert families[0]['id'] == fam_id
+
+
+def test_outsider_does_not_see_families(temp_db):
+    """Контроль безопасности: посторонний не видит чужих семей."""
+    out_id = dbm.add_parent("Out", "998900000801", role='senior')
+    dbm.update_parent_telegram_id("998900000801", 700801)
+
+    head_id = dbm.add_parent("Head2", "998900000802", role='senior')
+    fam_id = dbm.add_family("Other")
+    dbm.set_family_head(fam_id, head_id)
+
+    assert dbm.get_families_for_user(700801) == []
