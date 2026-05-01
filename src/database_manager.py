@@ -302,6 +302,24 @@ def init_db():
         )
         ''')
 
+        # Однократная backfill-миграция: для всех families с head_id, у которых
+        # нет записи в family_links — создать её. Это лечит исторические данные,
+        # созданные до того как process_head_choice стал делать link_parent_to_family.
+        # Безопасно при повторном запуске благодаря NOT EXISTS.
+        # Дёшево: один SQL без цикла на стороне Python.
+        cursor.execute('''
+            INSERT INTO family_links (family_id, parent_id)
+            SELECT f.id, f.head_id
+            FROM families f
+            WHERE f.head_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM family_links fl
+                  WHERE fl.family_id = f.id AND fl.parent_id = f.head_id
+              )
+        ''')
+        if cursor.rowcount > 0:
+            logger.info(f"Backfill migration: linked {cursor.rowcount} family heads to family_links.")
+
         # 17. Семейные групповые чаты — куда дублируются уведомления об оценках.
         # Один chat_id может быть привязан только к одной семье (UNIQUE),
         # одна семья может иметь несколько групп (например, чат с обоими бабушками+дедушками
@@ -610,10 +628,29 @@ def is_student_under_active_subscription(student_id: int) -> bool:
     return any(is_subscription_active(f['id']) for f in families)
 
 def set_family_head(family_id: int, parent_id: int):
-    """Делает родителя главой семьи."""
+    """Делает родителя главой семьи.
+
+    Атомарно гарантирует, что глава также присутствует в family_links —
+    иначе get_students_for_parent / get_families_for_user не находили
+    его «своих» детей и семью (исторический bug). Этот invariant
+    защищает от будущих регрессий: даже если кто-то вызовет напрямую
+    set_family_head без предварительного link_parent_to_family,
+    данные останутся консистентны.
+    """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('UPDATE families SET head_id = ? WHERE id = ?', (parent_id, family_id))
+        # WHERE NOT EXISTS — обход того что в SQLite UNIQUE считает NULL разными
+        # значениями, поэтому INSERT OR IGNORE по UNIQUE(family_id,parent_id,student_id)
+        # не дедуплицирует записи где student_id IS NULL. Делаем явный exists-check.
+        cursor.execute('''
+            INSERT INTO family_links (family_id, parent_id)
+            SELECT ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM family_links
+                WHERE family_id = ? AND parent_id = ? AND student_id IS NULL
+            )
+        ''', (family_id, parent_id, family_id, parent_id))
 
 def add_family(name: str) -> Optional[int]:
     """Создает новую семью и возвращает её ID."""
