@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 # Имена state'ов для multi-step flow (в БД user_states.state)
 STATE_AWAITING_CHILD_URL = "awaiting_child_url"
 STATE_AWAITING_MEMBER_INFO = "awaiting_member_info"
+STATE_AWAITING_MEMBER_FIO = "awaiting_member_fio"
+STATE_AWAITING_MEMBER_PHONE = "awaiting_member_phone"
 
 
 def _parse_int_args(call_data: str, prefix: str, count: int) -> Optional[Tuple[int, ...]]:
@@ -267,11 +269,19 @@ def process_add_child_step(message, f_id):
             send_menu_safe(message.chat.id, t("child_limit_reached", lang, count=current_count))
             return
 
+        # Чёткое сообщение если бот не имеет доступа к таблице (вместо
+        # абстрактного "произошла ошибка"). Различаем PermissionError по
+        # статусу 403/404 от googleapiclient.
+        title = None
         try:
             title = get_spreadsheet_title(ss_id)
         except Exception as se:
+            err_str = str(se)
             logger.error(f"Error calling Sheets API: {se}")
-            title = None
+            if '403' in err_str or '404' in err_str or 'permission' in err_str.lower():
+                send_menu_safe(message.chat.id, t("child_no_access_error", lang))
+                return
+            # Иначе — прочая ошибка, но таблица возможно есть. Пробуем дальше с заглушкой.
 
         if not title:
             title = t("default_student_name", lang)
@@ -331,65 +341,109 @@ def callback_add_member(call):
         return
     lang = get_user_lang(call.from_user.id)
 
-    # Persistent state — переживёт рестарт
-    set_user_state(call.from_user.id, STATE_AWAITING_MEMBER_INFO, str(f_id))
+    # Двухшаговый flow: сначала ФИО, потом телефон. Хранилище — user_states (persistent).
+    set_user_state(call.from_user.id, STATE_AWAITING_MEMBER_FIO, str(f_id))
 
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
-                                        input_field_placeholder=t("member_enter_placeholder", lang))
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
 
     bot.send_message(
         call.message.chat.id,
-        t("member_enter", lang),
+        t("member_step1_fio", lang),
         parse_mode='HTML',
         reply_markup=markup
     )
 
 
 @bot.message_handler(
-    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_MEMBER_INFO,
+    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_MEMBER_FIO,
     content_types=['text']
 )
-def receive_member_info(message):
-    """Обрабатывает 'ФИО телефон' после нажатия 'Добавить родственника'. Persistent."""
+def receive_member_fio(message):
+    """Шаг 1: получили ФИО. Сохраняем и просим телефон."""
+    import json
+    lang = get_user_lang(message.chat.id)
+    if not message.text or message.text == t("btn_cancel", lang):
+        clear_user_state(message.chat.id)
+        send_menu_safe(message.chat.id, t("family_cancelled", lang))
+        return
+
     state = get_user_state(message.chat.id)
     try:
         f_id = int(state.get('data', '0'))
     except (TypeError, ValueError):
         clear_user_state(message.chat.id)
         return
-    clear_user_state(message.chat.id)
-    process_add_member_step(message, f_id)
+
+    fio = message.text.strip()
+    if len(fio) < 3:
+        bot.send_message(message.chat.id, t("family_fio_too_short", lang))
+        return
+
+    # Сохраняем {family_id, fio} JSON в data
+    payload = json.dumps({'f_id': f_id, 'fio': fio})
+    set_user_state(message.chat.id, STATE_AWAITING_MEMBER_PHONE, payload)
+
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
+                                        input_field_placeholder=t("member_phone_placeholder", lang))
+    markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+    bot.send_message(
+        message.chat.id,
+        t("member_step2_phone", lang, fio=fio),
+        parse_mode='HTML',
+        reply_markup=markup
+    )
 
 
-def process_add_member_step(message, f_id):
-    from src.database_manager import add_parent, link_parent_to_family
+@bot.message_handler(
+    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_MEMBER_PHONE,
+    content_types=['text']
+)
+def receive_member_phone(message):
+    """Шаг 2: получили телефон. Валидируем формат, создаём связку."""
+    import json
+    import re
+    from src.database_manager import (
+        add_parent, link_parent_to_family, get_parent_by_phone,
+    )
     lang = get_user_lang(message.chat.id)
 
     if not message.text or message.text == t("btn_cancel", lang):
+        clear_user_state(message.chat.id)
         send_menu_safe(message.chat.id, t("family_cancelled", lang))
         return
 
+    state = get_user_state(message.chat.id)
     try:
-        try:
-            bot.delete_message(message.chat.id, message.message_id)
-        except Exception as e:
-            logger.debug(f"Could not delete member input message: {e}")
+        data = json.loads(state.get('data') or '{}')
+        f_id = int(data['f_id'])
+        fio = data['fio']
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        clear_user_state(message.chat.id)
+        return
 
-        parts = message.text.split(maxsplit=2)
-        if len(parts) < 3:
-            fio = parts[0]
-            phone = parts[1]
+    # Нормализация и валидация телефона. Узбекские номера 998XXXXXXXXX.
+    phone_raw = message.text.strip()
+    phone = re.sub(r'[^\d]', '', phone_raw)
+    if not re.match(r'^998\d{9}$', phone):
+        # Не очищаем state — даём шанс ввести ещё раз
+        bot.send_message(message.chat.id, t("member_phone_invalid", lang), parse_mode='HTML')
+        return
+
+    clear_user_state(message.chat.id)
+
+    try:
+        existing = get_parent_by_phone(phone)
+        if existing:
+            # Не плодим дубликаты — линкуем существующий parent к семье
+            link_parent_to_family(f_id, existing['id'])
+            send_content(message.chat.id, t("member_already_exists", lang))
         else:
-            fio = parts[0] + " " + parts[1]
-            phone = parts[2]
-
-        p_id = add_parent(fio, phone, role='senior')
-        link_parent_to_family(f_id, p_id)
-
-        send_content(message.chat.id, t("member_added", lang, name=fio))
+            p_id = add_parent(fio, phone, role='senior')
+            link_parent_to_family(f_id, p_id)
+            send_content(message.chat.id, t("member_added", lang, name=fio))
     except Exception as e:
-        logger.error(f"Error adding family member: {e}")
+        logger.error(f"Error adding family member: {e}", exc_info=True)
         send_content(message.chat.id, t("member_add_error", lang))
 
 @bot.message_handler(commands=['grades'])

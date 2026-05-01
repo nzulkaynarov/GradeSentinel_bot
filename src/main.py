@@ -223,19 +223,42 @@ def contact_handler(message):
             send_menu_safe(user_id, welcome_msg)
             from src.utils import mask_phone
             logger.info(f"User {mask_phone(phone)} authorized as {role}")
+
+            # Запускаем onboarding wizard если юзер новый (никогда не получал
+            # /start раньше — определяем по отсутствию записи в user_states
+            # с ключом onboarding_done)
+            from src.database_manager import get_user_state, set_user_state
+            onb_state = get_user_state(user_id)
+            if not (onb_state and onb_state.get('state') == 'onboarding_done'):
+                set_user_state(user_id, 'onboarding_done', '1')
+                _start_onboarding(user_id, parent['fio'].split()[0] if parent['fio'] else 'друг')
         else:
             lang = chosen_lang or 'ru'
+            # Self-serve путь вместо тупика: юзер не в БД → две кнопки
+            # «Создать свою семью» и «У меня инвайт-ссылка». Админу
+            # больше не нужно регистрировать каждого вручную.
+            inline_markup = types.InlineKeyboardMarkup()
+            inline_markup.add(types.InlineKeyboardButton(
+                t("btn_create_my_family", lang), callback_data="up_create_family_new"
+            ))
+            inline_markup.add(types.InlineKeyboardButton(
+                t("btn_have_invite", lang), callback_data="up_have_invite"
+            ))
             admin_id_env = os.environ.get("ADMIN_ID")
-            not_found_text = t("auth_phone_not_found", lang)
             if admin_id_env:
-                inline_markup = types.InlineKeyboardMarkup()
                 inline_markup.add(types.InlineKeyboardButton(
                     t("btn_contact_admin", lang),
                     url=f"tg://user?id={admin_id_env}"
                 ))
-                bot.send_message(user_id, not_found_text, reply_markup=inline_markup)
-            else:
-                bot.send_message(user_id, not_found_text, reply_markup=types.ReplyKeyboardRemove())
+            # Перед kbd убираем reply-клаву (request_contact уже не нужна)
+            bot.send_message(user_id, t("auth_phone_not_found", lang),
+                              reply_markup=types.ReplyKeyboardRemove())
+            bot.send_message(user_id, " ", reply_markup=inline_markup)
+
+            # Сохраняем телефон чтобы при выборе "Создать семью" сразу зарегать
+            from src.database_manager import set_user_state
+            set_user_state(user_id, "pending_selfserve_phone", phone)
+
             from src.utils import mask_phone
             logger.warning(f"Unauthorized access attempt from phone: {mask_phone(phone)}")
     else:
@@ -270,10 +293,18 @@ def _show_user_panel(chat_id: int, message_id: int = None):
             status = "❌"
         fam_lines.append(f"🏠 <b>{fs['family_name']}</b> — {status}")
 
-    # Пустое состояние — пользователь без семьи и без детей
+    # Пустое состояние — пользователь без семьи и без детей.
+    # Раньше показывали "Свяжитесь с админом" — тупик. Теперь даём
+    # actionable выбор: создать свою семью или подождать инвайт-ссылку.
     if not families and not has_kids and not is_head:
         text = t("user_panel_empty", lang)
         markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(
+            t("btn_create_my_family", lang), callback_data="up_create_family"
+        ))
+        markup.add(types.InlineKeyboardButton(
+            t("btn_have_invite", lang), callback_data="up_have_invite"
+        ))
         markup.row(
             types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
             types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
@@ -325,6 +356,155 @@ def callback_up_back(call):
     """Назад в пользовательскую панель."""
     bot.answer_callback_query(call.id)
     _show_user_panel(call.message.chat.id, call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_create_family_new')
+def callback_up_create_family_new(call):
+    """Self-serve регистрация: юзера нет в БД, у него уже сохранён phone в pending_selfserve_phone.
+    Создаём parent + предлагаем ввести имя семьи."""
+    from src.database_manager import (
+        get_user_state, clear_user_state, add_parent, update_parent_telegram_id,
+        set_user_state,
+    )
+    bot.answer_callback_query(call.id)
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    state = get_user_state(user_id)
+    phone = state.get('data') if state and state.get('state') == 'pending_selfserve_phone' else None
+    if not phone:
+        # Сессия потерялась — попросим начать с /start
+        bot.send_message(call.message.chat.id, t("auth_contact_error", lang))
+        return
+    # Создаём parent record
+    fio_default = call.from_user.first_name or "User"
+    if call.from_user.last_name:
+        fio_default = f"{fio_default} {call.from_user.last_name}"
+    add_parent(fio_default, phone, role='senior')
+    update_parent_telegram_id(phone, user_id)
+    clear_user_state(user_id)
+
+    # Дальше тот же flow что у уже зарегистрированного юзера:
+    set_user_state(user_id, "selfserve_family_name", "1")
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+    msg = bot.send_message(
+        call.message.chat.id, t("family_create_title", lang),
+        parse_mode='Markdown', reply_markup=markup,
+    )
+    from src.handlers.admin import process_family_name
+    bot.register_next_step_handler(msg, process_family_name)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_create_family')
+def callback_up_create_family(call):
+    """Self-serve: юзер без семьи решил создать свою. Запускаем тот же flow что у админа."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete panel before create_family: {e}")
+    # Используем существующий flow создания семьи
+    from src.handlers.admin import callback_ap_new_family
+    # Подделываем call как будто пришло из админ-панели — но для не-админов
+    # cmd_add_family_start защищён ролью. Поэтому делаем обход: создаём
+    # упрощённый flow «сделать меня главой» сразу.
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+    msg = bot.send_message(
+        call.message.chat.id,
+        t("family_create_title", lang),
+        parse_mode='Markdown',
+        reply_markup=markup
+    )
+    # Сохраняем намерение в state, чтобы process_family_name знал что
+    # юзер автоматически становится главой (без второго экрана выбора).
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "selfserve_family_name", "1")
+    from src.handlers.admin import process_family_name
+    bot.register_next_step_handler(msg, process_family_name)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_have_invite')
+def callback_up_have_invite(call):
+    """Юзер сообщает что у него есть инвайт-ссылка. Объясняем как ею воспользоваться."""
+    bot.answer_callback_query(call.id)
+    lang = get_user_lang(call.from_user.id)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        t("user_panel_back", lang), callback_data="up_back"
+    ))
+    bot.edit_message_text(
+        t("no_invite_help", lang),
+        chat_id=call.message.chat.id, message_id=call.message.message_id,
+        reply_markup=markup, parse_mode='HTML'
+    )
+
+
+# ═══════════════════════════════════════════
+#  Onboarding wizard — 3 экрана для нового юзера
+# ═══════════════════════════════════════════
+
+def _start_onboarding(chat_id: int, user_name: str):
+    """Запускает 3-экранный визард приветствия. Можно skip на любом шаге."""
+    lang = get_user_lang(chat_id)
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton(t("btn_next", lang), callback_data="onb_2"),
+        types.InlineKeyboardButton(t("btn_skip", lang), callback_data="onb_skip"),
+    )
+    bot.send_message(
+        chat_id, t("onboard_step1", lang, name=user_name),
+        reply_markup=markup, parse_mode='HTML'
+    )
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ("onb_2", "onb_3", "onb_done", "onb_skip"))
+def callback_onboarding(call):
+    bot.answer_callback_query(call.id)
+    lang = get_user_lang(call.from_user.id)
+    chat_id = call.message.chat.id
+    msg_id = call.message.message_id
+
+    if call.data == "onb_skip":
+        try:
+            bot.delete_message(chat_id, msg_id)
+        except Exception:
+            pass
+        _show_user_panel(chat_id)
+        return
+
+    if call.data == "onb_2":
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton(t("btn_next", lang), callback_data="onb_3"),
+            types.InlineKeyboardButton(t("btn_skip", lang), callback_data="onb_skip"),
+        )
+        try:
+            bot.edit_message_text(t("onboard_step2", lang), chat_id, msg_id,
+                                   reply_markup=markup, parse_mode='HTML')
+        except Exception as e:
+            logger.debug(f"onb_2 edit failed: {e}")
+        return
+
+    if call.data == "onb_3":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(t("btn_done", lang), callback_data="onb_done"))
+        try:
+            bot.edit_message_text(t("onboard_step3", lang), chat_id, msg_id,
+                                   reply_markup=markup, parse_mode='HTML')
+        except Exception as e:
+            logger.debug(f"onb_3 edit failed: {e}")
+        return
+
+    if call.data == "onb_done":
+        try:
+            bot.edit_message_text(t("onboard_done", lang), chat_id, msg_id, parse_mode='HTML')
+        except Exception:
+            pass
+        _show_user_panel(chat_id)
+        return
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_grades')

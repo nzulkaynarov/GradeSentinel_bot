@@ -51,6 +51,7 @@ _job_locks = {
     'quarter': threading.Lock(),
     'subscription': threading.Lock(),
     'cleanup': threading.Lock(),
+    'weekly_text_digest': threading.Lock(),
 }
 
 # In-memory кэш маркеров: {job: marker}. Источник правды — БД (settings),
@@ -142,6 +143,11 @@ def _scheduler_loop():
             # Еженедельная чистка БД (воскресенье, 03:00 по Ташкенту)
             if now.weekday() == 6 and now.hour == 3 and now.minute < 6:
                 _run_job_safe('cleanup', today_str, _run_weekly_cleanup)
+
+            # Бесплатный текстовый weekly digest для всех (воскресенье, 18:00).
+            # AI-версия (премиум) идёт отдельным scheduler'ом в 19:00 в analytics.py.
+            if now.weekday() == 6 and now.hour == 18 and now.minute < 6:
+                _run_job_safe('weekly_text_digest', today_str, _send_weekly_text_digest)
 
         except Exception as e:
             from src.error_reporter import report
@@ -415,6 +421,73 @@ def _check_quarter_grades():
         check_for_quarter_changes()
     except Exception as e:
         logger.error(f"Quarter grades check failed: {e}")
+
+
+def _send_weekly_text_digest():
+    """Бесплатный воскресный текстовый дайджест для всех родителей.
+    AI-версия премиум — это отдельный scheduler в analytics.py.
+    Здесь — простой пересчёт: лучший/худший предмет, среднее, всего оценок."""
+    from collections import defaultdict
+    from src.database_manager import (
+        get_all_parents_with_children, get_grade_history_for_student,
+        get_user_lang,
+    )
+
+    if not _bot:
+        return
+
+    logger.info("Sending free weekly text digests...")
+    parent_data = get_all_parents_with_children()
+    by_parent = defaultdict(list)
+    for row in parent_data:
+        by_parent[row['telegram_id']].append(row)
+
+    today = _get_local_now()
+    week_start = (today - timedelta(days=7)).strftime('%d.%m')
+    week_end = today.strftime('%d.%m')
+    week_range = f"{week_start}–{week_end}"
+
+    sent = 0
+    for tg_id, children in by_parent.items():
+        lang = get_user_lang(tg_id)
+        sections = []
+        for child in children:
+            grades = get_grade_history_for_student(child['student_id'], days=7)
+            display_name = child.get('display_name') or child['fio']
+            if not grades:
+                continue
+            numeric = [g['grade_value'] for g in grades if g['grade_value'] is not None]
+            if not numeric:
+                continue
+            avg = sum(numeric) / len(numeric)
+            # Лучший/худший предмет — берём по среднему
+            by_subj = defaultdict(list)
+            for g in grades:
+                if g['grade_value'] is not None:
+                    by_subj[g['subject']].append(g['grade_value'])
+            subj_avg = {s: sum(v)/len(v) for s, v in by_subj.items()}
+
+            section = [t("weekly_digest_title", lang, name=display_name, week_range=week_range)]
+            section.append(t("weekly_digest_total", lang, count=len(grades), avg=f"{avg:.1f}"))
+            if len(subj_avg) >= 2:
+                best_s = max(subj_avg, key=subj_avg.get)
+                worst_s = min(subj_avg, key=subj_avg.get)
+                section.append(t("weekly_digest_best", lang, subject=best_s, grade=f"{subj_avg[best_s]:.1f}"))
+                if subj_avg[worst_s] <= 3.5:
+                    section.append(t("weekly_digest_worst", lang, subject=worst_s, grade=f"{subj_avg[worst_s]:.1f}"))
+            sections.append("\n".join(section))
+
+        if not sections:
+            continue
+
+        msg = "\n\n".join(sections) + t("weekly_digest_premium_hint", lang)
+        try:
+            _bot.send_message(tg_id, msg, parse_mode='HTML')
+            sent += 1
+            time.sleep(0.05)
+        except Exception as e:
+            logger.warning(f"Failed to send weekly text digest to {tg_id}: {e}")
+    logger.info(f"Weekly text digest sent to {sent} parents.")
 
 
 def _run_weekly_cleanup():

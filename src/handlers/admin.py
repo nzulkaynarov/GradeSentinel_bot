@@ -363,6 +363,17 @@ def process_family_name(message):
         bot.send_message(message.chat.id, t("family_name_empty", lang))
         return
 
+    # Self-serve flow: юзер уже выбрал «Создать свою семью» — сразу делаем
+    # его главой без второго экрана. Маркер в user_states.
+    from src.database_manager import get_user_state, clear_user_state
+    state = get_user_state(message.chat.id)
+    if state and state.get('state') == 'selfserve_family_name':
+        clear_user_state(message.chat.id)
+        # Эмулируем нажатие «Сделать меня главой»
+        message.text = t("btn_make_me_head", lang)
+        process_head_choice(message, family_name)
+        return
+
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_make_me_head", lang)))
     markup.add(types.KeyboardButton(t("btn_assign_other", lang)))
