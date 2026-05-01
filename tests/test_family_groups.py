@@ -41,7 +41,7 @@ def test_one_family_can_have_many_groups(temp_db):
     assert link_group_to_family(fam_id, -301, "Chat B", head_id) is True
 
     groups = get_groups_for_family(fam_id)
-    assert set(groups) == {-300, -301}
+    assert {g['chat_id'] for g in groups} == {-300, -301}
 
 
 def test_get_groups_for_student(temp_db):
@@ -57,7 +57,32 @@ def test_get_groups_for_student(temp_db):
     link_group_to_family(f2, -401, "Chat F2", h2)
 
     groups = get_groups_for_student(student_id)
-    assert set(groups) == {-400, -401}
+    assert {g['chat_id'] for g in groups} == {-400, -401}
+
+
+def test_link_with_message_thread_id(temp_db):
+    """Супергруппа с темами — message_thread_id сохраняется и возвращается."""
+    fam_id, head_id = _make_family(temp_db, "Forum", "70")
+    ok = link_group_to_family(fam_id, -700, "Forum", head_id, message_thread_id=42)
+    assert ok is True
+
+    found = get_family_for_group(-700)
+    assert found['message_thread_id'] == 42
+
+    student_id = dbm.add_student("K", "ss-k")
+    dbm.link_student_to_family(fam_id, student_id)
+    groups = get_groups_for_student(student_id)
+    assert len(groups) == 1
+    assert groups[0]['chat_id'] == -700
+    assert groups[0]['message_thread_id'] == 42
+
+
+def test_link_without_thread_id_defaults_to_none(temp_db):
+    """Обычная группа без тем — message_thread_id = NULL."""
+    fam_id, head_id = _make_family(temp_db, "Plain", "80")
+    link_group_to_family(fam_id, -800, "Plain", head_id)
+    found = get_family_for_group(-800)
+    assert found['message_thread_id'] is None
 
 
 def test_unlink_group(temp_db):

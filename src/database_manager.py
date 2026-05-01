@@ -312,6 +312,7 @@ def init_db():
             family_id INTEGER NOT NULL,
             chat_id INTEGER NOT NULL UNIQUE,
             chat_title TEXT,
+            message_thread_id INTEGER,
             added_by INTEGER NOT NULL,
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(family_id) REFERENCES families(id),
@@ -319,6 +320,13 @@ def init_db():
         )
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_groups_family ON family_groups(family_id)')
+
+        # Миграция: добавить колонку message_thread_id если БД создана старой версией
+        cursor.execute("PRAGMA table_info(family_groups)")
+        fg_cols = [c[1] for c in cursor.fetchall()]
+        if 'message_thread_id' not in fg_cols:
+            cursor.execute("ALTER TABLE family_groups ADD COLUMN message_thread_id INTEGER")
+            logger.info("Database migration: message_thread_id column added to family_groups.")
 
         # 18. Архив старых оценок (для контроля размера БД)
         cursor.execute('''
@@ -1251,27 +1259,32 @@ def has_any_active_subscription(telegram_id: int) -> bool:
 # ====================
 # Семейные групповые чаты (бот в чате семьи)
 # ====================
-def link_group_to_family(family_id: int, chat_id: int, chat_title: str, added_by_parent_id: int) -> bool:
+def link_group_to_family(family_id: int, chat_id: int, chat_title: str,
+                         added_by_parent_id: int,
+                         message_thread_id: Optional[int] = None) -> bool:
     """Привязывает Telegram-группу к семье. Возвращает True если привязка создана,
-    False если этот chat_id уже привязан (к этой или другой семье)."""
+    False если этот chat_id уже привязан (к этой или другой семье).
+
+    message_thread_id — для супергрупп с темами. Если задан, все уведомления
+    будут падать именно в эту тему (через Telegram Bot API param `message_thread_id`)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO family_groups (family_id, chat_id, chat_title, added_by)
-                VALUES (?, ?, ?, ?)
-            ''', (family_id, chat_id, chat_title, added_by_parent_id))
+                INSERT INTO family_groups (family_id, chat_id, chat_title, message_thread_id, added_by)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (family_id, chat_id, chat_title, message_thread_id, added_by_parent_id))
             return True
         except sqlite3.IntegrityError:
             return False
 
 
 def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает {'family_id', 'family_name'} для chat_id или None."""
+    """Возвращает {'family_id', 'family_name', 'message_thread_id'} для chat_id или None."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT fg.family_id, f.family_name
+            SELECT fg.family_id, fg.message_thread_id, f.family_name
             FROM family_groups fg
             JOIN families f ON f.id = fg.family_id
             WHERE fg.chat_id = ?
@@ -1280,26 +1293,29 @@ def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def get_groups_for_family(family_id: int) -> List[int]:
-    """Возвращает список chat_id привязанных к данной семье."""
+def get_groups_for_family(family_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список dict с chat_id и message_thread_id для семьи."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT chat_id FROM family_groups WHERE family_id = ?', (family_id,))
-        return [row['chat_id'] for row in cursor.fetchall()]
+        cursor.execute(
+            'SELECT chat_id, message_thread_id FROM family_groups WHERE family_id = ?',
+            (family_id,)
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
-def get_groups_for_student(student_id: int) -> List[int]:
-    """Возвращает все chat_id групп, где это уведомление о ребёнке должно появиться.
-    Берём все семьи студента и все их группы (с дедупликацией)."""
+def get_groups_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает список dict {chat_id, message_thread_id} для всех групп
+    привязанных к семьям этого ученика (с дедупликацией по chat_id)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT DISTINCT fg.chat_id
+            SELECT DISTINCT fg.chat_id, fg.message_thread_id
             FROM family_groups fg
             JOIN family_links fl ON fl.family_id = fg.family_id
             WHERE fl.student_id = ?
         ''', (student_id,))
-        return [row['chat_id'] for row in cursor.fetchall()]
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def unlink_group(chat_id: int) -> bool:

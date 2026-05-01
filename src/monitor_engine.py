@@ -96,14 +96,15 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False):
 
 def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_tg_ids):
     """Шлёт сообщение в групповые чаты, привязанные к семьям ученика.
-    Язык — берём от первого родителя в `parent_tg_ids` (вся семья обычно одного языка)."""
+    Язык — берём от первого родителя в `parent_tg_ids` (вся семья обычно одного языка).
+    Для супергрупп с темами уважаем `message_thread_id`."""
     from src.db.groups import get_groups_for_student
     try:
-        chat_ids = get_groups_for_student(student_id)
+        groups = get_groups_for_student(student_id)
     except Exception as e:
         logger.error(f"Failed to fetch groups for student {student_id}: {e}")
         return
-    if not chat_ids:
+    if not groups:
         return
 
     # Выбираем версию сообщения. Если message — dict, берём по первому родителю.
@@ -120,18 +121,25 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
     else:
         kb = inline_markup
 
-    for chat_id in chat_ids:
+    for grp in groups:
+        chat_id = grp['chat_id']
+        thread_id = grp.get('message_thread_id')
         try:
-            _bot.send_message(
-                chat_id, msg_text, parse_mode='HTML',
-                disable_web_page_preview=True,
-                reply_markup=kb,
+            kwargs = {
+                'parse_mode': 'HTML',
+                'disable_web_page_preview': True,
+                'reply_markup': kb,
+            }
+            if thread_id is not None:
+                kwargs['message_thread_id'] = thread_id
+            _bot.send_message(chat_id, msg_text, **kwargs)
+            logger.info(
+                f"Group notification sent to chat={chat_id} thread={thread_id} (student={student_id})"
             )
-            logger.info(f"Group notification sent to chat={chat_id} (student={student_id})")
         except Exception as e:
-            # Бот мог быть кикнут или потерять права — не валим уведомления родителям из-за этого.
-            # При persistent 403 событие `left_chat_member` сработает и автоматически отвяжет группу.
-            logger.warning(f"Failed to send group notification to {chat_id}: {e}")
+            # Бот мог быть кикнут, потерять права, или тема удалена.
+            # Не валим уведомления родителям из-за этого.
+            logger.warning(f"Failed to send group notification to {chat_id} (thread={thread_id}): {e}")
 
 def _record_student_failure(student_id: int, display_name: str):
     """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу."""

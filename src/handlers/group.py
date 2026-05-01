@@ -46,6 +46,9 @@ def on_bot_added_to_group(message: types.Message):
 
     chat_id = message.chat.id
     chat_title = message.chat.title or ""
+    # Для супергрупп с темами захватываем тред, в который пришло событие.
+    # У обычных групп этого поля нет → None (= writes в General).
+    thread_id = getattr(message, 'message_thread_id', None)
     inviter = message.from_user
     inviter_id = inviter.id
     lang = get_user_lang(inviter_id) or 'ru'
@@ -56,7 +59,8 @@ def on_bot_added_to_group(message: types.Message):
         bot.send_message(
             chat_id,
             t("group_already_linked", lang, family=existing['family_name']),
-            parse_mode='HTML'
+            parse_mode='HTML',
+            message_thread_id=thread_id,
         )
         return
 
@@ -67,7 +71,8 @@ def on_bot_added_to_group(message: types.Message):
         bot.send_message(
             chat_id,
             t("group_inviter_not_authorized", lang),
-            parse_mode='HTML'
+            parse_mode='HTML',
+            message_thread_id=thread_id,
         )
         # Не уходим из группы автоматически — пусть юзер сам решит. Просто ничего не делаем.
         return
@@ -81,10 +86,12 @@ def on_bot_added_to_group(message: types.Message):
         families_to_offer = [{'id': f['id'], 'family_name': f['family_name']} for f in get_all_families()]
 
     markup = types.InlineKeyboardMarkup()
+    # Кодируем thread_id в callback_data (-1 = None, чтобы не парсить пустую строку)
+    thread_marker = thread_id if thread_id is not None else -1
     for fam in families_to_offer:
         markup.add(types.InlineKeyboardButton(
             f"🏠 {fam['family_name']}",
-            callback_data=f"glink_{fam['id']}_{inviter_id}"
+            callback_data=f"glink_{fam['id']}_{inviter_id}_{thread_marker}"
         ))
     markup.add(types.InlineKeyboardButton(
         t("btn_cancel", lang), callback_data=f"gcancel_{inviter_id}"
@@ -94,7 +101,8 @@ def on_bot_added_to_group(message: types.Message):
         chat_id,
         t("group_choose_family", lang, name=inviter.first_name or "user"),
         reply_markup=markup,
-        parse_mode='HTML'
+        parse_mode='HTML',
+        message_thread_id=thread_id,
     )
 
 
@@ -102,13 +110,16 @@ def on_bot_added_to_group(message: types.Message):
 def callback_group_link(call: types.CallbackQuery):
     """Юзер кликнул на кнопку выбора семьи в групповом чате."""
     parts = call.data.split('_')
-    if len(parts) != 3:
+    # glink_<family_id>_<inviter_id>_<thread_id_or_-1>
+    if len(parts) != 4:
         return
     try:
         family_id = int(parts[1])
         original_inviter_id = int(parts[2])
+        thread_marker = int(parts[3])
     except ValueError:
         return
+    thread_id = thread_marker if thread_marker >= 0 else None
 
     user_id = call.from_user.id
     lang = get_user_lang(user_id) or 'ru'
@@ -137,7 +148,8 @@ def callback_group_link(call: types.CallbackQuery):
         bot.answer_callback_query(call.id, t("family_account_not_found", lang), show_alert=True)
         return
 
-    success = link_group_to_family(family_id, chat_id, chat_title, parent_id)
+    success = link_group_to_family(family_id, chat_id, chat_title, parent_id,
+                                    message_thread_id=thread_id)
     if not success:
         # Кто-то параллельно привязал тот же chat_id (или гонка)
         existing = get_family_for_group(chat_id)
@@ -154,7 +166,9 @@ def callback_group_link(call: types.CallbackQuery):
         t("group_linked", lang),
         chat_id=chat_id, message_id=call.message.message_id, parse_mode='HTML'
     )
-    logger.info(f"Group {chat_id} linked to family {family_id} by user {user_id}")
+    logger.info(
+        f"Group {chat_id} (thread={thread_id}) linked to family {family_id} by user {user_id}"
+    )
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('gcancel_'))
