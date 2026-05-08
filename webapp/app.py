@@ -65,16 +65,18 @@ def validate_init_data(init_data: str) -> dict:
     if not check_hash:
         raise ValueError("No hash in initData")
 
-    # Build data_check_string (sorted key=value pairs, исключая hash и signature).
-    # signature — новое поле в Telegram WebApp 7.x+ для third-party Ed25519
-    # валидации, НЕ должно входить в HMAC-SHA256 compute. Если оставить — наш
-    # вычисленный hash не совпадёт с тем что прислал клиент.
-    HASH_EXCLUDED = {"hash", "signature"}
-    data_pairs = []
-    for pair in init_data.split("&"):
-        key = pair.split("=")[0]
-        if key not in HASH_EXCLUDED:
-            data_pairs.append(pair)
+    # Build data_check_string per Telegram spec:
+    #   - URL-decoded values (parse_qs автоматически декодирует)
+    #   - sorted alphabetically by key
+    #   - "key=value" pairs joined by \n
+    #   - исключаем ТОЛЬКО hash; signature остаётся в data_check_string
+    #
+    # Раньше код использовал init_data.split("&") (raw URL-encoded values),
+    # из-за чего computed hash не совпадал когда Telegram кодировал
+    # специальные символы в JSON (например \\, /, : в photo_url).
+    data_pairs = [
+        f"{k}={v[0]}" for k, v in parsed.items() if k != "hash"
+    ]
     data_pairs.sort()
     data_check_string = "\n".join(data_pairs)
 
