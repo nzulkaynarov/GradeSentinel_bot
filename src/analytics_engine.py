@@ -121,7 +121,39 @@ def generate_weekly_summary(student_id: int, student_name: str, lang: str = 'ru'
 # ════════════════════════════════════════════════════════════
 
 def _insight_cache_key(student_id: int, days: int, lang: str) -> str:
-    return f"insight:{student_id}:{days}:{lang}"
+    # v2: bump префикса инвалидирует старые кэши с плохими ответами
+    # (ранее t("insight_prompt") возвращал сам ключ → Claude генерил мета-описание).
+    return f"insight_v2:{student_id}:{days}:{lang}"
+
+
+# Маркеры мета-ответа Claude (когда он не понял задачу и описывает себя).
+# Если ответ содержит такие фразы — считаем его невалидным и не кэшируем.
+_BAD_INSIGHT_MARKERS = (
+    "# ", "## ", "**",          # markdown structure (наш промпт запрещал markdown)
+    "Insight Prompt",
+    "I'm ready to help",
+    "I can assist",
+    "Here's how I can",
+    "What I Can Do",
+    "Готов помочь",
+    "Я могу помочь",
+    "Чем я могу",
+)
+
+
+def _looks_like_real_insight(text: str) -> bool:
+    """Проверяет что Claude вернул реальный совет, а не мета-описание себя."""
+    if not text or len(text) < 10:
+        return False
+    if len(text) > 400:
+        # Промпт ограничивал 200 chars; если намного больше — Claude явно
+        # ушёл в structured-ответ вместо короткого совета
+        return False
+    lower = text.lower()
+    for marker in _BAD_INSIGHT_MARKERS:
+        if marker.lower() in lower:
+            return False
+    return True
 
 
 def _read_insight_cache(student_id: int, days: int, lang: str) -> Optional[str]:
@@ -208,6 +240,15 @@ def compute_dashboard_insight(
         # Чистим типичный мусор в ответе
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1].strip()
+
+        # Sanity check: если Claude вернул мета-описание вместо совета —
+        # не кэшируем, возвращаем None (дашборд покажет hero без инсайта).
+        if not _looks_like_real_insight(text):
+            logger.warning(
+                f"Insight для student {student_id} отбракован как мета-ответ: "
+                f"{text[:80]}..."
+            )
+            return None
 
         _write_insight_cache(student_id, days, lang, text)
         return text

@@ -33,6 +33,7 @@ from src.database_manager import (
     get_user_info_by_tg_id,
 )
 from src.db.auth import is_student_under_active_subscription
+from src.i18n import load_translations
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -58,9 +59,12 @@ if _SENTRY_DSN:
         logger.error(f"Sentry init failed: {e}")
 
 # ── Init на module-level (для gunicorn) ──────────────────────
-# При запуске под gunicorn `app.run()` не вызывается, поэтому init_db
-# нужно дёрнуть здесь. Идемпотентно — безопасно для повторного импорта.
+# При запуске под gunicorn `app.run()` не вызывается, поэтому init_db и
+# load_translations нужно дёрнуть здесь. Без load_translations() функция t()
+# возвращает сам ключ → AI-prompt-ы получают буквально "insight_prompt"
+# вместо текста, и Claude отвечает мета-описанием своих способностей.
 init_db()
+load_translations()
 
 app = Flask(__name__)
 

@@ -155,11 +155,11 @@ def test_separate_cache_per_lang(fresh_db, monkeypatch):
     analytics_engine._client = None
 
     from src.database_manager import set_setting
-    set_setting("insight:1:7:ru", json.dumps({
+    set_setting("insight_v2:1:7:ru", json.dumps({
         "text": "RU-cache",
         "generated_at": datetime.now().isoformat(),
     }))
-    set_setting("insight:1:7:en", json.dumps({
+    set_setting("insight_v2:1:7:en", json.dumps({
         "text": "EN-cache",
         "generated_at": datetime.now().isoformat(),
     }))
@@ -167,3 +167,54 @@ def test_separate_cache_per_lang(fresh_db, monkeypatch):
     from src.analytics_engine import compute_dashboard_insight
     assert compute_dashboard_insight(1, _summary(), lang="ru") == "RU-cache"
     assert compute_dashboard_insight(1, _summary(), lang="en") == "EN-cache"
+
+
+def test_meta_response_rejected(fresh_db, monkeypatch):
+    """Если Claude вернул мета-описание (markdown headers, "I can assist") —
+    отбрасываем, не кэшируем, возвращаем None."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from src import analytics_engine
+    analytics_engine._client = None
+
+    bad_responses = [
+        "# Insight Prompt Framework\n\nI'm ready to help",
+        "## What I Can Do\n\n**Analyze**",
+        "I can assist with several tasks: 1) ... 2) ...",
+        "Here's how I can help you understand grades...",
+    ]
+    for bad in bad_responses:
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text=bad)]
+        mock_client.messages.create.return_value = mock_response
+        with patch("src.analytics_engine._get_client", return_value=mock_client):
+            from src.analytics_engine import compute_dashboard_insight
+            result = compute_dashboard_insight(1, _summary(), lang="ru", days=7)
+            assert result is None, f"Should reject meta-response: {bad[:40]!r}"
+
+
+def test_cache_hit_skips_api_call_v2_key(fresh_db, monkeypatch):
+    """v2 prefix используется правильно — старые ключи insight: не подхватываются."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from src import analytics_engine
+    analytics_engine._client = None
+
+    from src.database_manager import set_setting
+    # Старый префикс с плохим ответом — НЕ должен подхватиться
+    set_setting("insight:1:7:ru", json.dumps({
+        "text": "Insight Prompt Framework — I'm ready to help",
+        "generated_at": datetime.now().isoformat(),
+    }))
+
+    # API вернёт чистый ответ
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text="Молодец, продолжайте.")]
+    mock_client.messages.create.return_value = mock_response
+
+    with patch("src.analytics_engine._get_client", return_value=mock_client):
+        from src.analytics_engine import compute_dashboard_insight
+        result = compute_dashboard_insight(1, _summary(), lang="ru", days=7)
+        # Получили из API, не из старого "insight:" кэша
+        assert result == "Молодец, продолжайте."
+        mock_client.messages.create.assert_called_once()
