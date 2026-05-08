@@ -1,264 +1,624 @@
-/* Telegram WebApp theming — uses CSS variables from Telegram */
+/* ═══════════════════════════════════════════════════════════
+   GradeSentinel Dashboard styles
+   Telegram Mini App — mobile-first, тема из Tg variables.
+   ═══════════════════════════════════════════════════════════ */
+
 :root {
-    --tg-bg: var(--tg-theme-bg-color, #ffffff);
-    --tg-text: var(--tg-theme-text-color, #000000);
-    --tg-hint: var(--tg-theme-hint-color, #999999);
-    --tg-link: var(--tg-theme-link-color, #2481cc);
-    --tg-btn: var(--tg-theme-button-color, #2481cc);
-    --tg-btn-text: var(--tg-theme-button-text-color, #ffffff);
-    --tg-secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    /* Fallbacks — если Tg не передал переменные */
+    --tg-bg: var(--tg-theme-bg-color, #18222d);
+    --tg-bg-secondary: var(--tg-theme-secondary-bg-color, #232e3c);
+    --tg-text: var(--tg-theme-text-color, #ffffff);
+    --tg-hint: var(--tg-theme-hint-color, #708499);
+    --tg-link: var(--tg-theme-link-color, #6ab3f3);
+    --tg-button: var(--tg-theme-button-color, #5288c1);
+    --tg-button-text: var(--tg-theme-button-text-color, #ffffff);
+    --tg-section-bg: var(--tg-theme-section-bg-color, #1c2733);
+    --tg-section-separator: var(--tg-theme-section-separator-color, rgba(255,255,255,0.08));
+    --tg-destructive: var(--tg-theme-destructive-text-color, #ee686f);
+
+    /* Семантические цвета */
+    --color-good: #5fbd6c;
+    --color-ok: #5288c1;
+    --color-warn: #f5b740;
+    --color-bad: #ee686f;
+
+    /* Размеры */
+    --radius-card: 14px;
+    --radius-pill: 999px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
 }
 
 * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
+    background: var(--tg-bg);
+    color: var(--tg-text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+                 Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background-color: var(--tg-bg);
-    color: var(--tg-text);
-    padding: 12px;
-    max-width: 100vw;
-    overflow-x: hidden;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
 }
 
-#loading {
+.screen {
+    padding: var(--space-4);
+    padding-bottom: var(--space-8);
+}
+
+.hidden { display: none !important; }
+.muted { opacity: 0.55; }
+
+/* ═══════════════════════════════════════════════════════════
+   SKELETON
+   ═══════════════════════════════════════════════════════════ */
+
+@keyframes shimmer {
+    0%   { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+}
+
+.skel-greeting,
+.skel-line,
+.skel-card {
+    background: linear-gradient(
+        90deg,
+        var(--tg-section-bg) 0%,
+        var(--tg-section-separator) 50%,
+        var(--tg-section-bg) 100%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: var(--radius-card);
+}
+
+.skel-greeting {
+    height: 24px;
+    width: 60%;
+    margin-bottom: var(--space-5);
+}
+
+.skel-hero {
+    background: var(--tg-section-bg);
+    border-radius: var(--radius-card);
+    padding: var(--space-6);
+    margin-bottom: var(--space-4);
+}
+
+.skel-line-big {
+    height: 56px;
+    width: 50%;
+    margin-bottom: var(--space-3);
+}
+
+.skel-line-small {
+    height: 16px;
+    width: 35%;
+}
+
+.skel-card {
+    height: 130px;
+    margin-bottom: var(--space-3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ERROR STATE
+   ═══════════════════════════════════════════════════════════ */
+
+#error {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 60vh;
+    text-align: center;
+    min-height: 70vh;
+    gap: var(--space-4);
 }
 
-.spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid var(--tg-secondary-bg);
-    border-top-color: var(--tg-btn);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+.error-icon {
+    font-size: 48px;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-/* Student selector */
-#student-selector {
-    margin-bottom: 12px;
-}
-
-#student-select {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--tg-hint);
-    border-radius: 10px;
-    background: var(--tg-secondary-bg);
-    color: var(--tg-text);
+.error-text {
+    color: var(--tg-hint);
+    margin: 0;
     font-size: 15px;
-    appearance: none;
-    -webkit-appearance: none;
+    max-width: 280px;
 }
 
-/* Summary cards */
-.cards-row {
+.btn-primary {
+    background: var(--tg-button);
+    color: var(--tg-button-text);
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 12px 28px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.btn-primary:active { opacity: 0.7; }
+
+/* ═══════════════════════════════════════════════════════════
+   HEADER + STUDENT TABS
+   ═══════════════════════════════════════════════════════════ */
+
+.header {
+    margin-bottom: var(--space-4);
+}
+
+.greeting {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--tg-text);
+    margin-bottom: var(--space-3);
+}
+
+.student-tabs {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: var(--space-2);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
 }
 
-.card {
-    flex: 1;
-    background: var(--tg-secondary-bg);
-    border-radius: 12px;
-    padding: 12px 8px;
+.student-tabs::-webkit-scrollbar { display: none; }
+
+.student-tab {
+    background: var(--tg-section-bg);
+    color: var(--tg-text);
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 8px 16px;
+    font-size: 14px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.student-tab.active {
+    background: var(--tg-button);
+    color: var(--tg-button-text);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════════════════════════ */
+
+.hero {
+    background: var(--tg-section-bg);
+    border-radius: var(--radius-card);
+    padding: var(--space-6);
+    margin-bottom: var(--space-4);
     text-align: center;
 }
 
-.card-value {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--tg-btn);
+.hero-main {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
 }
 
-.card-label {
-    font-size: 11px;
+.hero-avg {
+    font-size: 56px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -1.5px;
+    color: var(--tg-text);
+}
+
+.hero-avg.grade-good  { color: var(--color-good); }
+.hero-avg.grade-ok    { color: var(--color-ok); }
+.hero-avg.grade-warn  { color: var(--color-warn); }
+.hero-avg.grade-bad   { color: var(--color-bad); }
+
+.hero-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--tg-text);
+    border-radius: var(--radius-pill);
+    padding: 4px 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.hero-delta.delta-up   { background: rgba(95, 189, 108, 0.15); color: var(--color-good); }
+.hero-delta.delta-down { background: rgba(238, 104, 111, 0.15); color: var(--color-bad); }
+
+.delta-arrow { font-size: 13px; }
+
+.hero-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     color: var(--tg-hint);
-    margin-top: 4px;
-    text-transform: uppercase;
+    font-size: 13px;
+    margin-bottom: var(--space-3);
+}
+
+.hero-label {
+    text-transform: lowercase;
     letter-spacing: 0.3px;
 }
 
-/* Period selector */
-.period-selector {
+.hero-period {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.hero-status {
+    font-size: 14px;
+    font-weight: 500;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-pill);
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.hero-status.status-stable    { color: var(--color-good); background: rgba(95, 189, 108, 0.1); }
+.hero-status.status-improving { color: var(--color-good); background: rgba(95, 189, 108, 0.1); }
+.hero-status.status-declining { color: var(--color-warn); background: rgba(245, 183, 64, 0.1); }
+.hero-status.status-concern   { color: var(--color-bad); background: rgba(238, 104, 111, 0.1); }
+
+/* ═══════════════════════════════════════════════════════════
+   PERIOD TOGGLE
+   ═══════════════════════════════════════════════════════════ */
+
+.period-toggle {
     display: flex;
-    gap: 6px;
-    margin-bottom: 16px;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    background: var(--tg-section-bg);
+    padding: 4px;
+    border-radius: var(--radius-pill);
 }
 
 .period-btn {
     flex: 1;
-    padding: 8px;
-    border: 1px solid var(--tg-hint);
-    border-radius: 8px;
-    background: var(--tg-bg);
-    color: var(--tg-text);
-    font-size: 14px;
+    background: transparent;
+    color: var(--tg-hint);
+    border: none;
+    border-radius: var(--radius-pill);
+    padding: 8px 4px;
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .period-btn.active {
-    background: var(--tg-btn);
-    color: var(--tg-btn-text);
-    border-color: var(--tg-btn);
+    background: var(--tg-button);
+    color: var(--tg-button-text);
 }
 
-/* Charts */
-.chart-container {
-    background: var(--tg-secondary-bg);
-    border-radius: 12px;
-    padding: 14px;
-    margin-bottom: 16px;
+/* ═══════════════════════════════════════════════════════════
+   CARDS
+   ═══════════════════════════════════════════════════════════ */
+
+.card {
+    background: var(--tg-section-bg);
+    border-radius: var(--radius-card);
+    padding: var(--space-4);
+    margin-bottom: var(--space-3);
+    transition: opacity 0.2s;
 }
 
-.chart-container h3 {
-    font-size: 14px;
+.card-warning {
+    background: linear-gradient(
+        180deg,
+        rgba(238, 104, 111, 0.06) 0%,
+        var(--tg-section-bg) 100%
+    );
+    border: 1px solid rgba(238, 104, 111, 0.18);
+}
+
+.card-success {
+    background: linear-gradient(
+        180deg,
+        rgba(95, 189, 108, 0.06) 0%,
+        var(--tg-section-bg) 100%
+    );
+    border: 1px solid rgba(95, 189, 108, 0.15);
+}
+
+.card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 var(--space-2) 0;
+    color: var(--tg-text);
+}
+
+.card-subtitle {
+    font-size: 12px;
     color: var(--tg-hint);
-    margin-bottom: 10px;
-    font-weight: 500;
+    margin: 0 0 var(--space-3) 0;
 }
 
-.chart-container canvas {
-    max-height: 200px;
-}
-
-/* Recent grades table */
-.section {
-    margin-bottom: 16px;
-}
-
-.section h3 {
-    font-size: 14px;
-    color: var(--tg-hint);
-    margin-bottom: 10px;
-    font-weight: 500;
-}
-
-.grade-row {
+.card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 12px;
-    background: var(--tg-secondary-bg);
-    border-radius: 10px;
-    margin-bottom: 6px;
 }
 
-.grade-subject {
-    font-size: 14px;
-    font-weight: 500;
-    flex: 1;
-}
-
-.grade-value {
-    font-size: 16px;
-    font-weight: 700;
-    min-width: 32px;
-    text-align: center;
-    padding: 2px 8px;
-    border-radius: 6px;
-}
-
-.grade-5 { background: #d4edda; color: #155724; }
-.grade-4 { background: #cce5ff; color: #004085; }
-.grade-3 { background: #fff3cd; color: #856404; }
-.grade-2 { background: #f8d7da; color: #721c24; }
-.grade-text { background: var(--tg-secondary-bg); color: var(--tg-hint); }
-
-.grade-date {
-    font-size: 11px;
+.toggle-btn {
+    background: transparent;
+    border: none;
     color: var(--tg-hint);
-    margin-left: 8px;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: transform 0.2s;
 }
 
-/* Filters row */
-.filters-row {
+.collapsible.open .toggle-btn { transform: rotate(180deg); }
+
+.collapsible .card-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, margin-top 0.2s, padding-top 0.2s;
+}
+
+.collapsible.open .card-body {
+    max-height: 2000px;
+    margin-top: var(--space-3);
+}
+
+.count-badge {
+    font-size: 13px;
+    color: var(--tg-hint);
+    margin-left: 4px;
+    font-weight: 400;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CHART
+   ═══════════════════════════════════════════════════════════ */
+
+.chart-wrap {
+    position: relative;
+    height: 180px;
+    margin-top: var(--space-3);
+}
+
+#trendChart { max-height: 180px; }
+
+.empty-hint {
+    text-align: center;
+    color: var(--tg-hint);
+    font-size: 14px;
+    padding: var(--space-5) 0;
+    margin: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SUBJECTS LIST
+   ═══════════════════════════════════════════════════════════ */
+
+.subjects-list {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    flex-direction: column;
+}
+
+.subj-row {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--tg-section-separator);
+    font-size: 15px;
 }
 
-.filters-row .period-selector {
-    margin-bottom: 0;
-    flex: 1;
-}
+.subj-row:last-child { border-bottom: none; }
 
-.subject-filter {
-    flex: 0 0 auto;
-    min-width: 120px;
-}
-
-#subject-select {
-    width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--tg-hint);
-    border-radius: 8px;
-    background: var(--tg-bg);
+.subj-name {
     color: var(--tg-text);
-    font-size: 13px;
-    appearance: none;
-    -webkit-appearance: none;
+    flex: 1;
+    margin-right: var(--space-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Quarter grades grid */
-.quarter-grid {
-    font-size: 13px;
+.subj-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
 }
 
-.qr-header, .qr-row {
+.subj-delta {
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
+    font-weight: 500;
+}
+
+.subj-delta.up   { color: var(--color-good); background: rgba(95, 189, 108, 0.12); }
+.subj-delta.down { color: var(--color-bad);  background: rgba(238, 104, 111, 0.12); }
+
+.subj-avg {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+    text-align: right;
+}
+
+.grade-good { color: var(--color-good); }
+.grade-ok   { color: var(--color-ok); }
+.grade-warn { color: var(--color-warn); }
+.grade-bad  { color: var(--color-bad); }
+.grade-text { color: var(--tg-hint); font-size: 13px; }
+
+/* ═══════════════════════════════════════════════════════════
+   RECENT GRADES
+   ═══════════════════════════════════════════════════════════ */
+
+.recent-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.recent-row {
     display: grid;
-    grid-template-columns: 1fr repeat(5, 36px);
+    grid-template-columns: 56px 1fr auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--tg-section-separator);
+    font-size: 14px;
+    transition: background 0.15s;
+}
+
+.recent-row:last-child { border-bottom: none; }
+
+.recent-row.is-new {
+    border-left: 2px solid var(--tg-button);
+    padding-left: var(--space-2);
+    margin-left: calc(-1 * var(--space-2));
+}
+
+.recent-date {
+    color: var(--tg-hint);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.recent-subject {
+    color: var(--tg-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.badge-new {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--tg-button);
+    color: var(--tg-button-text);
+    border-radius: var(--radius-pill);
+    padding: 2px 6px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.recent-grade {
+    font-weight: 600;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    min-width: 24px;
+    text-align: right;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   QUARTERS GRID
+   ═══════════════════════════════════════════════════════════ */
+
+.quarter-grid {
+    display: grid;
+    grid-template-columns: minmax(80px, 1fr) repeat(5, 36px);
     gap: 4px;
     align-items: center;
-    padding: 6px 8px;
+    font-size: 13px;
 }
 
 .qr-header {
-    font-size: 11px;
+    display: contents;
     color: var(--tg-hint);
-    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.qr-header > span {
     text-align: center;
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--tg-section-separator);
 }
 
 .qr-row {
-    background: var(--tg-secondary-bg);
-    border-radius: 8px;
-    margin-bottom: 4px;
+    display: contents;
 }
 
-.qr-subject {
+.qr-row > span {
+    padding: 6px 4px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
     font-weight: 500;
-    font-size: 12px;
-    white-space: nowrap;
+}
+
+.qr-row > span.qr-subject {
+    text-align: left;
+    color: var(--tg-text);
+    font-weight: 400;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+    padding-right: var(--space-2);
 }
 
-.qr-row span:not(.qr-subject) {
-    text-align: center;
-    font-weight: 600;
-    font-size: 13px;
-    padding: 2px;
-    border-radius: 4px;
+/* ═══════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+
+#content {
+    animation: fadeInUp 0.4s ease-out;
 }
 
-/* Error state */
-#error {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--tg-hint);
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --tg-bg: var(--tg-theme-bg-color, #ffffff);
+        --tg-bg-secondary: var(--tg-theme-secondary-bg-color, #f1f1f4);
+        --tg-section-bg: var(--tg-theme-section-bg-color, #ffffff);
+        --tg-section-separator: var(--tg-theme-section-separator-color, rgba(0,0,0,0.06));
+    }
+
+    .skel-greeting, .skel-line, .skel-card {
+        background: linear-gradient(
+            90deg,
+            #f4f4f6 0%,
+            #ebebee 50%,
+            #f4f4f6 100%
+        );
+        background-size: 800px 100%;
+    }
+
+    .hero-delta {
+        background: rgba(0, 0, 0, 0.05);
+    }
+
+    .hero-status {
+        background: rgba(0, 0, 0, 0.03);
+    }
 }

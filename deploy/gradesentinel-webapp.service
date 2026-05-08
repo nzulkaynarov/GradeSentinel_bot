@@ -8,13 +8,28 @@ Wants=network-online.target
 Type=simple
 User=gradesentinel
 Group=gradesentinel
-WorkingDirectory=/opt/gradesentinel/webapp
+WorkingDirectory=/opt/gradesentinel
 EnvironmentFile=/etc/gradesentinel/bot.env
 Environment="DATABASE_PATH=/var/lib/gradesentinel/sentinel.db"
+Environment="GOOGLE_CREDENTIALS_PATH=/etc/gradesentinel/credentials.json"
 Environment="WEBAPP_PORT=8443"
 Environment="WEBAPP_HOST=127.0.0.1"
 Environment="PYTHONPATH=/opt/gradesentinel"
-ExecStart=/opt/gradesentinel/venv/bin/python app.py
+# gunicorn вместо Werkzeug dev server — multi-threaded, проде-grade.
+# 2 worker x 4 threads = 8 одновременных запросов на 2 vCPU VPS.
+# --timeout 30 — для медленных Anthropic вызовов в будущем (сейчас не используется в webapp).
+# --access-logfile - выключаем (Caddy уже логирует), --error-logfile — в stderr (journalctl).
+ExecStart=/opt/gradesentinel/venv/bin/gunicorn \
+    --bind 127.0.0.1:8443 \
+    --workers 2 \
+    --threads 4 \
+    --worker-class gthread \
+    --timeout 30 \
+    --keep-alive 5 \
+    --access-logfile - \
+    --error-logfile - \
+    --log-level warning \
+    webapp.app:app
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=300

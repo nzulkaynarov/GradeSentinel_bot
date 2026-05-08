@@ -1,0 +1,58 @@
+{
+  "app_title": "GradeSentinel kundalik",
+  "loading": "Yuklanmoqda...",
+  "error_generic": "Maʼlumotlarni yuklab boʻlmadi",
+  "error_no_students": "Hozircha oʻquvchilar yoʻq. Bot orqali farzandingizni qoʻshing.",
+  "error_retry": "Qayta urinib koʻring",
+
+  "greeting": "Salom, {name}!",
+  "greeting_no_name": "Kundalik",
+
+  "hero_average": "oʻrtacha baho",
+  "hero_period_short": "hafta uchun",
+  "hero_no_grades": "Hali baholar yoʻq",
+  "hero_no_grades_hint": "Keyingi yangilanishdan soʻng paydo boʻladi",
+
+  "trend_up": "yaxshilangan",
+  "trend_down": "yomonlashgan",
+  "trend_stable": "bir xil",
+  "trend_vs_previous": "oldingi davrga nisbatan",
+
+  "status_concern": "⚠️ Eʼtibor berish kerak",
+  "status_improving": "📈 Yaxshilanmoqda",
+  "status_declining": "📉 Oʻtgan haftaga nisbatan pasayish",
+  "status_stable": "✅ Hammasi barqaror",
+
+  "section_problems": "Eʼtibor qarating",
+  "section_problems_subtitle": "Past oʻrtachasi bor fanlar",
+  "section_top": "Kuchli tomonlar",
+  "section_subjects": "Fanlar boʻyicha",
+  "section_subjects_subtitle": "Davrdagi barcha fanlar",
+  "section_recent": "Davr uchun yangi",
+  "section_quarters": "Choraklik",
+  "section_quarters_subtitle": "Choraklar yakunlari",
+
+  "period_week": "Hafta",
+  "period_two_weeks": "2 hafta",
+  "period_month": "Oy",
+  "period_year": "Yil",
+
+  "chart_trend_title": "Kunlik oʻrtacha dinamikasi",
+  "chart_trend_empty": "Grafik uchun maʼlumot yetarli emas",
+
+  "table_subject": "Fan",
+  "table_grade": "Baho",
+  "table_date": "Sana",
+  "table_average": "Oʻrtacha",
+  "table_count": "Soni",
+
+  "quarter_1": "1 ch",
+  "quarter_2": "2 ch",
+  "quarter_3": "3 ch",
+  "quarter_4": "4 ch",
+  "quarter_year": "Yil",
+
+  "badge_new": "yangi",
+  "show_more": "yana koʻrsatish",
+  "show_less": "yigʻish"
+}

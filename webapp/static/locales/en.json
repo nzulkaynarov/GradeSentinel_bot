@@ -1,0 +1,58 @@
+{
+  "app_title": "GradeSentinel Diary",
+  "loading": "Loading...",
+  "error_generic": "Could not load data",
+  "error_no_students": "No students yet. Add a child through the bot.",
+  "error_retry": "Try again",
+
+  "greeting": "Hello, {name}!",
+  "greeting_no_name": "Diary",
+
+  "hero_average": "average grade",
+  "hero_period_short": "this week",
+  "hero_no_grades": "No grades yet",
+  "hero_no_grades_hint": "They will appear after the next update",
+
+  "trend_up": "better",
+  "trend_down": "worse",
+  "trend_stable": "same",
+  "trend_vs_previous": "than last period",
+
+  "status_concern": "⚠️ Some attention needed",
+  "status_improving": "📈 Improving trend",
+  "status_declining": "📉 Decline vs last week",
+  "status_stable": "✅ All stable",
+
+  "section_problems": "Needs attention",
+  "section_problems_subtitle": "Subjects with low average",
+  "section_top": "Strong subjects",
+  "section_subjects": "By subject",
+  "section_subjects_subtitle": "All subjects in period",
+  "section_recent": "Recent grades",
+  "section_quarters": "Quarters",
+  "section_quarters_subtitle": "Quarter results",
+
+  "period_week": "Week",
+  "period_two_weeks": "2 weeks",
+  "period_month": "Month",
+  "period_year": "Year",
+
+  "chart_trend_title": "Daily average trend",
+  "chart_trend_empty": "Not enough data for chart",
+
+  "table_subject": "Subject",
+  "table_grade": "Grade",
+  "table_date": "Date",
+  "table_average": "Avg",
+  "table_count": "Count",
+
+  "quarter_1": "Q1",
+  "quarter_2": "Q2",
+  "quarter_3": "Q3",
+  "quarter_4": "Q4",
+  "quarter_year": "Year",
+
+  "badge_new": "new",
+  "show_more": "show more",
+  "show_less": "show less"
+}
