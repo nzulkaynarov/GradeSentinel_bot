@@ -330,6 +330,17 @@ def _show_user_panel(chat_id: int, message_id: int = None):
 
         markup = types.InlineKeyboardMarkup(row_width=2)
 
+        # WebApp дашборд — promin'но, отдельной строкой когда у юзера есть дети.
+        # Это primary entry point в Mini App — раньше кнопка была доступна
+        # только после /grades, но дискаваримость была плохая.
+        if has_kids:
+            webapp_url = os.environ.get("WEBAPP_URL")
+            if webapp_url:
+                markup.add(types.InlineKeyboardButton(
+                    t("btn_webapp", lang),
+                    web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
+                ))
+
         if has_kids:
             markup.row(
                 types.InlineKeyboardButton(t("user_panel_grades", lang), callback_data="up_grades"),

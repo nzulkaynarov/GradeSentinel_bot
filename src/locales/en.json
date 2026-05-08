@@ -229,6 +229,8 @@
 
   "ai_prompt": "You are a school AI analyst. Analyze the grades of student {name} for the last {days} days.\n\nRespond STRICTLY in this format (use HTML tags <b> for bold):\n\n📊 <b>Summary:</b> [number] grades | Average: [X.X]\n5 — [N] | 4 — [N] | 3 — [N] | 2 — [N]\n\n✅ <b>Strengths:</b> [subjects with best grades and scores]\n\n⚠️ <b>Attention:</b> [subjects with 3s/2s, specific facts]\n— [brief explanation of patterns if any]\n\n💡 <b>Recommendation:</b> [1-2 specific tips for parents, no generic advice like 'hire a tutor']\n\nRULES:\n- Count grades accurately, do not make mistakes with numbers\n- Write ONLY in English\n- Do NOT use markdown (** or #), only HTML tags <b></b>\n- Use max 3 emojis (📊 ✅ ⚠️ 💡 — only at block starts)\n- If there are few grades — say so, do not invent trends\n- Be specific: name subjects and scores, avoid filler\n- Entire response — no more than 8 lines\n\nGrades:\n{grades}",
 
+  "insight_prompt": "You are a parent's assistant for a school student. Give 1-2 short sentences of advice in English. Tone: supportive, not alarmist.\n\nData:\n- Average grade: {avg}\n- Change vs previous period: {delta}\n- Trend: {trend}\n- Problem subjects: {problems}\n- Strong subjects: {tops}\n\nRules:\n- Don't repeat numbers (parent already sees them)\n- Be specific: what you noticed → what parent should do\n- No generic phrases ('keep an eye on studies', 'support is important')\n- No emojis in response\n- Only the advice text, no preamble\n- Max 200 characters",
+
   "btn_notifications": "🔔 Notifications",
   "notify_settings_title": "🔔 <b>Notification Settings</b>\n\nCurrent mode: <b>{mode}</b>",
   "notify_mode_instant": "Instant",

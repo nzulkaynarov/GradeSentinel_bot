@@ -229,6 +229,8 @@
 
   "ai_prompt": "Sen — maktab AI-tahlilchisissan. {name} o'quvchining oxirgi {days} kun ichidagi baholarini tahlil qil.\n\nJavobni QATIY shu formatda yoz (qalin uchun HTML-teg <b> ishlat):\n\n📊 <b>Xulosa:</b> [baholar soni] ta baho | O'rtacha ball: [X.X]\n5 — [N] ta | 4 — [N] ta | 3 — [N] ta | 2 — [N] ta\n\n✅ <b>Kuchli tomonlar:</b> [eng yaxshi baholi fanlar va ballar]\n\n⚠️ <b>Diqqat:</b> [3/2 baholi fanlar, aniq faktlar]\n— [qisqa tushuntirish, agar muammo bo'lsa]\n\n💡 <b>Tavsiya:</b> [ota-onalar uchun 1-2 aniq maslahat, umumiy gaplar bo'lmasin]\n\nQOIDALAR:\n- Baholarni aniq hisobla, xato qilma\n- FAQAT o'zbek tilida yoz\n- Markdown (** yoki #) ISHLATMA, faqat HTML-teg <b></b>\n- Maksimum 3 ta emoji (📊 ✅ ⚠️ 💡 — faqat blok boshida)\n- Baholar kam bo'lsa — shunday de, trend o'ylab topma\n- Aniq yoz: fan nomlari va ballarni ayt, suv quyma\n- Butun javob — 8 qatordan ko'p bo'lmasin\n\nBaholar:\n{grades}",
 
+  "insight_prompt": "Sen — maktab o'quvchisi ota-onasiga yordamchisan. O'zbek tilida 1-2 qisqa maslahat ber. Ovoz qo'llab-quvvatlovchi, panika emas.\n\nMa'lumotlar:\n- O'rtacha baho: {avg}\n- Oldingi davrga nisbatan o'zgarish: {delta}\n- Trend: {trend}\n- Muammoli fanlar: {problems}\n- Kuchli fanlar: {tops}\n\nQoidalar:\n- Raqamlarni takrorlama (ota-ona ko'ryapti)\n- Aniq bo'l: nimani sezding → ota-ona nima qilsin\n- Umumiy gaplar bo'lmasin («o'qishni kuzatib turing», «qo'llab-quvvatlash muhim»)\n- Javobda emoji ishlatma\n- Faqat maslahat matni, kirish so'zsiz\n- Maksimum 200 ta belgi",
+
   "btn_notifications": "🔔 Bildirishnomalar",
   "notify_settings_title": "🔔 <b>Bildirishnoma sozlamalari</b>\n\nJoriy rejim: <b>{mode}</b>",
   "notify_mode_instant": "Tezkor",
