@@ -11,9 +11,13 @@ import urllib.error
 
 logger = logging.getLogger(__name__)
 
-# Путь к файлу ключа
+# Путь к файлу ключа. ENV GOOGLE_CREDENTIALS_PATH переопределяет дефолт
+# (используется на bare-metal: /etc/gradesentinel/credentials.json).
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
-CREDENTIALS_FILE = os.path.join(CONFIG_DIR, "credentials.json")
+CREDENTIALS_FILE = os.environ.get(
+    "GOOGLE_CREDENTIALS_PATH",
+    os.path.join(CONFIG_DIR, "credentials.json"),
+)
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 _sheets_service = None

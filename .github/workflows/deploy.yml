@@ -1,49 +1,105 @@
-name: Deploy to Raspberry Pi
+name: Deploy to VPS
 
 on:
   push:
     branches:
-      - main # Деплой только при пуше в основную ветку
+      - main
 
 jobs:
   deploy:
-    runs-on: self-hosted # Команда GitHub'у использовать твою малину
+    runs-on: self-hosted
+    # Self-hosted runner живёт на VPS под юзером 'deploy'.
+    # 'deploy' имеет узкий passwordless sudo (см. deploy/deploy-sudoers).
 
     steps:
-      - name: Очистка старых root-файлов базы перед checkout
-        run: |
-          # data/ и config/ могут остаться root-owned после Docker bind-mount'ов.
-          # Без этого checkout/файловые операции в следующих шагах падают с EACCES.
-          sudo rm -rf data/ config/ .env || true
-
-      - name: Перенос файлов репозитория
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Создание конфигурационных файлов из секретов
+      - name: Записать секреты в /etc/gradesentinel/
         run: |
-          # На случай если "Очистка" не удалила leftover'ы (sudo без пароля
-          # может быть не настроен) — пробуем ещё раз без sudo. После checkout
-          # rm на gitignored config/ безопасен.
-          rm -rf .env config/ 2>/dev/null || true
+          # Создать директорию (идемпотентно через install -d)
+          sudo /usr/bin/install -d -o gradesentinel -g gradesentinel -m 0750 /etc/gradesentinel
 
-          mkdir -p config
-
-          cat > .env <<EOF
+          # bot.env — все ENV переменные. atomic write через tee + chmod/chown
+          sudo /usr/bin/tee /etc/gradesentinel/bot.env > /dev/null <<EOF
           BOT_TOKEN=${{ secrets.BOT_TOKEN }}
           ADMIN_ID=${{ secrets.ADMIN_ID }}
           ADMIN_GROUP_ID=${{ secrets.ADMIN_GROUP_ID }}
           ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           WEBAPP_URL=${{ secrets.WEBAPP_URL }}
-          WEBAPP_PORT=${{ secrets.WEBAPP_PORT }}
+          CLICK_PROVIDER_TOKEN=${{ secrets.CLICK_PROVIDER_TOKEN }}
+          PAYME_PROVIDER_TOKEN=${{ secrets.PAYME_PROVIDER_TOKEN }}
+          PAYMENT_CARD_NUMBER=${{ secrets.PAYMENT_CARD_NUMBER }}
+          PAYMENT_CARD_HOLDER=${{ secrets.PAYMENT_CARD_HOLDER }}
+          STARS_ENABLED=${{ secrets.STARS_ENABLED }}
+          SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+          ENVIRONMENT=production
           EOF
+          sudo /usr/bin/chmod 0640 /etc/gradesentinel/bot.env
+          sudo /usr/bin/chown root:gradesentinel /etc/gradesentinel/bot.env
 
-          # heredoc с одиночными кавычками — не интерполирует $ внутри JSON.
-          cat > config/credentials.json <<'CREDS_EOF'
+          # credentials.json — heredoc с одиночными кавычками, чтобы $ внутри JSON
+          # не интерполировался шеллом
+          sudo /usr/bin/tee /etc/gradesentinel/credentials.json > /dev/null <<'CREDS_EOF'
           ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
           CREDS_EOF
+          sudo /usr/bin/chmod 0640 /etc/gradesentinel/credentials.json
+          sudo /usr/bin/chown root:gradesentinel /etc/gradesentinel/credentials.json
 
-      - name: Сборка и перезапуск Docker
-
+      - name: Синхронизировать код в /opt/gradesentinel
         run: |
-          docker compose down || true
-          docker compose up -d --build
+          # rsync исключает venv (живёт отдельно), .git (большой), data/config (не нужны)
+          sudo /usr/bin/rsync -a --delete \
+            --exclude=venv --exclude=.git \
+            --exclude=data --exclude=config \
+            --exclude=.github --exclude=tests \
+            "${GITHUB_WORKSPACE}/" /opt/gradesentinel/
+          sudo /usr/bin/chown -R gradesentinel:gradesentinel /opt/gradesentinel
+
+      - name: Обновить venv (только если нужно)
+        run: |
+          # pip install быстрый если ничего не изменилось — кэш wheel'ов
+          sudo -u gradesentinel /opt/gradesentinel/venv/bin/pip install --upgrade pip
+          sudo -u gradesentinel /opt/gradesentinel/venv/bin/pip install -r /opt/gradesentinel/requirements.txt
+
+      - name: Обновить systemd-юниты и Caddyfile
+        run: |
+          # Если в репо изменились юниты — переустанавливаем
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-bot.service /etc/systemd/system/gradesentinel-bot.service
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-webapp.service /etc/systemd/system/gradesentinel-webapp.service
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.service /etc/systemd/system/gradesentinel-heartbeat.service
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.timer /etc/systemd/system/gradesentinel-heartbeat.timer
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/Caddyfile
+
+          sudo /usr/bin/caddy validate --config /etc/caddy/Caddyfile
+          sudo /usr/bin/systemctl daemon-reload
+          sudo /usr/bin/systemctl reload caddy.service
+
+      - name: Включить и перезапустить сервисы
+        run: |
+          sudo /usr/bin/systemctl enable gradesentinel-bot.service
+          sudo /usr/bin/systemctl enable gradesentinel-webapp.service
+          sudo /usr/bin/systemctl enable gradesentinel-heartbeat.timer
+
+          sudo /usr/bin/systemctl restart gradesentinel-bot.service
+          sudo /usr/bin/systemctl restart gradesentinel-webapp.service
+
+      - name: Smoke check
+        run: |
+          # Дать сервисам секунд 8 на старт
+          sleep 8
+
+          # is-active падает с non-zero если юнит не active → шаг падает → workflow красный
+          sudo /usr/bin/systemctl is-active gradesentinel-bot.service
+          sudo /usr/bin/systemctl is-active gradesentinel-webapp.service
+
+          # WebApp /health через локальный loopback — Caddy не нужен для этого теста
+          for i in 1 2 3 4 5; do
+            if curl -fsS http://127.0.0.1:8443/health > /dev/null; then
+              echo "WebApp /health OK"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "WebApp /health не отвечает после 10 секунд"
+          exit 1

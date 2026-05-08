@@ -679,8 +679,11 @@ def handle_menu_buttons(message):
     elif action == "settings":
         cmd_settings(message)
 
-_HEARTBEAT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", ".heartbeat"
+_HEARTBEAT_PATH = os.environ.get(
+    "HEARTBEAT_PATH",
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", ".heartbeat"
+    ),
 )
 
 

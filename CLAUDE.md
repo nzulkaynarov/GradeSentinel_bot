@@ -20,15 +20,16 @@
 
 ## Стек
 
-- Python 3.10 (slim)
+- Python 3.12 (на проде, в CI пока 3.10 — но 3.12-совместим)
 - pyTelegramBotAPI (sync polling, не aiogram)
-- SQLite + WAL (файл `data/sentinel.db`)
-- Google Sheets API v4 (Service Account, `config/credentials.json`)
+- SQLite + WAL (`/var/lib/gradesentinel/sentinel.db` на проде, `data/sentinel.db` локально)
+- Google Sheets API v4 (Service Account, `/etc/gradesentinel/credentials.json` на проде)
 - Telegram Payments API
 - Anthropic SDK (`anthropic`)
-- Flask (для WebApp)
-- Docker + docker-compose
-- Хостинг: Raspberry Pi 3B
+- Flask (для WebApp, слушает `127.0.0.1:8443`, наружу через Caddy)
+- **Bare-metal deploy:** systemd units + venv (никакого Docker)
+- **Reverse proxy:** Caddy (auto Let's Encrypt) — `grades.railtech.uz`
+- Хостинг: VPS Ubuntu 24.04 (4 GB RAM, 2 vCPU, 80 GB NVMe)
 
 ---
 
@@ -66,16 +67,34 @@ src/
 
 webapp/
 ├── app.py               # Flask: /webapp, /api/students, /api/grades, /api/quarters,
-│                        #   /health (для healthcheck). Авторизация через _authorize_student_access
+│                        #   /health (для healthcheck). Слушает 127.0.0.1:8443 (override через WEBAPP_HOST).
+│                        #   Авторизация через _authorize_student_access (HMAC-SHA256 через BOT_TOKEN)
 └── templates/, static/
 
+deploy/                  # bare-metal деплой (см. deploy/README.md)
+├── install.sh                       # one-shot bootstrap VPS
+├── gradesentinel-bot.service        # systemd-юнит бота
+├── gradesentinel-webapp.service     # systemd-юнит webapp
+├── gradesentinel-heartbeat.{service,timer}  # watchdog рестартит бот при зависании
+├── Caddyfile                        # reverse proxy grades.railtech.uz → :8443
+└── deploy-sudoers                   # узкий passwordless sudo для GH runner юзера
+
 tests/                   # pytest, запускается в CI (.github/workflows/tests.yml)
-data/sentinel.db         # БД (volume в Docker)
-data/.heartbeat          # Файл для Docker healthcheck (touch'ит main thread каждые 30с)
-config/credentials.json  # Google Service Account (volume, НЕ в репо)
-.env                     # Токены (НЕ в репо)
+data/sentinel.db         # БД локально для разработки (gitignored)
+data/.heartbeat          # Heartbeat файл (timer-watchdog проверяет mtime)
+config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в репо). На проде — /etc/gradesentinel/
+.env                     # Токены ЛОКАЛЬНО (НЕ в репо). На проде — /etc/gradesentinel/bot.env
 .claude/                 # Claude Code settings (settings.local.json в .gitignore)
 ```
+
+**На проде (bare-metal VPS):**
+- `/opt/gradesentinel/` — код (sync на каждом деплое через rsync)
+- `/opt/gradesentinel/venv/` — Python venv
+- `/var/lib/gradesentinel/` — `sentinel.db`, `.heartbeat` (read/write для service user)
+- `/etc/gradesentinel/bot.env` — секреты (`0640 root:gradesentinel`)
+- `/etc/gradesentinel/credentials.json` — Google service account
+- `/etc/systemd/system/gradesentinel-*.{service,timer}` — юниты
+- `/etc/caddy/Caddyfile` — reverse proxy конфиг
 
 ---
 
@@ -187,16 +206,37 @@ config/credentials.json  # Google Service Account (volume, НЕ в репо)
 ## Как запускать
 
 ```bash
-# Локально (Mac, develop)
-cp .env.example .env  # заполнить токены
-docker-compose up -d --build
-docker-compose logs -f
+# Локально (Mac, develop) — venv, без Docker
+python3.12 -m venv venv             # или 3.10/3.11 — совместим
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env                # заполнить токены
+mkdir -p data config
+# положить credentials.json в config/
+python -m src.main                  # бот в polling режиме
+# в другом терминале:
+python webapp/app.py                # WebApp на 127.0.0.1:8443
 
 # Тесты (pytest)
-pytest tests/ -v
+BOT_TOKEN=test-token ADMIN_ID=0 ADMIN_GROUP_ID=0 pytest tests/ -v
 
-# Прод (Raspberry Pi, ветка main, авто-деплой через GitHub Actions)
+# Прод (VPS Ubuntu 24.04, ветка main, авто-деплой через GitHub Actions)
 git push origin main
+# → workflow .github/workflows/deploy.yml: rsync кода → pip install → systemctl restart
+# первая настройка VPS — см. deploy/README.md
+```
+
+### Bare-metal на проде
+
+Бот и webapp — два systemd-юнита, читают секреты из `/etc/gradesentinel/bot.env`,
+БД хранят в `/var/lib/gradesentinel/`. Reverse proxy — Caddy с авто-TLS на `grades.railtech.uz`.
+Watchdog: systemd timer раз в минуту проверяет `mtime` heartbeat-файла и рестартит бот при зависании.
+
+```bash
+# На VPS — основные команды:
+sudo systemctl status gradesentinel-bot gradesentinel-webapp
+sudo journalctl -u gradesentinel-bot -f
+sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/backup.db"
 ```
 
 ### Переменные окружения (.env)
@@ -226,23 +266,26 @@ git push origin main
 
 ## Чего НЕ делать
 
-- **Не амендить published commits** на main (auto-deploy на Pi).
+- **Не амендить published commits** на main (auto-деплой на VPS).
 - **Не пушить .env, credentials.json, data/*.db, *.xlsx** (в .gitignore, но проверяй).
 - **Не использовать `--no-verify`** на коммитах.
 - **Не менять схему `families` / `parents` / `family_links`** без миграции (есть пользователи в проде).
 - **Не вызывать Google API в hot path обработчика** (только в monitor_engine и при добавлении ребёнка). `/grades` читает из `grade_history`.
 - **Не вызывать `bot.send_message` синхронно в цикле >30 пользователей** без `send_with_retry` — Telegram забанит за flood.
 - **Не парсить callback_data вручную через split** — используй `_parse_int_args(call.data, prefix, count)`. И обязательно `_check_family_access(call, fid)` перед action'ом с `family_id`.
+- **Не править файлы прямо на VPS** — следующий деплой через rsync затрёт. Все правки — через PR.
+- **Не менять `WEBAPP_HOST` на `0.0.0.0`** — webapp должен слушать только loopback, наружу выпускает Caddy. Иначе обходится TLS и логирование.
 
 ---
 
 ## Открытые задачи / технический долг
 
-- **`python:3.10-slim` имеет 2 high CVE** (предупреждение IDE). Оценить апгрейд до 3.12 — ломает «никаких 3.11+ features» инвариант, нужно общее решение.
 - **`database_manager.py` 1500+ строк** — нужно дробить по доменам (auth, payments, families, grades).
 - **`handlers/subscription.py` 1222 строки** — то же.
 - **`register_next_step_handler` теряется при рестарте** — миграция многошаговых flow на `user_states` в БД.
 - **`_rate_limit_store` / `_panel_cache` теряются при рестарте** — допустимо, но если пойдём в multi-instance, нужен Redis.
+- **CI всё ещё на Python 3.10** — обновить `.github/workflows/tests.yml` до 3.12 после первой стабильной недели на VPS (прод уже на 3.12).
+- **Бэкап БД cron'ом** — добавить systemd timer для ежедневного `sqlite3 .backup` в S3/Backblaze.
 
 ---
 

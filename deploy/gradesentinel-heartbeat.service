@@ -1,0 +1,16 @@
+[Unit]
+Description=GradeSentinel heartbeat watchdog (restarts bot if frozen)
+# One-shot: проверяет mtime /var/lib/gradesentinel/.heartbeat. Если файл протух
+# (>180с без обновлений) — main thread завис, рестартим бота.
+After=gradesentinel-bot.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash -c '\
+    HB=/var/lib/gradesentinel/.heartbeat; \
+    [ -f "$HB" ] || exit 0; \
+    AGE=$(( $(date +%%s) - $(stat -c %%Y "$HB") )); \
+    if [ "$AGE" -gt 180 ]; then \
+        echo "Heartbeat protukh (${AGE}s), restarting bot"; \
+        systemctl restart gradesentinel-bot; \
+    fi'
