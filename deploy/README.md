@@ -8,7 +8,7 @@
 |---|---|
 | `install.sh` | Идемпотентный one-shot bootstrap VPS (запускать от root **один раз**) |
 | `gradesentinel-bot.service` | systemd-юнит Telegram-бота |
-| `gradesentinel-webapp.service` | systemd-юнит Flask WebApp (слушает только `127.0.0.1:8443`) |
+| `gradesentinel-webapp.service` | systemd-юнит Flask + gunicorn (2 worker × 4 threads, слушает `127.0.0.1:8443`) |
 | `gradesentinel-heartbeat.service` + `.timer` | Watchdog: рестартит бот, если `/var/lib/gradesentinel/.heartbeat` старше 180с |
 | `Caddyfile` | Reverse proxy `grades.railtech.uz` → `127.0.0.1:8443` с авто-Let's Encrypt |
 | `deploy-sudoers` | Узкий passwordless sudo для юзера `deploy` (используется GH runner'ом) |
@@ -250,7 +250,33 @@ ls -la /var/lib/gradesentinel/  # есть ли права на запись?
 **WebApp 502 Bad Gateway:**
 ```bash
 sudo systemctl status gradesentinel-webapp
-sudo ss -tlnp | grep 8443  # должен слушать 127.0.0.1:8443
+sudo ss -tlnp | grep 8443  # должен слушать 127.0.0.1:8443 (от gunicorn)
+sudo journalctl -u gradesentinel-webapp -n 50
+# Если gunicorn не стартует — проверь venv:
+sudo -u gradesentinel /opt/gradesentinel/venv/bin/gunicorn --version
+# Если "command not found" — pip не установил gunicorn, перезапусти deploy.yml
+```
+
+**Дашборд возвращает 401 «Invalid hash» в Telegram WebApp:**
+```bash
+sudo journalctl -u gradesentinel-webapp -f | grep "auth failed"
+# Известные причины (исторически):
+#   1. BOT_TOKEN в /etc/gradesentinel/bot.env != токен бота → проверь
+#      curl https://api.telegram.org/bot<TOKEN>/getMe — должен вернуть нужного бота
+#   2. validate_init_data использовал URL-encoded values вместо decoded — починено
+#   3. signature поле НЕ должно исключаться из data_check_string — починено
+# Если 401 после правильного BOT_TOKEN — поймай initData из логов Caddy
+# и вычисли HMAC вручную (см. webapp/app.py:validate_init_data).
+```
+
+**Дашборд медленно грузится:**
+```bash
+# Проверка времени ответа /api/dashboard:
+time curl -sH "X-Telegram-Init-Data: <real-init-data>" https://grades.railtech.uz/api/dashboard/1
+# Должно быть <300ms. Если больше:
+#   - Сколько grade_history записей? sqlite3 /var/lib/gradesentinel/sentinel.db "SELECT COUNT(*) FROM grade_history"
+#   - gunicorn workers заняты? sudo systemctl status gradesentinel-webapp (CPU%)
+#   - Не упёрся ли MemoryMax=200M? Если да — увеличить в unit-файле
 ```
 
 **Heartbeat-watchdog слишком агрессивный (бот реально работает но рестартится):**

@@ -344,6 +344,15 @@ def api_dashboard(student_id):
     if user_info.get("fio"):
         first_name = user_info["fio"].split()[0]
 
+    # AI-инсайт (опционально, кэш 6h, безопасно деградирует если Claude недоступен)
+    try:
+        from src.analytics_engine import compute_dashboard_insight
+        summary["ai_insight"] = compute_dashboard_insight(student_id, summary, lang=lang, days=days)
+    except Exception as e:
+        # Никогда не блокируем dashboard из-за AI
+        logger.warning(f"AI insight failed for student {student_id}: {e}")
+        summary["ai_insight"] = None
+
     response_data = {
         "summary": summary,
         "trend_by_day": trend_by_day,

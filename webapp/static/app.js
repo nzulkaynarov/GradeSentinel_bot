@@ -211,6 +211,7 @@ function renderDashboard() {
     if (!d) return;
 
     renderHero(d.summary);
+    renderInsight(d.summary.ai_insight);
     renderTrend(d.trend_by_day);
     renderProblems(d.summary.problem_subjects);
     renderTop(d.summary.top_subjects);
@@ -263,6 +264,17 @@ function renderHero(summary) {
     // Status строка
     statusEl.textContent = t(`status_${summary.status}`);
     statusEl.className = "hero-status status-" + summary.status;
+}
+
+function renderInsight(insightText) {
+    const section = document.getElementById("ai-insight");
+    const textEl = document.getElementById("ai-insight-text");
+    if (!insightText || !insightText.trim()) {
+        section.classList.add("hidden");
+        return;
+    }
+    textEl.textContent = insightText.trim();
+    section.classList.remove("hidden");
 }
 
 function renderTrend(trendData) {
