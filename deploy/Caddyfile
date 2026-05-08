@@ -28,7 +28,7 @@ grades.railtech.uz {
         # - script-src: разрешаем JS Telegram (telegram-web-app.js) и инлайн
         # - connect-src: API endpoints — same-origin
         # - img-src: data: для inline-графиков Chart.js
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors https://web.telegram.org"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors https://web.telegram.org"
 
         # Скрываем Server header
         -Server

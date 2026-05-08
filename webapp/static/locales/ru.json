@@ -1,0 +1,58 @@
+{
+  "app_title": "Дневник GradeSentinel",
+  "loading": "Загружаем...",
+  "error_generic": "Не удалось загрузить данные",
+  "error_no_students": "У вас пока нет учеников. Добавьте ребёнка через бота.",
+  "error_retry": "Попробовать ещё раз",
+
+  "greeting": "Здравствуйте, {name}!",
+  "greeting_no_name": "Дневник",
+
+  "hero_average": "средний балл",
+  "hero_period_short": "за неделю",
+  "hero_no_grades": "Пока нет оценок",
+  "hero_no_grades_hint": "Они появятся после следующего обновления",
+
+  "trend_up": "лучше",
+  "trend_down": "хуже",
+  "trend_stable": "так же",
+  "trend_vs_previous": "чем в прошлом периоде",
+
+  "status_concern": "⚠️ Есть на что обратить внимание",
+  "status_improving": "📈 Тенденция улучшается",
+  "status_declining": "📉 Снижение по сравнению с прошлой неделей",
+  "status_stable": "✅ Всё стабильно",
+
+  "section_problems": "Обратите внимание",
+  "section_problems_subtitle": "Предметы с низким средним",
+  "section_top": "Сильные стороны",
+  "section_subjects": "По предметам",
+  "section_subjects_subtitle": "Все предметы периода",
+  "section_recent": "Новое за период",
+  "section_quarters": "Четвертные",
+  "section_quarters_subtitle": "Итоги по четвертям",
+
+  "period_week": "Неделя",
+  "period_two_weeks": "2 недели",
+  "period_month": "Месяц",
+  "period_year": "Год",
+
+  "chart_trend_title": "Динамика среднего по дням",
+  "chart_trend_empty": "Недостаточно данных для графика",
+
+  "table_subject": "Предмет",
+  "table_grade": "Оценка",
+  "table_date": "Дата",
+  "table_average": "Средний",
+  "table_count": "Кол-во",
+
+  "quarter_1": "1 ч",
+  "quarter_2": "2 ч",
+  "quarter_3": "3 ч",
+  "quarter_4": "4 ч",
+  "quarter_year": "Год",
+
+  "badge_new": "новое",
+  "show_more": "показать ещё",
+  "show_less": "свернуть"
+}

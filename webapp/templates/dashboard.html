@@ -2,84 +2,130 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>GradeSentinel Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0e1621">
+    <title data-i18n="app_title">Дневник</title>
+
+    <!-- Telegram WebApp SDK — обязательно первым -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Chart.js bundled локально — без CDN, быстрее, не зависит от внешних сетей -->
+    <script src="/static/vendor/chart.umd.min.js" defer></script>
+
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="preload" href="/static/app.js" as="script">
 </head>
 <body>
-    <div id="app">
-        <div id="loading">
-            <div class="spinner"></div>
-            <p>Loading grades...</p>
+    <!-- ═════════════ SKELETON (показывается до загрузки данных) ═════════════ -->
+    <div id="skeleton" class="screen">
+        <div class="skel-greeting"></div>
+        <div class="skel-hero">
+            <div class="skel-line skel-line-big"></div>
+            <div class="skel-line skel-line-small"></div>
+        </div>
+        <div class="skel-card"></div>
+        <div class="skel-card"></div>
+    </div>
+
+    <!-- ═════════════ ERROR STATE ═════════════ -->
+    <div id="error" class="screen hidden">
+        <div class="error-icon">⚠️</div>
+        <p id="error-text" class="error-text" data-i18n="error_generic">Не удалось загрузить</p>
+        <button id="error-retry" class="btn-primary" data-i18n="error_retry">Попробовать ещё раз</button>
+    </div>
+
+    <!-- ═════════════ MAIN CONTENT ═════════════ -->
+    <div id="content" class="screen hidden">
+
+        <!-- Greeting + student switcher -->
+        <header class="header">
+            <div class="greeting">
+                <span id="greeting-text" data-i18n="greeting_no_name">Дневник</span>
+            </div>
+            <div id="student-tabs" class="student-tabs hidden"><!-- табы детей если >1 --></div>
+        </header>
+
+        <!-- HERO: средний балл + дельта + статус -->
+        <section class="hero" id="hero">
+            <div class="hero-main">
+                <div class="hero-avg" id="hero-avg">—</div>
+                <div class="hero-delta hidden" id="hero-delta">
+                    <span class="delta-arrow"></span>
+                    <span class="delta-value"></span>
+                </div>
+            </div>
+            <div class="hero-meta">
+                <span class="hero-label" data-i18n="hero_average">средний балл</span>
+                <span class="hero-period" id="hero-period"></span>
+            </div>
+            <div class="hero-status" id="hero-status"></div>
+        </section>
+
+        <!-- Период (минимально, не доминирует) -->
+        <div class="period-toggle" id="period-toggle">
+            <button class="period-btn active" data-days="7" data-i18n="period_week">Неделя</button>
+            <button class="period-btn" data-days="30" data-i18n="period_month">Месяц</button>
+            <button class="period-btn" data-days="365" data-i18n="period_year">Год</button>
         </div>
 
-        <div id="content" style="display:none;">
-            <!-- Student selector (if multiple children) -->
-            <div id="student-selector" style="display:none;">
-                <select id="student-select"></select>
-            </div>
-
-            <!-- Summary cards -->
-            <div id="summary-cards" class="cards-row">
-                <div class="card">
-                    <div class="card-value" id="avg-grade">—</div>
-                    <div class="card-label">Average</div>
-                </div>
-                <div class="card">
-                    <div class="card-value" id="total-grades">—</div>
-                    <div class="card-label">Total grades</div>
-                </div>
-                <div class="card">
-                    <div class="card-value" id="best-subject">—</div>
-                    <div class="card-label">Best subject</div>
-                </div>
-            </div>
-
-            <!-- Filters row: period + subject -->
-            <div class="filters-row">
-                <div class="period-selector">
-                    <button class="period-btn active" data-days="7">7d</button>
-                    <button class="period-btn" data-days="14">14d</button>
-                    <button class="period-btn" data-days="30">30d</button>
-                    <button class="period-btn" data-days="365">All</button>
-                </div>
-                <div class="subject-filter">
-                    <select id="subject-select">
-                        <option value="">All subjects</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Grade trend chart -->
-            <div class="chart-container">
-                <h3>Grade trend</h3>
+        <!-- Тренд по дням -->
+        <section class="card" id="trend-section">
+            <h2 class="card-title" data-i18n="chart_trend_title">Динамика</h2>
+            <div class="chart-wrap">
                 <canvas id="trendChart"></canvas>
             </div>
+            <p id="trend-empty" class="empty-hint hidden" data-i18n="chart_trend_empty"></p>
+        </section>
 
-            <!-- Subject averages chart -->
-            <div class="chart-container">
-                <h3>Average by subject</h3>
-                <canvas id="subjectChart"></canvas>
+        <!-- Проблемные предметы (показывается только если есть) -->
+        <section class="card card-warning hidden" id="problems-section">
+            <h2 class="card-title" data-i18n="section_problems">Обратите внимание</h2>
+            <p class="card-subtitle" data-i18n="section_problems_subtitle"></p>
+            <div id="problems-list" class="subjects-list"></div>
+        </section>
+
+        <!-- Топ предметы (если есть) -->
+        <section class="card card-success hidden" id="top-section">
+            <h2 class="card-title" data-i18n="section_top">Сильные стороны</h2>
+            <div id="top-list" class="subjects-list"></div>
+        </section>
+
+        <!-- По предметам — все -->
+        <section class="card collapsible" id="subjects-section">
+            <header class="card-header">
+                <h2 class="card-title" data-i18n="section_subjects">По предметам</h2>
+                <button class="toggle-btn" aria-expanded="false">▾</button>
+            </header>
+            <div class="card-body">
+                <div id="subjects-list" class="subjects-list"></div>
             </div>
+        </section>
 
-            <!-- Quarter grades -->
-            <div class="section" id="quarters-section" style="display:none;">
-                <h3>Quarter grades</h3>
+        <!-- Новое за период (recent grades) -->
+        <section class="card collapsible" id="recent-section">
+            <header class="card-header">
+                <h2 class="card-title">
+                    <span data-i18n="section_recent">Новое за период</span>
+                    <span id="recent-count" class="count-badge"></span>
+                </h2>
+                <button class="toggle-btn" aria-expanded="false">▾</button>
+            </header>
+            <div class="card-body">
+                <div id="recent-list" class="recent-list"></div>
+            </div>
+        </section>
+
+        <!-- Четверти (lazy-loaded) -->
+        <section class="card collapsible" id="quarters-section">
+            <header class="card-header">
+                <h2 class="card-title" data-i18n="section_quarters">Четвертные</h2>
+                <button class="toggle-btn" aria-expanded="false">▾</button>
+            </header>
+            <div class="card-body">
                 <div id="quarters-table"></div>
             </div>
+        </section>
 
-            <!-- Recent grades table -->
-            <div class="section">
-                <h3>Recent grades</h3>
-                <div id="grades-table"></div>
-            </div>
-        </div>
-
-        <div id="error" style="display:none;">
-            <p id="error-text"></p>
-        </div>
     </div>
 
     <script src="/static/app.js"></script>

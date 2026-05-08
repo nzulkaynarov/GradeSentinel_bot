@@ -7,6 +7,9 @@ python-dotenv==1.0.1
 anthropic>=0.50,<1.0
 flask==3.0.3
 
+# Production WSGI server для webapp (Werkzeug dev server слишком slow и single-thread)
+gunicorn==23.0.0
+
 # Опциональный observability — активен только если задан SENTRY_DSN в env
 sentry-sdk==2.18.0
 
