@@ -43,11 +43,6 @@ grades.railtech.uz {
         # Не логируем health-check'и от мониторинга — спам
         level INFO
     }
-
-    # Healthcheck endpoint доступен без аутентификации (он и так публичный)
-    handle_path /health {
-        reverse_proxy 127.0.0.1:8443
-    }
 }
 
 # ═══════════════════════════════════════════════════════════
