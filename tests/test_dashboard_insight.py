@@ -14,11 +14,25 @@ if ROOT not in sys.path:
 
 
 def _summary(avg=4.2, delta=0.3, problems=None, tops=None):
+    """Helper для конструирования summary с None-safe arithmetic."""
+    if avg is None:
+        return {
+            "current_avg": None, "previous_avg": None, "delta": None,
+            "trend": "stable", "status": "stable",
+            "problem_subjects": [], "top_subjects": [],
+        }
+    delta = delta if delta is not None else 0
+    if delta > 0.2:
+        trend = "up"
+    elif delta < -0.2:
+        trend = "down"
+    else:
+        trend = "stable"
     return {
         "current_avg": avg,
-        "previous_avg": avg - delta if delta else avg,
+        "previous_avg": avg - delta,
         "delta": delta,
-        "trend": "up" if delta > 0.2 else ("down" if delta < -0.2 else "stable"),
+        "trend": trend,
         "status": "stable",
         "problem_subjects": problems or [],
         "top_subjects": tops or [],
@@ -35,7 +49,6 @@ def test_returns_none_when_no_grades(fresh_db):
     """current_avg=None → нет смысла дёргать AI, возвращаем None."""
     from src.analytics_engine import compute_dashboard_insight
     summary = _summary(avg=None)
-    summary["current_avg"] = None
     assert compute_dashboard_insight(1, summary, lang="ru") is None
 
 
