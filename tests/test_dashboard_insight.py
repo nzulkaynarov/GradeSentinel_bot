@@ -70,7 +70,8 @@ def test_cache_hit_skips_api_call(fresh_db, monkeypatch):
     analytics_engine._client = None  # сброс
 
     from src.database_manager import set_setting
-    cache_key = "insight:1:7:ru"
+    # Cache key должен совпадать с _insight_cache_key — после bump'а v2
+    cache_key = "insight_v2:1:7:ru"
     cached_payload = json.dumps({
         "text": "Тест-кэш",
         "generated_at": datetime.now().isoformat(),
@@ -94,7 +95,8 @@ def test_cache_expired_triggers_refresh(fresh_db, monkeypatch):
     analytics_engine._client = None
 
     from src.database_manager import set_setting
-    cache_key = "insight:1:7:ru"
+    # Cache key с v2-префиксом
+    cache_key = "insight_v2:1:7:ru"
     # Кэш на 7 часов назад — протух
     expired_payload = json.dumps({
         "text": "Старый кэш",
