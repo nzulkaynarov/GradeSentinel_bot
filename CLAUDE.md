@@ -26,7 +26,8 @@
 - Google Sheets API v4 (Service Account, `/etc/gradesentinel/credentials.json` на проде)
 - Telegram Payments API
 - Anthropic SDK (`anthropic`)
-- Flask (для WebApp, слушает `127.0.0.1:8443`, наружу через Caddy)
+- Flask + **gunicorn** (2 worker × 4 thread, gthread) для WebApp, слушает `127.0.0.1:8443`, наружу через Caddy
+- Chart.js v4.4.0 bundled локально (`webapp/static/vendor/`) — без CDN
 - **Bare-metal deploy:** systemd units + venv (никакого Docker)
 - **Reverse proxy:** Caddy (auto Let's Encrypt) — `grades.railtech.uz`
 - Хостинг: VPS Ubuntu 24.04 (4 GB RAM, 2 vCPU, 80 GB NVMe)
@@ -66,10 +67,23 @@ src/
     └── invite.py        # Инвайт-ссылки
 
 webapp/
-├── app.py               # Flask: /webapp, /api/students, /api/grades, /api/quarters,
-│                        #   /health (для healthcheck). Слушает 127.0.0.1:8443 (override через WEBAPP_HOST).
-│                        #   Авторизация через _authorize_student_access (HMAC-SHA256 через BOT_TOKEN)
-└── templates/, static/
+├── app.py               # Flask + gunicorn-friendly. Endpoints:
+│                        #   /webapp                    — HTML дашборд
+│                        #   /api/dashboard/init        — bootstrap (студенты + lang + first_name)
+│                        #   /api/dashboard/<id>?days=N — главный: summary, trend_by_day, by_subject, recent
+│                        #   /api/quarters/<id>         — четверти (lazy)
+│                        #   /api/students, /api/grades — legacy, оставлены для обратной совместимости
+│                        #   /health                    — для Caddy/мониторинга
+│                        #   Pure functions: compute_summary, compute_trend_by_day, compute_by_subject
+│                        #   (unit-tested в tests/test_webapp_dashboard.py)
+│                        #   Авторизация: HMAC-SHA256(BOT_TOKEN) валидирует Telegram initData,
+│                        #   `signature` поле включается в data_check_string, значения — URL-decoded
+├── templates/dashboard.html   # data-i18n атрибуты, skeleton loading, hero/cards layout
+└── static/
+    ├── app.js          # i18n runtime + single-call flow + last_seen для подсветки нового
+    ├── style.css       # Tg theme variables, light/dark, skeleton shimmer, smooth animations
+    ├── vendor/chart.umd.min.js  # Chart.js 4.4.0 bundled (нет CDN)
+    └── locales/{ru,uz,en}.json  # 46 ключей синхронных (тест проверяет)
 
 deploy/                  # bare-metal деплой (см. deploy/README.md)
 ├── install.sh                       # one-shot bootstrap VPS
@@ -133,7 +147,7 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 3. **`register_next_step_handler` — in-memory**. При рестарте бота пользователи теряют состояние посредине многошаговых flow. Долгосрочно — переезд на `user_states` в БД.
 
-4. **`bot.polling(none_stop=True)`** в main.py:end. Webhook не используется. Рядом запускается `_heartbeat_loop` — раз в 30с touch'ит `data/.heartbeat`, Docker healthcheck смотрит mtime.
+4. **`bot.polling(none_stop=True)`** в main.py:end. Webhook не используется. Рядом запускается `_heartbeat_loop` — раз в 30с touch'ит heartbeat-файл (`data/.heartbeat` локально, `/var/lib/gradesentinel/.heartbeat` на проде через ENV `HEARTBEAT_PATH`). На проде systemd-таймер `gradesentinel-heartbeat.timer` раз в минуту проверяет mtime файла и `systemctl restart gradesentinel-bot` если протух >180с.
 
 5. **Rate limit — in-memory dict** под локом (`_rate_limit_store` + `_rate_limit_lock` в main.py). 5 req / 10 sec. GC неактивных пользователей раз в 600с. Сбрасывается при рестарте.
 
@@ -145,7 +159,13 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 8. **Все DB-запросы используют параметризацию `?`**. `create_promo_code` принудительно конвертирует expires_days через `int()` — SQL-injection безопасен.
 
-9. **WebApp** валидирует initData HMAC + проверяет принадлежность ученика родителю + активную подписку через `_authorize_student_access` (webapp/app.py). Админ обходит проверку подписки.
+9. **WebApp** валидирует initData HMAC через `validate_init_data` + проверяет принадлежность ученика родителю + активную подписку через `_authorize_student_access` (webapp/app.py). Админ обходит проверку подписки.
+
+   **Тонкости HMAC** (важно для дашборда):
+   - data_check_string использует **URL-decoded** значения (через `parse_qs`), не raw URL-encoded
+   - Поле `signature` (Ed25519 third-party валидация Telegram WebApp 7.x+) **включается** в data_check_string
+   - Только `hash` исключается из compute
+   - При нарушении любого из этих правил — все запросы получают 401 «Invalid hash»
 
 10. **Все callback handlers с `family_id`** обязаны вызывать `_check_family_access(call, family_id)` из handlers/family.py — он использует `can_manage_family()` (admin OR head_of_family). `_parse_int_args(call.data, prefix, count)` — безопасный парсер callback_data.
 
@@ -199,7 +219,23 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 28. **`archive_old_grades(days=180)`** — атомарен через `BEGIN IMMEDIATE` + select-by-id. Не теряет записи при параллельных INSERT'ах. Запускается раз в неделю (вс 03:00).
 
-29. **Heartbeat-файл** `data/.heartbeat` — пишется main thread'ом каждые 30с. Healthcheck в Docker проверяет mtime (>180с = рестарт). Не дёргает Bot API.
+29. **Heartbeat-файл** `.heartbeat` — пишется main thread'ом каждые 30с. На проде `gradesentinel-heartbeat.timer` (systemd timer) раз в минуту проверяет mtime; если >180с — `systemctl restart gradesentinel-bot`. Не дёргает Bot API.
+
+### WebApp дашборд
+
+30. **Один endpoint `/api/dashboard/<id>?days=N`** отдаёт всё что нужно дашборду (summary, trend_by_day, by_subject, recent_grades, user info) — никаких 3 sequential calls.
+
+31. **Pure-функции агрегации** в `webapp/app.py`: `compute_summary`, `compute_trend_by_day`, `compute_by_subject`. Они не трогают БД, легко тестируются. Все в `tests/test_webapp_dashboard.py` (19 тестов покрывают edge-cases).
+
+32. **i18n дашборда** — отдельные локали `webapp/static/locales/{ru,uz,en}.json` (46 ключей, синхронны через `tests/test_webapp_locales_sync.py`). НЕ дублируют `src/locales/` — у бота и webapp разные UI-ключи.
+
+33. **Lang определяется backend'ом**: `parents.lang` (БД) → дефолт `ru`. Возвращается в `/api/dashboard/init.user.lang`. Фронт подгружает `/static/locales/<lang>.json` после bootstrap.
+
+34. **Chart.js — bundled локально** (`webapp/static/vendor/chart.umd.min.js`, ~200KB). Никаких CDN. CSP в Caddyfile разрешает только `'self'` для script-src.
+
+35. **WebApp host = `127.0.0.1`** (default из ENV `WEBAPP_HOST`). Наружу выпускает Caddy через 443. Не менять на `0.0.0.0` — обходит TLS и логирование.
+
+36. **gunicorn** в проде, не Werkzeug dev server. ExecStart в `gradesentinel-webapp.service`: `gunicorn --workers 2 --threads 4 --worker-class gthread webapp.app:app`. `init_db()` вызывается на module-level в `webapp/app.py` — gunicorn-friendly.
 
 ---
 
@@ -254,7 +290,7 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 
 ## Style guide
 
-- **Python 3.10**, никаких новых features из 3.11+ (бот собирается на slim:3.10).
+- **Python 3.12** на проде, **3.10+** совместимо в коде (CI пока на 3.10).
 - **Type hints желательны** в новых функциях. Старые — постепенно.
 - **Логгер** — `logging.getLogger(__name__)`, никаких `print`.
 - **Не показывать сырые exception в UI** — `f"Ошибка: {e}"` это bug. Логи — да, пользователю — обобщённое сообщение через `t("...")`.
@@ -286,6 +322,10 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - **`_rate_limit_store` / `_panel_cache` теряются при рестарте** — допустимо, но если пойдём в multi-instance, нужен Redis.
 - **CI всё ещё на Python 3.10** — обновить `.github/workflows/tests.yml` до 3.12 после первой стабильной недели на VPS (прод уже на 3.12).
 - **Бэкап БД cron'ом** — добавить systemd timer для ежедневного `sqlite3 .backup` в S3/Backblaze.
+- **SSH-хардненинг** — сейчас на VPS оставлены и password auth, и root login (для удобства восстановления). После первой стабильной недели — обсудить отключение root + только key-auth.
+- **AI-инсайт в дашборде** — pure-функции агрегации готовы, можно добавить мини-инсайт от Claude (1-2 предложения «что делать») в hero дашборда. Кэшировать 6 часов чтобы не палить токены.
+- **`/api/dashboard` ETag/cache** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас просто 200 каждый раз.
+- **WebApp кнопка в user panel напрямую** — сейчас она появляется только после `/grades`. Лучше дать промо-плашку в главной user panel «📊 Откройте дашборд».
 
 ---
 
