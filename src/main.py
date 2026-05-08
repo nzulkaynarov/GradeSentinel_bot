@@ -250,10 +250,21 @@ def contact_handler(message):
                     t("btn_contact_admin", lang),
                     url=f"tg://user?id={admin_id_env}"
                 ))
-            # Перед kbd убираем reply-клаву (request_contact уже не нужна)
+            # Сначала убираем reply-клавиатуру (request_contact не нужна).
+            # Используем служебное «...» которое сразу удаляем, чтобы не оставлять
+            # пустое сообщение в чате. Затем основное сообщение с inline-кнопками.
+            # ВАЖНО: раньше посылали " " (пробел) — Telegram теперь возвращает 400
+            # "text must be non-empty", из-за чего кнопки не появлялись и юзер
+            # видел тупик с одним только вопросом «Что хотите сделать?».
+            try:
+                kbd_remover = bot.send_message(
+                    user_id, "…", reply_markup=types.ReplyKeyboardRemove()
+                )
+                bot.delete_message(user_id, kbd_remover.message_id)
+            except Exception as e:
+                logger.debug(f"Could not remove reply keyboard: {e}")
             bot.send_message(user_id, t("auth_phone_not_found", lang),
-                              reply_markup=types.ReplyKeyboardRemove())
-            bot.send_message(user_id, " ", reply_markup=inline_markup)
+                              reply_markup=inline_markup)
 
             # Сохраняем телефон чтобы при выборе "Создать семью" сразу зарегать
             from src.database_manager import set_user_state
