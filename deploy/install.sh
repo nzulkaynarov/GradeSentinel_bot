@@ -141,10 +141,17 @@ systemctl enable --now fail2ban
 # ────────────────────────────────────────────────────────────
 log "Шаг 7/8: Caddyfile → /etc/caddy/Caddyfile"
 install -m 0644 "${REPO_DIR}/deploy/Caddyfile" /etc/caddy/Caddyfile
-install -d -o caddy -g caddy -m 0755 /var/log/caddy
+# /var/log/caddy уже создан apt-пакетом caddy; install -d НЕ перевладеет
+# существующую директорию, поэтому делаем chown явно. На повторный запуск
+# скрипта это идемпотентно.
+mkdir -p /var/log/caddy
+chown -R caddy:caddy /var/log/caddy
+chmod 0755 /var/log/caddy
 caddy validate --config /etc/caddy/Caddyfile >/dev/null \
     || fail "Caddyfile невалиден — починить и повторить"
-systemctl reload caddy 2>/dev/null || systemctl restart caddy
+# restart, не reload — гарантирует что caddy перечитает конфиг с нуля
+# и подключится к новому log-файлу с правильными правами.
+systemctl restart caddy
 systemctl enable caddy
 
 # ────────────────────────────────────────────────────────────

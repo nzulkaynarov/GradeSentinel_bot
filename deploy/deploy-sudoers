@@ -21,8 +21,10 @@ deploy ALL=(root) NOPASSWD: /usr/bin/chmod 0640 /etc/gradesentinel/credentials.j
 deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/bot.env
 deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/credentials.json
 
-# Синхронизация кода в /opt/gradesentinel
-deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete --exclude=venv --exclude=.git --exclude=data --exclude=config /home/deploy/actions-runner/_work/*/
+# Синхронизация кода в /opt/gradesentinel — exact match с deploy.yml.
+# Source path жёстко зафиксирован структурой actions-runner _work/<repo>/<repo>.
+# Destination /opt/gradesentinel/ не может быть изменён → нет privilege escalation.
+deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete --exclude=venv --exclude=.git --exclude=data --exclude=config --exclude=.github --exclude=tests /home/deploy/actions-runner/_work/GradeSentinel_bot/GradeSentinel_bot/ /opt/gradesentinel/
 deploy ALL=(root) NOPASSWD: /usr/bin/chown -R gradesentinel\:gradesentinel /opt/gradesentinel
 
 # Установка systemd-юнитов (после rsync они могли обновиться)
