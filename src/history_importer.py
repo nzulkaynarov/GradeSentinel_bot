@@ -152,120 +152,99 @@ def _parse_all_grades_sheet(data: List[List[str]]) -> List[Dict[str, Any]]:
     return records
 
 
+def _import_from_sheet(
+    student_id: int,
+    spreadsheet_id: str,
+    range_name: str,
+    sheet_label: str,
+) -> Dict[str, int]:
+    """Generic чтение оценок из любого листа со структурой «предметы × даты».
+
+    Подходит для «Все оценки» (master) и «Неделя» (свежий рабочий лист).
+
+    Дедуп по содержимому (student_id, subject, date_added, raw_text) — если
+    та же оценка уже в БД из другого листа, не дублируем.
+
+    sheet_label попадает в cell_reference как префикс ("Все оценки!" / "Неделя!")
+    для дебага и уникальности SQL-вставки.
+    """
+    try:
+        data = get_sheet_data(spreadsheet_id, range_name)
+    except Exception as e:
+        logger.error(f"Failed to fetch '{range_name}' for student {student_id}: {e}")
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    if not data:
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    records = _parse_all_grades_sheet(data)
+    imported = 0
+    skipped = 0
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for rec in records:
+            date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
+            cell_ref = f"{sheet_label}{_col_letter(rec['col_index'])}{rec['row_index']}"
+
+            # Дедуп по содержимому: если в БД уже есть та же оценка по
+            # (предмет, ДЕНЬ без времени, значение) — пропускаем.
+            # Сравнение через date() важно: monitor пишет «Сегодня» с реальным
+            # timestamp (HH:MM:SS), а импорт из «Все оценки»/«Неделя» — с 12:00.
+            # Без date() они считались бы разными.
+            cursor.execute('''
+                SELECT 1 FROM grade_history
+                WHERE student_id = ? AND subject = ?
+                  AND COALESCE(date(date_added), '') = COALESCE(date(?), '')
+                  AND raw_text = ?
+                LIMIT 1
+            ''', (student_id, rec['subject'], date_added, rec['raw_text']))
+            if cursor.fetchone():
+                skipped += 1
+                continue
+
+            try:
+                if date_added:
+                    cursor.execute('''
+                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference, date_added)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref, date_added))
+                else:
+                    cursor.execute('''
+                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref))
+                imported += 1
+            except Exception:
+                # UNIQUE constraint на cell_reference (того же листа) — повторный
+                # импорт того же листа после ручного редактирования. Дедуп выше
+                # должен ловить такие случаи раньше, но safety net не помешает.
+                skipped += 1
+
+    return {'imported': imported, 'skipped': skipped, 'total': len(records)}
+
+
 def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str, int]:
     """
-    Импортирует все исторические оценки из листа "Все оценки" для студента.
+    Импортирует оценки студента из обоих листов: «Все оценки» (master со 2 сент)
+    + «Неделя» (свежие оценки текущей недели, ещё не перенесённые в master).
 
-    Returns:
-        Словарь {imported: int, skipped: int, total: int}
+    Дедуп по (subject, date, raw_text) гарантирует что одна и та же оценка
+    из обоих листов не задвоится в БД.
     """
-    RANGE_NAME = "Все оценки!A1:ZZ50"
+    r_master = _import_from_sheet(student_id, spreadsheet_id, "Все оценки!A1:ZZ50", "Все оценки!")
+    r_week = _import_from_sheet(student_id, spreadsheet_id, "Неделя!A1:I50", "Неделя!")
 
-    try:
-        data = get_sheet_data(spreadsheet_id, RANGE_NAME)
-    except Exception as e:
-        logger.error(f"Failed to fetch 'Все оценки' for student {student_id}: {e}")
-        return {'imported': 0, 'skipped': 0, 'total': 0}
-
-    if not data:
-        logger.warning(f"No data in 'Все оценки' for student {student_id}")
-        return {'imported': 0, 'skipped': 0, 'total': 0}
-
-    records = _parse_all_grades_sheet(data)
-    logger.info(f"Parsed {len(records)} grade records from 'Все оценки' for student {student_id}")
-
-    imported = 0
-    skipped = 0
-
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        for rec in records:
-            # cell_reference уникальный: "Все оценки!{col}{row}"
-            cell_ref = f"Все оценки!{_col_letter(rec['col_index'])}{rec['row_index']}"
-
-            # date_added берём из распарсенной даты (если удалось парсить)
-            date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
-
-            try:
-                if date_added:
-                    cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference, date_added)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref, date_added))
-                else:
-                    cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref))
-                imported += 1
-            except Exception:
-                # UNIQUE constraint — запись уже существует
-                skipped += 1
-
-    result = {'imported': imported, 'skipped': skipped, 'total': len(records)}
-    logger.info(f"History import for student {student_id}: {result}")
-    return result
-
-
-def import_week_for_student(student_id: int, spreadsheet_id: str) -> Dict[str, int]:
-    """
-    Импортирует оценки из листа «Неделя» для текущей недели.
-
-    Зачем: когда бот лежал (например, при миграции с Pi на VPS), monitor_engine
-    не успел прочитать «Сегодня» за пропущенные дни. Лист «Все оценки»
-    обновляется учителями с задержкой и не содержит свежей недели.
-    Лист «Неделя» — рабочий лист с актуальной недели (дни как колонки).
-
-    Структура идентична «Все оценки» (предметы как строки, даты как колонки),
-    поэтому переиспользуем `_parse_all_grades_sheet`. RANGE — A1:I50 (7 дней
-    + запас).
-
-    Returns:
-        {imported: int, skipped: int, total: int}
-    """
-    RANGE_NAME = "Неделя!A1:I50"
-
-    try:
-        data = get_sheet_data(spreadsheet_id, RANGE_NAME)
-    except Exception as e:
-        logger.error(f"Failed to fetch 'Неделя' for student {student_id}: {e}")
-        return {'imported': 0, 'skipped': 0, 'total': 0}
-
-    if not data:
-        logger.warning(f"No data in 'Неделя' for student {student_id}")
-        return {'imported': 0, 'skipped': 0, 'total': 0}
-
-    records = _parse_all_grades_sheet(data)
-    logger.info(f"Parsed {len(records)} records from 'Неделя' for student {student_id}")
-
-    imported = 0
-    skipped = 0
-
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        for rec in records:
-            # cell_reference уникальный per лист — не конфликтует с «Все оценки»
-            cell_ref = f"Неделя!{_col_letter(rec['col_index'])}{rec['row_index']}"
-            date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
-
-            try:
-                if date_added:
-                    cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference, date_added)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref, date_added))
-                else:
-                    cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref))
-                imported += 1
-            except Exception:
-                # UNIQUE constraint — запись уже существует (по cell_reference)
-                skipped += 1
-
-    result = {'imported': imported, 'skipped': skipped, 'total': len(records)}
-    logger.info(f"Week import for student {student_id}: {result}")
+    result = {
+        'imported': r_master['imported'] + r_week['imported'],
+        'skipped': r_master['skipped'] + r_week['skipped'],
+        'total': r_master['total'] + r_week['total'],
+    }
+    logger.info(
+        f"History import for student {student_id}: "
+        f"master={r_master['imported']}/{r_master['total']}, "
+        f"week={r_week['imported']}/{r_week['total']}"
+    )
     return result
 
 
@@ -337,10 +316,18 @@ def import_quarters_for_student(student_id: int, spreadsheet_id: str) -> Dict[st
     return result
 
 
-def import_history_for_all_students():
+def import_history_for_all_students(force: bool = False):
     """
-    Одноразовый импорт истории для всех студентов, у которых ещё нет исторических данных.
-    Проверяет наличие записей с cell_reference вида 'Все оценки!%'.
+    Импорт истории для всех студентов из листа «Все оценки».
+
+    Если force=False (default): пропускает студентов у которых УЖЕ есть
+    исторические записи — это поведение для одноразового первоначального
+    импорта при старте бота.
+
+    Если force=True: всегда вызывает import_history_for_student. UNIQUE
+    constraint на cell_reference защитит от дубликатов, но НОВЫЕ оценки
+    (которые учитель добавил после последнего импорта) подтянутся.
+    Используется регулярным sync'ом из monitor_engine раз в час.
     """
     from src.database_manager import get_active_spreadsheets
 
@@ -353,26 +340,30 @@ def import_history_for_all_students():
         student_id = student['student_id']
         spreadsheet_id = student['spreadsheet_id']
 
-        # Проверяем, был ли уже импорт
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT COUNT(*) as c FROM grade_history
-                WHERE student_id = ? AND cell_reference LIKE 'Все оценки!%'
-            ''', (student_id,))
-            count = cursor.fetchone()['c']
+        if not force:
+            # Первоначальный импорт: пропускаем уже импортированных
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) as c FROM grade_history
+                    WHERE student_id = ? AND cell_reference LIKE 'Все оценки!%'
+                ''', (student_id,))
+                count = cursor.fetchone()['c']
 
-        if count > 0:
-            logger.info(f"Student {student_id} already has {count} historical records, skipping.")
-            continue
+            if count > 0:
+                logger.info(f"Student {student_id} already has {count} historical records, skipping.")
+                continue
 
         logger.info(f"Importing history for student {student_id} ({student['fio']})...")
         result = import_history_for_student(student_id, spreadsheet_id)
         logger.info(f"Student {student_id} history: imported={result['imported']}, skipped={result['skipped']}")
 
-        # Также импортируем четвертные
-        q_result = import_quarters_for_student(student_id, spreadsheet_id)
-        logger.info(f"Student {student_id} quarters: imported={q_result['imported']}, skipped={q_result['skipped']}")
+        if not force:
+            # Четвертные импортируем только при первоначальном (force=True вызывается
+            # регулярно — quarter_grades имеет UPSERT logic, можно дёргать тоже,
+            # но это лишний трафик; четверти меняются раз в неделю-две)
+            q_result = import_quarters_for_student(student_id, spreadsheet_id)
+            logger.info(f"Student {student_id} quarters: imported={q_result['imported']}, skipped={q_result['skipped']}")
 
 
 def _col_letter(col_index: int) -> str:
