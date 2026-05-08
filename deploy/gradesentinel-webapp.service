@@ -1,0 +1,50 @@
+[Unit]
+Description=GradeSentinel WebApp (Flask)
+Documentation=https://github.com/anthropics/gradesentinel
+After=network-online.target gradesentinel-bot.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gradesentinel
+Group=gradesentinel
+WorkingDirectory=/opt/gradesentinel/webapp
+EnvironmentFile=/etc/gradesentinel/bot.env
+Environment="DATABASE_PATH=/var/lib/gradesentinel/sentinel.db"
+Environment="WEBAPP_PORT=8443"
+Environment="WEBAPP_HOST=127.0.0.1"
+Environment="PYTHONPATH=/opt/gradesentinel"
+ExecStart=/opt/gradesentinel/venv/bin/python app.py
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# ── Hardening ────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# WebApp пишет в БД через тот же sqlite (init_db создаёт схему если нет).
+ReadWritePaths=/var/lib/gradesentinel
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# ── Лимиты ресурсов ──
+MemoryMax=200M
+MemoryHigh=180M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

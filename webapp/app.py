@@ -174,4 +174,7 @@ def health():
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("WEBAPP_PORT", 8443))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    # На bare-metal слушаем только loopback — наружу выпускает Caddy через 443.
+    # В Docker-режиме (deprecated) можно было перезаписать на 0.0.0.0.
+    host = os.environ.get("WEBAPP_HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=False)

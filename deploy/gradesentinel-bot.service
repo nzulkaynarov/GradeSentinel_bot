@@ -1,0 +1,49 @@
+[Unit]
+Description=GradeSentinel Telegram Bot
+Documentation=https://github.com/anthropics/gradesentinel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gradesentinel
+Group=gradesentinel
+WorkingDirectory=/opt/gradesentinel
+EnvironmentFile=/etc/gradesentinel/bot.env
+Environment="DATABASE_PATH=/var/lib/gradesentinel/sentinel.db"
+Environment="GOOGLE_CREDENTIALS_PATH=/etc/gradesentinel/credentials.json"
+Environment="HEARTBEAT_PATH=/var/lib/gradesentinel/.heartbeat"
+Environment="PYTHONPATH=/opt/gradesentinel"
+ExecStart=/opt/gradesentinel/venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# ── Hardening ────────────────────────────────────────────
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/gradesentinel
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# ── Лимиты ресурсов (4 GB VPS — оставляем место для webapp/Caddy/системы) ──
+MemoryMax=400M
+MemoryHigh=350M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

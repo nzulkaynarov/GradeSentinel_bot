@@ -1,0 +1,51 @@
+# /etc/sudoers.d/deploy-runner — узкий passwordless sudo для GH Actions runner.
+# Юзер 'deploy' может только то, что нужно для деплоя GradeSentinel.
+# Установка: sudo install -m 0440 -o root -g root deploy-sudoers /etc/sudoers.d/deploy-runner
+# Проверка: sudo visudo -cf deploy-sudoers
+#
+# Принцип: каждая команда — точный путь и точные аргументы. Никаких wildcards
+# в bin-путях, чтобы deploy не мог через sudo выполнить произвольный код.
+
+# Запись секретов и кода (только в нужные директории)
+deploy ALL=(root) NOPASSWD: /usr/bin/install -d -o gradesentinel -g gradesentinel -m 0750 /etc/gradesentinel
+deploy ALL=(root) NOPASSWD: /usr/bin/install -d -o gradesentinel -g gradesentinel -m 0750 /opt/gradesentinel
+deploy ALL=(root) NOPASSWD: /usr/bin/install -d -o gradesentinel -g gradesentinel -m 0750 /var/lib/gradesentinel
+
+# Атомарная запись секретов через tee (deploy.yml пишет в эти файлы)
+deploy ALL=(root) NOPASSWD: /usr/bin/tee /etc/gradesentinel/bot.env
+deploy ALL=(root) NOPASSWD: /usr/bin/tee /etc/gradesentinel/credentials.json
+
+# Права на секреты
+deploy ALL=(root) NOPASSWD: /usr/bin/chmod 0640 /etc/gradesentinel/bot.env
+deploy ALL=(root) NOPASSWD: /usr/bin/chmod 0640 /etc/gradesentinel/credentials.json
+deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/bot.env
+deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/credentials.json
+
+# Синхронизация кода в /opt/gradesentinel
+deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete --exclude=venv --exclude=.git --exclude=data --exclude=config /home/deploy/actions-runner/_work/*/
+deploy ALL=(root) NOPASSWD: /usr/bin/chown -R gradesentinel\:gradesentinel /opt/gradesentinel
+
+# Установка systemd-юнитов (после rsync они могли обновиться)
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-bot.service /etc/systemd/system/gradesentinel-bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-webapp.service /etc/systemd/system/gradesentinel-webapp.service
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.service /etc/systemd/system/gradesentinel-heartbeat.service
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.timer /etc/systemd/system/gradesentinel-heartbeat.timer
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/Caddyfile
+
+# Управление сервисами (только наши, по префиксу gradesentinel-)
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart gradesentinel-bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart gradesentinel-webapp.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl reload caddy.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl enable gradesentinel-bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl enable gradesentinel-webapp.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl enable gradesentinel-heartbeat.timer
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl is-active gradesentinel-bot.service
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl is-active gradesentinel-webapp.service
+
+# Запуск pip в venv от юзера gradesentinel (для установки/обновления зависимостей)
+deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel/venv/bin/pip install --upgrade pip
+deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel/venv/bin/pip install -r /opt/gradesentinel/requirements.txt
+
+# Валидация Caddyfile до reload
+deploy ALL=(root) NOPASSWD: /usr/bin/caddy validate --config /etc/caddy/Caddyfile
