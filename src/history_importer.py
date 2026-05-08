@@ -22,11 +22,18 @@ from src.database_manager import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-# Маппинг русских названий месяцев (в родительном падеже и сокращениях)
+# Маппинг русских названий месяцев (полные формы + распространённые сокращения).
+# ВАЖНО: префиксы должны быть УНИКАЛЬНЫМИ — иначе 'март'.startswith('м') матчит
+# короткое 'м' и парсит «мая» как март (реальный баг найден в листе «Неделя»
+# где даты в формате «3 мая вс»).
 MONTH_MAP = {
+    # Длинные формы (родительный падеж + именительный)
     'январ': 1, 'феврал': 2, 'март': 3, 'апрел': 4,
-    'ма': 5, 'июн': 6, 'июл': 7, 'август': 8,
+    'мая': 5, 'май': 5,
+    'июн': 6, 'июл': 7, 'август': 8,
     'сентябр': 9, 'октябр': 10, 'ноябр': 11, 'декабр': 12,
+    # Сокращения 4 буквы (для коротких форматов «3 сент»)
+    'сент': 9, 'окт': 10, 'нояб': 11, 'дек': 12,
 }
 
 # Строки, которые НЕ являются предметами
@@ -54,11 +61,14 @@ def _parse_russian_date(date_str: str) -> Optional[datetime]:
         return None
 
     day = int(match.group(1))
-    month_text = match.group(2).lower().rstrip('яьа')  # убираем окончания: сентября -> сентябр
-
+    month_text = match.group(2).lower()
+    # Раньше тут было rstrip('яьа') и fallback на prefix.startswith(month_text).
+    # Это создавало fake-match: «мая» → rstrip → «м» → 'март'.startswith('м')=True
+    # → парсил как март. Сейчас MONTH_MAP содержит явные алиасы (мая/май, сент/сентябр)
+    # и матчим только в одну сторону: month_text начинается с известного префикса.
     month = None
     for prefix, m in MONTH_MAP.items():
-        if month_text.startswith(prefix) or prefix.startswith(month_text):
+        if month_text.startswith(prefix):
             month = m
             break
 
@@ -194,6 +204,68 @@ def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str
 
     result = {'imported': imported, 'skipped': skipped, 'total': len(records)}
     logger.info(f"History import for student {student_id}: {result}")
+    return result
+
+
+def import_week_for_student(student_id: int, spreadsheet_id: str) -> Dict[str, int]:
+    """
+    Импортирует оценки из листа «Неделя» для текущей недели.
+
+    Зачем: когда бот лежал (например, при миграции с Pi на VPS), monitor_engine
+    не успел прочитать «Сегодня» за пропущенные дни. Лист «Все оценки»
+    обновляется учителями с задержкой и не содержит свежей недели.
+    Лист «Неделя» — рабочий лист с актуальной недели (дни как колонки).
+
+    Структура идентична «Все оценки» (предметы как строки, даты как колонки),
+    поэтому переиспользуем `_parse_all_grades_sheet`. RANGE — A1:I50 (7 дней
+    + запас).
+
+    Returns:
+        {imported: int, skipped: int, total: int}
+    """
+    RANGE_NAME = "Неделя!A1:I50"
+
+    try:
+        data = get_sheet_data(spreadsheet_id, RANGE_NAME)
+    except Exception as e:
+        logger.error(f"Failed to fetch 'Неделя' for student {student_id}: {e}")
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    if not data:
+        logger.warning(f"No data in 'Неделя' for student {student_id}")
+        return {'imported': 0, 'skipped': 0, 'total': 0}
+
+    records = _parse_all_grades_sheet(data)
+    logger.info(f"Parsed {len(records)} records from 'Неделя' for student {student_id}")
+
+    imported = 0
+    skipped = 0
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for rec in records:
+            # cell_reference уникальный per лист — не конфликтует с «Все оценки»
+            cell_ref = f"Неделя!{_col_letter(rec['col_index'])}{rec['row_index']}"
+            date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
+
+            try:
+                if date_added:
+                    cursor.execute('''
+                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference, date_added)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref, date_added))
+                else:
+                    cursor.execute('''
+                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref))
+                imported += 1
+            except Exception:
+                # UNIQUE constraint — запись уже существует (по cell_reference)
+                skipped += 1
+
+    result = {'imported': imported, 'skipped': skipped, 'total': len(records)}
+    logger.info(f"Week import for student {student_id}: {result}")
     return result
 
 

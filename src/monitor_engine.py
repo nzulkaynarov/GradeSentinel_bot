@@ -464,6 +464,48 @@ def check_for_quarter_changes():
     logger.info("Quarter grades check completed.")
 
 
+_last_week_sync_ts = 0.0
+_WEEK_SYNC_INTERVAL_SECONDS = 3600.0  # раз в час, чтобы не палить квоту Sheets
+
+
+def _maybe_sync_week_sheet():
+    """Раз в час перечитывает лист «Неделя» для всех студентов.
+
+    Зачем: лист «Сегодня» (читаемый каждые 5 мин) показывает только текущий день,
+    а если бот лежал несколько дней (например, при миграции инфраструктуры),
+    оценки за пропущенные дни существуют только в листе «Неделя». Учителя
+    туда вписывают ежедневно, в «Все оценки» — с задержкой через автоматику.
+
+    UNIQUE constraint на cell_reference защищает от дубликатов при повторных
+    проходах. Cost: ~24 read/day per student × 300 read/min/user квоты = запас.
+    """
+    global _last_week_sync_ts
+    now = time.time()
+    if now - _last_week_sync_ts < _WEEK_SYNC_INTERVAL_SECONDS:
+        return
+
+    try:
+        from src.history_importer import import_week_for_student
+        from src.database_manager import get_active_spreadsheets
+
+        for s in get_active_spreadsheets():
+            try:
+                result = import_week_for_student(s["student_id"], s["spreadsheet_id"])
+                if result["imported"] > 0:
+                    logger.info(
+                        f"Week-sync for student {s['student_id']}: "
+                        f"+{result['imported']} new grades from 'Неделя'"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Week-sync failed for student {s['student_id']}: {e}"
+                )
+
+        _last_week_sync_ts = now
+    except Exception as e:
+        logger.error(f"Week-sync top-level error: {e}")
+
+
 def start_polling(interval_seconds: Optional[int] = None):
     from src.config import POLLING_INTERVAL
     from src.error_reporter import report
@@ -473,6 +515,7 @@ def start_polling(interval_seconds: Optional[int] = None):
     while True:
         try:
             check_for_new_grades()
+            _maybe_sync_week_sheet()
         except Exception as e:
             report("monitor.cycle", e)
 
