@@ -13,7 +13,7 @@
 
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.google_sheets import get_sheet_data
@@ -21,6 +21,13 @@ from src.data_cleaner import sanitize_grade, sanitize_cell
 from src.database_manager import get_db_connection
 
 logger = logging.getLogger(__name__)
+
+
+def _tashkent_today_date():
+    """Сегодняшняя дата по Ташкенту (UTC+5). Зона ответственности monitor'а —
+    history-sync на эту дату НЕ пишет, чтобы не конфликтовать с двухфазным
+    подтверждением (race из инцидента 13.05.2026)."""
+    return (datetime.utcnow() + timedelta(hours=5)).date()
 
 # Маппинг русских названий месяцев (полные формы + распространённые сокращения).
 # ВАЖНО: префиксы должны быть УНИКАЛЬНЫМИ — иначе 'март'.startswith('м') матчит
@@ -154,7 +161,22 @@ def _parse_all_grades_sheet(data: List[List[str]]) -> List[Dict[str, Any]]:
                 'row_index': row_idx,
             })
 
-    return records
+    # Фикс B: дедуп внутри листа. Учитель иногда повторяет один и тот же день
+    # в нескольких столбцах «Все оценки» (наблюдалось в проде: GE6/IN6, GD6/IM6).
+    # Берём первое появление (subject, day, raw_text), остальное молча отбрасываем.
+    seen: set = set()
+    deduped: List[Dict[str, Any]] = []
+    for rec in records:
+        key = (
+            rec['subject'],
+            rec['date'].date().isoformat() if rec['date'] else None,
+            rec['raw_text'],
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(rec)
+    return deduped
 
 
 def _import_from_sheet(
@@ -185,10 +207,19 @@ def _import_from_sheet(
     records = _parse_all_grades_sheet(data)
     imported = 0
     skipped = 0
+    today = _tashkent_today_date()
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         for rec in records:
+            # Фикс A: сегодняшние даты — зона monitor'а. Не пишем из истории,
+            # чтобы не плодить дубли из-за race с двухфазным подтверждением
+            # (monitor откладывает UPDATE на цикл, а мастер-лист уже содержит
+            # новое значение → SELECT-дедуп ниже не находит → INSERT дубля).
+            if rec['date'] and rec['date'].date() == today:
+                skipped += 1
+                continue
+
             date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
             cell_ref = f"{sheet_label}{_col_letter(rec['col_index'])}{rec['row_index']}"
 
