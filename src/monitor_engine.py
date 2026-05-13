@@ -3,8 +3,8 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from collections import defaultdict
-from typing import Optional
+from collections import defaultdict, Counter
+from typing import List, Optional, Tuple
 from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
@@ -13,7 +13,7 @@ from src.database_manager import (
     upsert_quarter_grade, get_db_connection, get_notify_mode
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
-from src.data_cleaner import sanitize_grade
+from src.data_cleaner import sanitize_grade, sanitize_cell
 from src.utils import clean_student_name
 from src.notification_helpers import (
     format_grade_notification, format_grade_change_notification, is_quiet_hours,
@@ -39,6 +39,79 @@ _polling_lock = threading.Lock()
 _student_failure_counts: dict = defaultdict(int)
 # Предотвращаем повторные алерты по одному и тому же ученику чаще раза в день
 _last_failure_alert: dict = {}
+
+# ─────────────────────────────────────────────────────────────
+# Двухфазное подтверждение оценок («fixtures»)
+# ─────────────────────────────────────────────────────────────
+# Защита от ложных уведомлений из-за опечаток учителя:
+# учитель ввёл «5», бот моментально шлёт уведомление, через минуту
+# учитель стирает / меняет — родитель получил «оценку-призрак».
+#
+# Решение: НЕ слать сразу. Первый раз увидели изменение → положили в
+# pending. На следующем polling-цикле (через ~5 мин) если значение всё
+# ещё то же → подтверждено, пишем в БД + уведомление. Если изменилось /
+# пропало → молча отбрасываем (типо).
+#
+# Хранение in-memory: переживает один-два цикла, при рестарте
+# пересоздаётся (грейды попадут в pending заново на след. цикле → 5-10
+# мин задержки после рестарта). TTL чистит stale записи.
+_pending_lock = threading.Lock()
+# (student_id, cell_reference) -> {'raw_text': str, 'first_seen': float}
+_pending_grades: dict = {}
+_PENDING_TTL_SECONDS = 1800  # 30 мин: очищаем зависшие pending (теоретически 2-3 цикла)
+
+
+def _check_pending_confirmation(student_id: int, cell_ref: str, new_raw_text: str) -> bool:
+    """True если значение совпало с прошлым циклом (подтверждено).
+    False если первый раз видим или значение изменилось — пометили pending,
+    ждём следующий цикл."""
+    now = time.time()
+    with _pending_lock:
+        # GC старых записей
+        stale = [k for k, v in _pending_grades.items()
+                 if now - v['first_seen'] > _PENDING_TTL_SECONDS]
+        for k in stale:
+            _pending_grades.pop(k, None)
+
+        key = (student_id, cell_ref)
+        existing = _pending_grades.get(key)
+        if existing and existing['raw_text'] == new_raw_text:
+            _pending_grades.pop(key, None)
+            return True
+        # Новое или изменённое pending — запоминаем, не уведомляем сейчас
+        _pending_grades[key] = {'raw_text': new_raw_text, 'first_seen': now}
+        return False
+
+
+def _compute_added_grades(
+    old: List[Tuple[Optional[float], str]],
+    new: List[Tuple[Optional[float], str]],
+) -> List[Tuple[Optional[float], str]]:
+    """Multiset diff: какие оценки появились в new которых не было в old.
+    «2» → «2/5» вернёт [(5.0, '5')]. «» → «2/5» вернёт обе. «2/5» → «2» вернёт []."""
+    old_counter = Counter(t for _, t in old)
+    added: List[Tuple[Optional[float], str]] = []
+    for g, t in new:
+        if old_counter[t] > 0:
+            old_counter[t] -= 1
+        else:
+            added.append((g, t))
+    return added
+
+
+def _cell_avg_grade(grades: List[Tuple[Optional[float], str]]) -> Optional[float]:
+    """Среднее численных оценок в ячейке для grade_history.grade_value.
+    Для «2/5» вернёт 3.5. Спец-токены («н») игнорируются."""
+    nums = [g for g, _ in grades if g is not None]
+    if not nums:
+        return None
+    return sum(nums) / len(nums)
+
+
+def _cell_raw_text(grades: List[Tuple[Optional[float], str]]) -> str:
+    """«Канонический» raw_text ячейки: соединение через «/».
+    Для [(2,'2'),(5,'5')] → '2/5'. Для [(None,'н')] → 'н'."""
+    return "/".join(t for _, t in grades)
 
 def set_bot_instance(bot):
     global _bot
@@ -262,30 +335,83 @@ def _check_for_new_grades_impl():
             tashkent_today = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
             cell_reference = f"Сегодня!{subject}:{tashkent_today}"
 
-            grade_value, clean_text = sanitize_grade(raw_grade)
+            # Парсим ячейку как список оценок (поддержка X/Y формата)
+            new_grades = sanitize_cell(raw_grade)
+            if not new_grades:
+                # Мусор / неизвестный токен — пропускаем (как раньше)
+                continue
 
-            is_new = add_grade(student_id, subject, grade_value, clean_text, cell_reference)
+            new_clean_text = _cell_raw_text(new_grades)
+            new_grade_value = _cell_avg_grade(new_grades)
 
-            if is_new and clean_text:
-                logger.info(f"[NEW GRADE] {display_name} got '{clean_text}' in {subject}")
-                parents_ids = get_parents_for_student(student_id)
-                for tg_id in parents_ids:
+            existing = get_existing_grade(student_id, cell_reference)
+            old_clean_text = existing['raw_text'] if existing else None
+            old_grades = sanitize_cell(old_clean_text) if old_clean_text else []
+
+            # Нет изменений по сравнению с БД — следующая ячейка
+            if old_clean_text == new_clean_text:
+                continue
+
+            # Что РЕАЛЬНО добавилось (multiset diff)
+            added = _compute_added_grades(old_grades, new_grades)
+
+            # Случай «удаления» (старое было длиннее, новых оценок нет):
+            # тихо обновляем БД, без уведомления. Родителю незачем знать что
+            # учитель что-то стёр.
+            if not added:
+                if existing:
+                    update_grade(student_id, cell_reference, new_grade_value, new_clean_text)
+                    logger.info(
+                        f"[GRADE TRIMMED] {display_name}: {subject} "
+                        f"'{old_clean_text}' -> '{new_clean_text}' (no notif)"
+                    )
+                continue
+
+            # Двухфазное подтверждение: первый раз видим это изменение → ждём
+            # следующего цикла. Это убирает «оценки-призраки» от опечаток учителя.
+            if not _check_pending_confirmation(student_id, cell_reference, new_clean_text):
+                logger.info(
+                    f"[PENDING] {display_name}: {subject} '{new_clean_text}' — "
+                    f"ждём подтверждения на следующем цикле"
+                )
+                continue
+
+            # Подтверждено — пишем в БД
+            if existing:
+                update_grade(student_id, cell_reference, new_grade_value, new_clean_text)
+                logger.info(
+                    f"[GRADE CHANGED] {display_name}: {subject} "
+                    f"'{old_clean_text}' -> '{new_clean_text}' (added: {[t for _, t in added]})"
+                )
+            else:
+                add_grade(student_id, subject, new_grade_value, new_clean_text, cell_reference)
+                logger.info(f"[NEW GRADE] {display_name} got '{new_clean_text}' in {subject}")
+
+            # Грейд для эмоционального заголовка — среднее ДОБАВЛЕННЫХ
+            # (чтобы эмоция отражала ЧТО НОВОЕ пришло, а не что было до).
+            added_nums = [g for g, _ in added if g is not None]
+            emo_grade_value = (sum(added_nums) / len(added_nums)) if added_nums else None
+
+            parents_ids = get_parents_for_student(student_id)
+            for tg_id in parents_ids:
+                if old_clean_text:
+                    # «2» → «2/5»: показываем переход полной ячейки
                     batch[(tg_id, student_id)].append({
-                        'subject': subject, 'clean_text': clean_text,
-                        'grade_value': grade_value, 'change_type': 'new', 'old_text': None
+                        'subject': subject,
+                        'clean_text': new_clean_text,
+                        'grade_value': emo_grade_value,
+                        'change_type': 'changed',
+                        'old_text': old_clean_text,
                     })
-            elif not is_new and clean_text:
-                existing = get_existing_grade(student_id, cell_reference)
-                if existing and existing['raw_text'] != clean_text:
-                    old_text = existing['raw_text']
-                    update_grade(student_id, cell_reference, grade_value, clean_text)
-                    logger.info(f"[GRADE CHANGED] {display_name}: {subject} '{old_text}' -> '{clean_text}'")
-                    parents_ids = get_parents_for_student(student_id)
-                    for tg_id in parents_ids:
-                        batch[(tg_id, student_id)].append({
-                            'subject': subject, 'clean_text': clean_text,
-                            'grade_value': grade_value, 'change_type': 'changed', 'old_text': old_text
-                        })
+                else:
+                    # «» → «2/5»: новая запись, отображаем полную ячейку
+                    batch[(tg_id, student_id)].append({
+                        'subject': subject,
+                        'clean_text': new_clean_text,
+                        'grade_value': emo_grade_value,
+                        'change_type': 'new',
+                        'old_text': None,
+                    })
 
     # Отправляем собранные уведомления
     for (tg_id, student_id), grades in batch.items():

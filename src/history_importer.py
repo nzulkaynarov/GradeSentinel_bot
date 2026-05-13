@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.google_sheets import get_sheet_data
-from src.data_cleaner import sanitize_grade
+from src.data_cleaner import sanitize_grade, sanitize_cell
 from src.database_manager import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -136,14 +136,19 @@ def _parse_all_grades_sheet(data: List[List[str]]) -> List[Dict[str, Any]]:
             if not cell_value:
                 continue
 
-            grade_value, clean_text = sanitize_grade(cell_value)
-            if clean_text is None:
-                continue  # Мусор — пропускаем
+            # Парсим ячейку как список (поддержка X/Y: «2/5» → две оценки)
+            cell_grades = sanitize_cell(cell_value)
+            if not cell_grades:
+                continue  # Мусор / спец-токены, которые мы не пишем в историю
+
+            raw_text = "/".join(t for _, t in cell_grades)
+            nums = [g for g, _ in cell_grades if g is not None]
+            grade_value = (sum(nums) / len(nums)) if nums else None
 
             records.append({
                 'subject': subject,
                 'grade_value': grade_value,
-                'raw_text': clean_text,
+                'raw_text': raw_text,
                 'date': date_val,
                 'col_index': col_idx,
                 'row_index': row_idx,

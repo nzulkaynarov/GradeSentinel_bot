@@ -9,6 +9,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# Грузим локали один раз для всей тестовой сессии. В проде это делает main.py
+# при старте; тесты которые проверяют форматированный текст без этого получают
+# сырые ключи вместо переводов.
+from src.i18n import load_translations as _load_translations
+_load_translations()
+
 
 @pytest.fixture
 def temp_db(monkeypatch):
