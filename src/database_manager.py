@@ -146,6 +146,9 @@ def init_db():
         ''')
 
         # 5. История оценок (для мониторинга)
+        # grade_date — фактическая дата оценки. Пока nullable (см. этап 1A RFC
+        # в Docs/rfc-grades-source-of-truth.md); NOT NULL и UNIQUE по содержимому
+        # придут в этапе 1C после backfill через scripts/backfill_grade_date.py.
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS grade_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -154,6 +157,7 @@ def init_db():
             grade_value REAL,
             raw_text TEXT NOT NULL,
             cell_reference TEXT NOT NULL,
+            grade_date DATE,
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(student_id) REFERENCES students(id),
             UNIQUE(student_id, cell_reference)
@@ -237,6 +241,19 @@ def init_db():
             if 'lang' not in columns:
                 cursor.execute("ALTER TABLE parents ADD COLUMN lang TEXT DEFAULT 'ru'")
                 logger.info("Database migration: lang column added to parents.")
+
+        # 11a. Миграция: nullable колонка grade_date в grade_history и архиве.
+        # Этап 1A RFC (Docs/rfc-grades-source-of-truth.md): отделяем фактическую
+        # дату оценки от технического `date_added`. Пока NULL — backfill отдельным
+        # скриптом scripts/backfill_grade_date.py, NOT NULL и новый UNIQUE придут
+        # позже отдельной миграцией после успешного backfill в проде.
+        for tbl in ('grade_history', 'grade_history_archive'):
+            if _table_exists(cursor, tbl):
+                cursor.execute(f"PRAGMA table_info({tbl})")
+                cols = [c[1] for c in cursor.fetchall()]
+                if 'grade_date' not in cols:
+                    cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN grade_date DATE")
+                    logger.info(f"Database migration: grade_date column added to {tbl}.")
 
         # 12. Индексы для производительности
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_date ON grade_history(student_id, date_added)')
@@ -358,6 +375,7 @@ def init_db():
             grade_value REAL,
             raw_text TEXT NOT NULL,
             cell_reference TEXT NOT NULL,
+            grade_date DATE,
             date_added TIMESTAMP NOT NULL,
             archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -1437,8 +1455,8 @@ def archive_old_grades(days: Optional[int] = None) -> int:
             placeholders = ','.join('?' * len(chunk))
             cursor.execute(
                 f'''INSERT INTO grade_history_archive
-                    (student_id, subject, grade_value, raw_text, cell_reference, date_added)
-                    SELECT student_id, subject, grade_value, raw_text, cell_reference, date_added
+                    (student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added)
+                    SELECT student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added
                     FROM grade_history
                     WHERE id IN ({placeholders})''',
                 chunk,
