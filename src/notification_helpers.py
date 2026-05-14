@@ -70,7 +70,7 @@ def get_streak_count(student_id: int) -> int:
         cursor.execute('''
             SELECT grade_value FROM grade_history
             WHERE student_id = ? AND grade_value IS NOT NULL
-            ORDER BY date_added DESC
+            ORDER BY grade_date DESC, date_added DESC
             LIMIT 20
         ''', (student_id,))
         rows = cursor.fetchall()

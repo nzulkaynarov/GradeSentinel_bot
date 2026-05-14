@@ -258,13 +258,17 @@ def compute_trend_by_day(grades, period_days):
     """
     Группирует оценки по дням, возвращает [{date, avg, count}] за весь период.
     Дни без оценок пропускаются (line chart рисует только реальные точки).
+
+    Группировка по grade_date (фактическая дата оценки), fallback на date_added
+    для совместимости со старыми записями где grade_date пока не заполнен.
     """
     by_date = defaultdict(list)
     for g in grades:
         if g.get("grade_value") is None:
             continue
-        # date_added в формате "YYYY-MM-DD HH:MM:SS"
-        date_str = g["date_added"][:10] if g.get("date_added") else None
+        date_str = g.get("grade_date")
+        if not date_str and g.get("date_added"):
+            date_str = g["date_added"][:10]
         if date_str:
             by_date[date_str].append(g["grade_value"])
 
@@ -330,12 +334,21 @@ def api_dashboard(student_id):
     # Тащим за days*2 чтобы посчитать delta vs предыдущий период
     all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
 
-    # Разделение на current и previous по date cutoff
-    cutoff = datetime.now() - timedelta(days=days)
-    cutoff_iso = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    # Разделение на current и previous по grade_date (фактической дате оценки).
+    # Cutoff — N дней назад от сегодня по Ташкенту (UTC+5), чтобы граница периодов
+    # не зависела от часа запроса.
+    today_tashkent = (datetime.utcnow() + timedelta(hours=5)).date()
+    cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
 
-    grades_current = [g for g in all_grades if g.get("date_added", "") >= cutoff_iso]
-    grades_previous = [g for g in all_grades if g.get("date_added", "") < cutoff_iso]
+    def _grade_date(g):
+        gd = g.get("grade_date")
+        if gd:
+            return gd
+        # Fallback для записей которые ещё не получили grade_date через backfill.
+        return (g.get("date_added") or "")[:10]
+
+    grades_current = [g for g in all_grades if _grade_date(g) >= cutoff_date]
+    grades_previous = [g for g in all_grades if _grade_date(g) < cutoff_date]
 
     summary = compute_summary(grades_current, grades_previous, days)
     trend_by_day = compute_trend_by_day(grades_current, days)

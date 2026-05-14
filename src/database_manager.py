@@ -464,26 +464,42 @@ def get_quarter_grades(student_id: int) -> List[Dict[str, Any]]:
 
 
 def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[str, Any]]:
-    """Возвращает историю оценок студента за последние N дней."""
+    """Возвращает историю оценок студента за последние N дней по grade_date
+    (фактическая дата оценки). date_added — технический timestamp вставки —
+    возвращается отдельно для tiebreaker'ов и обратной совместимости.
+
+    Пока в БД есть legacy-записи с grade_date IS NULL (write-path ещё не пишет
+    его — это придёт в этапе 3 RFC), используем COALESCE-fallback на дату из
+    date_added переведённую в Tashkent TZ. После завершения этапа 1C+3 fallback
+    можно убрать."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, date_added
+            SELECT subject, grade_value, raw_text, grade_date, date_added
             FROM grade_history
-            WHERE student_id = ? AND date_added >= datetime('now', ?)
-            ORDER BY date_added
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  >= date('now', '+5 hours', ?)
+            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')),
+                     date_added
         ''', (student_id, f'-{days} days'))
         return [dict(row) for row in cursor.fetchall()]
 
 def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[Dict[str, Any]]:
-    """Возвращает полную историю оценок студента за N дней (для WebApp API)."""
+    """Возвращает полную историю оценок студента за N дней (для WebApp API).
+    Период — по grade_date (фактическая дата оценки), не по date_added (это
+    технический timestamp вставки). См. RFC Docs/rfc-grades-source-of-truth.md.
+    Fallback на date_added пока write-path не переключён (этап 3)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, cell_reference, date_added
+            SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
             FROM grade_history
-            WHERE student_id = ? AND date_added >= datetime('now', ?)
-            ORDER BY date_added DESC
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  >= date('now', '+5 hours', ?)
+            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')) DESC,
+                     date_added DESC
         ''', (student_id, f'-{days} days'))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -1101,13 +1117,16 @@ def get_all_queued_telegram_ids() -> List[int]:
 def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
     """Возвращает все оценки студента за сегодня (по Ташкенту, UTC+5).
     Дедупликация по предмету: если оценка попала из 'Все оценки' и 'Сегодня',
-    берём самую свежую запись для каждого предмета."""
+    берём самую свежую запись для каждого предмета. Дата сегодня — по grade_date,
+    fallback на date(date_added, '+5 hours') для legacy-записей."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT subject, grade_value, raw_text, MAX(date_added) as date_added
             FROM grade_history
-            WHERE student_id = ? AND date(date_added, '+5 hours') = date('now', '+5 hours')
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  = date('now', '+5 hours')
             GROUP BY subject
             ORDER BY date_added
         ''', (student_id,))
@@ -1136,27 +1155,33 @@ def get_overnight_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
 
 
 def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все оценки студента за вчера (по Ташкенту, UTC+5)."""
+    """Возвращает все оценки студента за вчера (по Ташкенту, UTC+5).
+    По grade_date с fallback на date(date_added, '+5 hours') для legacy-записей."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT subject, grade_value, raw_text
             FROM grade_history
-            WHERE student_id = ? AND date(date_added, '+5 hours') = date('now', '+5 hours', '-1 day')
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  = date('now', '+5 hours', '-1 day')
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
 
 def has_today_grades_for_parent(telegram_id: int) -> bool:
-    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя (по Ташкенту, UTC+5)."""
+    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя (по Ташкенту, UTC+5).
+    Сравнение по grade_date с fallback на date(date_added, '+5 hours')."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT COUNT(*) as c FROM grade_history gh
             JOIN family_links fl ON gh.student_id = fl.student_id
             JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND date(gh.date_added, '+5 hours') = date('now', '+5 hours')
+            WHERE p.telegram_id = ?
+              AND COALESCE(gh.grade_date, date(gh.date_added, '+5 hours'))
+                  = date('now', '+5 hours')
         ''', (telegram_id,))
         return cursor.fetchone()['c'] > 0
 
