@@ -36,3 +36,46 @@ def temp_db(monkeypatch):
         os.unlink(path)
     except OSError:
         pass
+
+
+@pytest.fixture
+def legacy_temp_db(monkeypatch):
+    """Pre-1C БД: grade_date nullable + старый UNIQUE(student_id, cell_reference).
+
+    Нужно для тестов backfill-скрипта и legacy-fallback'ов в read-path.
+    После init_db делаем DROP+CREATE grade_history со старой схемой —
+    это симулирует состояние прод-БД между этапами 1A и 1C.
+    """
+    fd, path = tempfile.mkstemp(suffix='.db')
+    os.close(fd)
+
+    import src.database_manager as dbm
+    monkeypatch.setattr(dbm, 'DB_PATH', path)
+    monkeypatch.setenv('ADMIN_ID', '0')
+    dbm.init_db()
+
+    with dbm.get_db_connection() as conn:
+        conn.cursor().executescript('''
+            DROP TABLE grade_history;
+            CREATE TABLE grade_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                grade_value REAL,
+                raw_text TEXT NOT NULL,
+                cell_reference TEXT NOT NULL,
+                grade_date DATE,
+                date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(student_id) REFERENCES students(id),
+                UNIQUE(student_id, cell_reference)
+            );
+            CREATE INDEX idx_grade_history_student_date ON grade_history(student_id, date_added);
+            CREATE INDEX idx_grade_history_student_cell ON grade_history(student_id, cell_reference);
+        ''')
+
+    yield path
+
+    try:
+        os.unlink(path)
+    except OSError:
+        pass

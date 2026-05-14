@@ -1,10 +1,17 @@
-"""Этап 1A RFC (Docs/rfc-grades-source-of-truth.md):
-миграция добавляет nullable колонку grade_date в grade_history
-и grade_history_archive.
+"""Этапы 1A/1C RFC (Docs/rfc-grades-source-of-truth.md):
+1A — миграция добавляет nullable колонку grade_date в grade_history и архив.
+1C — recreate-table делает grade_date NOT NULL + UNIQUE(student, subject,
+    grade_date, raw_text). Запускается из init_db только если в БД нет
+    grade_date IS NULL строк (иначе отказ + WARN: запустить backfill).
 
-После этого этапа колонка просто существует и принимает NULL — никто пока
-не пишет в неё. Backfill придёт отдельным скриптом (этап 1B), NOT NULL
-и новый UNIQUE — этапом 1C.
+Тесты в этом файле:
+    - 1A: legacy-БД без grade_date получает колонку и существующая запись с
+      NULL grade_date переживает повторный init_db (1C skip).
+    - 1C: после полного backfill повторный init_db применяет recreate.
+    - Идемпотентность.
+
+Расширенные сценарии 1C (dedup, UNIQUE collisions, NULL guard) — в
+test_stage_1c_migration.py.
 """
 import os
 import sqlite3
@@ -23,35 +30,40 @@ def _cols(conn, table):
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
-def test_fresh_db_has_grade_date(temp_db):
-    """Свежая БД, созданная init_db — обе таблицы уже содержат grade_date."""
+def _col_notnull(conn, table, col):
+    for row in conn.execute(f"PRAGMA table_info({table})"):
+        if row[1] == col:
+            return bool(row[3])
+    return False
+
+
+def test_fresh_db_has_grade_date_not_null(temp_db):
+    """Свежая БД через init_db: grade_date присутствует И NOT NULL (этап 1C)."""
     with sqlite3.connect(temp_db) as conn:
         assert 'grade_date' in _cols(conn, 'grade_history')
         assert 'grade_date' in _cols(conn, 'grade_history_archive')
+        assert _col_notnull(conn, 'grade_history', 'grade_date'), \
+            "После этапа 1C grade_date должно быть NOT NULL"
 
 
-def test_grade_date_is_nullable(temp_db):
-    """Можно вставить запись без grade_date — это намеренно: бэкфилл отдельно."""
+def test_fresh_db_rejects_insert_without_grade_date(temp_db):
+    """NOT NULL constraint срабатывает на прямом INSERT без grade_date."""
     sid = dbm.add_student("Kid", "ss-mig")
-    with dbm.get_db_connection() as conn:
+    with dbm.get_db_connection() as conn, pytest.raises(sqlite3.IntegrityError):
         conn.cursor().execute(
             "INSERT INTO grade_history (student_id, subject, raw_text, cell_reference) "
             "VALUES (?, ?, ?, ?)",
             (sid, "Алгебра", "5", "Сегодня!Алгебра:2026-05-14"),
         )
-    with dbm.get_db_connection() as conn:
-        row = conn.cursor().execute(
-            "SELECT grade_date FROM grade_history WHERE student_id=?", (sid,)
-        ).fetchone()
-    assert row['grade_date'] is None
 
 
 def test_legacy_db_without_grade_date_is_migrated(tmp_path, monkeypatch):
-    """Симулируем старую БД (без grade_date) и проверяем что init_db добавляет
-    колонку без потери данных."""
+    """1A-сценарий: legacy-БД без grade_date. init_db добавляет колонку
+    (1A), но 1C отказывается (NULL присутствует). Существующая запись с
+    NULL grade_date — переживает миграцию без потери данных."""
     db_path = tmp_path / "legacy.db"
 
-    # Создаём grade_history по СТАРОЙ схеме (без grade_date)
+    # Создаём grade_history по САМОЙ СТАРОЙ схеме (без grade_date)
     with sqlite3.connect(db_path) as conn:
         conn.execute('''
             CREATE TABLE grade_history (
@@ -72,7 +84,6 @@ def test_legacy_db_without_grade_date_is_migrated(tmp_path, monkeypatch):
         conn.commit()
         assert 'grade_date' not in _cols(conn, 'grade_history')
 
-    # Запускаем init_db на этой БД — миграция должна добавить grade_date
     monkeypatch.setattr(dbm, 'DB_PATH', str(db_path))
     monkeypatch.setenv('ADMIN_ID', '0')
     dbm.init_db()
@@ -80,18 +91,20 @@ def test_legacy_db_without_grade_date_is_migrated(tmp_path, monkeypatch):
     with sqlite3.connect(db_path) as conn:
         assert 'grade_date' in _cols(conn, 'grade_history')
         assert 'grade_date' in _cols(conn, 'grade_history_archive')
-        # Существующая запись осталась
+        # 1C НЕ должен был запуститься — есть NULL grade_date в строке
+        assert not _col_notnull(conn, 'grade_history', 'grade_date'), \
+            "1C должен был отказаться при NULL grade_date"
         row = conn.execute(
             "SELECT raw_text, grade_date FROM grade_history WHERE id=1"
         ).fetchone()
     assert row[0] == '5'
-    assert row[1] is None  # backfill ещё впереди
+    assert row[1] is None
 
 
 def test_init_db_is_idempotent(temp_db):
-    """Повторный вызов init_db на той же БД не падает (миграция grade_date
-    проверяет наличие через PRAGMA)."""
+    """Повторный вызов init_db на уже мигрированной БД не падает."""
     dbm.init_db()  # уже было в fixture, повторяем
     dbm.init_db()
     with sqlite3.connect(temp_db) as conn:
         assert 'grade_date' in _cols(conn, 'grade_history')
+        assert _col_notnull(conn, 'grade_history', 'grade_date')
