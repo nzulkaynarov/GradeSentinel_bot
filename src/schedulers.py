@@ -9,7 +9,7 @@
 import time
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.notification_helpers import TIMEZONE_OFFSET_HOURS
 from src.i18n import t
@@ -26,7 +26,7 @@ def set_bot_instance(bot):
 
 
 def _get_local_now() -> datetime:
-    return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET_HOURS)
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=TIMEZONE_OFFSET_HOURS)
 
 
 def start_daily_schedulers():

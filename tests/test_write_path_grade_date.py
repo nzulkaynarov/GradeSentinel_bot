@@ -10,7 +10,7 @@ Legacy-записи (до 1B бэкфилла) ещё могут быть с NUL
 """
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -25,7 +25,7 @@ from src.history_importer import import_history_for_student
 
 
 def _tashkent_today():
-    return (datetime.utcnow() + timedelta(hours=5)).date()
+    return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
 
 
 def _seed_active_student(temp_db, sid_label='ss-w'):
@@ -37,7 +37,7 @@ def _seed_active_student(temp_db, sid_label='ss-w'):
     sid = dbm.add_student("Kid", sid_label)
     dbm.update_student_display_name(sid, "Kid")
     dbm.link_student_to_family(fam_id, sid)
-    future = (datetime.utcnow() + timedelta(days=30)).strftime('%Y-%m-%d')
+    future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
             "UPDATE families SET subscription_end = ? WHERE id = ?",
@@ -117,8 +117,8 @@ def test_add_grade_defaults_to_today_when_grade_date_omitted(temp_db):
     """После 1C grade_date NOT NULL. add_grade без kwarg должен дефолтить на
     сегодняшнюю дату по Ташкенту — единственный безопасный fallback для
     legacy-вызовов (это домен monitor'а)."""
-    from datetime import datetime, timedelta
-    expected = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
+    from datetime import datetime, timedelta, timezone
+    expected = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
     sid = dbm.add_student("Kid", "ss-compat")
     ok = dbm.add_grade(sid, "X", 5.0, "5", "Сегодня!X:2026-05-14")
     assert ok is True

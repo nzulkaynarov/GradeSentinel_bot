@@ -28,8 +28,8 @@ def setup_student(temp_db):
     dbm.update_student_display_name(student_id, "Kid Display")
     dbm.link_student_to_family(fam_id, student_id)
     # Активная подписка чтобы попасть в get_active_spreadsheets_with_subscription
-    from datetime import datetime, timedelta
-    future = (datetime.utcnow() + timedelta(days=30)).strftime('%Y-%m-%d')
+    from datetime import datetime, timedelta, timezone
+    future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
             "UPDATE families SET subscription_end = ? WHERE id = ?",

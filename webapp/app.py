@@ -16,7 +16,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs
 from flask import Flask, render_template, jsonify, request, abort
 
@@ -337,7 +337,7 @@ def api_dashboard(student_id):
     # Разделение на current и previous по grade_date (фактической дате оценки).
     # Cutoff — N дней назад от сегодня по Ташкенту (UTC+5), чтобы граница периодов
     # не зависела от часа запроса.
-    today_tashkent = (datetime.utcnow() + timedelta(hours=5)).date()
+    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
 
     def _grade_date(g):

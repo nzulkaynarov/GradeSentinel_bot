@@ -7,7 +7,7 @@
 """
 import os
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -37,7 +37,7 @@ def test_get_history_uses_grade_date_for_period(temp_db):
     период «за последние 14 дней» если сегодня близко к маю (которая является
     grade_date). Раньше она бы выпала фильтром по date_added."""
     sid = dbm.add_student("Kid", "ss-period")
-    today = (datetime.utcnow() + timedelta(hours=5)).date()
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     # date_added — два месяца назад (имитация битого парсера),
     # grade_date — вчера (реальная дата оценки)
     fake_old_date_added = (today - timedelta(days=70)).isoformat() + " 12:00:00"
@@ -65,7 +65,7 @@ def test_today_grades_use_grade_date(temp_db):
     """Запись с grade_date=сегодня, но date_added на год назад — должна попасть
     в «оценки за сегодня»."""
     sid = dbm.add_student("Kid", "ss-today")
-    today = (datetime.utcnow() + timedelta(hours=5)).date()
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     _seed_grade(
         sid, "История", "5", "Все оценки!XX1",
         date_added="2025-01-01 12:00:00",
@@ -79,7 +79,7 @@ def test_today_grades_use_grade_date(temp_db):
 
 def test_yesterday_grades_use_grade_date(temp_db):
     sid = dbm.add_student("Kid", "ss-yday")
-    today = (datetime.utcnow() + timedelta(hours=5)).date()
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     yday = (today - timedelta(days=1)).isoformat()
     _seed_grade(
         sid, "География", "3", "Все оценки!YY1",

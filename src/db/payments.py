@@ -13,7 +13,7 @@ API:
 admin /grant_sub (бесплатное продление без транзакции).
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from src.db.connection import get_db_connection
@@ -132,7 +132,7 @@ def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
               AND f.subscription_end > datetime('now')
               AND f.subscription_end <= datetime('now', ?)
         ''', (f'+{days + 1} days',))
-        target_date = (datetime.utcnow() + timedelta(days=days)).date()
+        target_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=days)).date()
         results = []
         for row in cursor.fetchall():
             try:

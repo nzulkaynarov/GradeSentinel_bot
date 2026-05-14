@@ -5,7 +5,7 @@
 - Логика тихих часов (22:00-07:00)
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from src.i18n import t
@@ -15,8 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 def _get_local_now() -> datetime:
-    from datetime import timedelta
-    return datetime.utcnow() + timedelta(hours=TIMEZONE_OFFSET_HOURS)
+    # Naive datetime в Tashkent TZ: получаем aware UTC и снимаем tzinfo,
+    # чтобы сохранить совместимость с naive-datetime'ами в коде/SQL.
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=TIMEZONE_OFFSET_HOURS)
 
 
 def get_local_hour() -> int:

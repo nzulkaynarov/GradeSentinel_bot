@@ -13,7 +13,7 @@
 
 import re
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Tuple
 
 from src.google_sheets import get_sheet_data
@@ -27,7 +27,7 @@ def _tashkent_today_date():
     """Сегодняшняя дата по Ташкенту (UTC+5). Зона ответственности monitor'а —
     history-sync на эту дату НЕ пишет, чтобы не конфликтовать с двухфазным
     подтверждением (race из инцидента 13.05.2026)."""
-    return (datetime.utcnow() + timedelta(hours=5)).date()
+    return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
 
 # Маппинг русских названий месяцев (полные формы + распространённые сокращения).
 # ВАЖНО: префиксы должны быть УНИКАЛЬНЫМИ — иначе 'март'.startswith('м') матчит

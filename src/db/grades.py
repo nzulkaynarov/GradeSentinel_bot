@@ -17,7 +17,7 @@ grade_date NOT NULL, но COALESCE остаётся бесплатной защ�
 """
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from src.db.connection import get_db_connection
@@ -36,7 +36,7 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
     Если caller не передал — дефолт на сегодня по Ташкенту (зона monitor'а).
     """
     if grade_date is None:
-        grade_date = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
+        grade_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:

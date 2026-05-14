@@ -14,7 +14,7 @@
 """
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -28,7 +28,7 @@ from src.history_importer import import_history_for_student, _parse_all_grades_s
 
 
 def _tashkent_today():
-    return (datetime.utcnow() + timedelta(hours=5)).date()
+    return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
 
 
 def _date_label_today_ru():

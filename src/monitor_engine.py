@@ -2,7 +2,7 @@ import time
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, Counter
 from typing import List, Optional, Tuple
 from telebot import types
@@ -220,7 +220,7 @@ def _record_student_failure(student_id: int, display_name: str):
     count = _student_failure_counts[student_id]
     if count >= _FAILURE_THRESHOLD:
         last_alert = _last_failure_alert.get(student_id)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         if last_alert is None or (now - last_alert).total_seconds() > _FAILURE_ALERT_COOLDOWN_HOURS * 3600:
             _last_failure_alert[student_id] = now
             logger.error(
@@ -332,7 +332,7 @@ def _check_for_new_grades_impl():
 
             # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню
             # Ключ: предмет + дата (не row_idx, т.к. строки могут сдвигаться при вставке/удалении)
-            tashkent_today = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
+            tashkent_today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
             cell_reference = f"Сегодня!{subject}:{tashkent_today}"
 
             # Парсим ячейку как список оценок (поддержка X/Y формата)
