@@ -6,10 +6,11 @@ nav_day: { other: "A day" }
 nav_pricing: { other: "Pricing" }
 nav_docs: { other: "Docs" }
 nav_signin: { other: "Sign in" }
+nav_menu: { other: "Menu" }
 cta_open_bot: { other: "Open the bot" }
 
-meta_live: { other: "Live in Uzbekistan · v2.5" }
-meta_center: { other: "<b>1,247</b> families · <b>3,412</b> kids · <b>↑ 18%</b> avg grade" }
+meta_live: { other: "Live in Uzbekistan" }
+meta_center: { other: "5 min to push · 3 languages · in-Telegram payments" }
 meta_right: { other: "Tashkent · UTC+5" }
 meta_3min: { other: "3 minutes to set up" }
 hero_h1: { other: "Find out about that <span class=\"fancy\">A</span><br>in math<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">before your kid does</span>." }

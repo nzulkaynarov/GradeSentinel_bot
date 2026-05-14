@@ -3,7 +3,7 @@
     <a href="/" class="brand-mark">
       <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
     </a>
-    <nav>
+    <nav class="topbar-nav" id="topbar-nav">
       <a href="/#flow">{{ i18n "nav_how" }}</a>
       <a href="/#features">{{ i18n "nav_features" }}</a>
       <a href="/#day">{{ i18n "nav_day" }}</a>
@@ -12,18 +12,31 @@
     </nav>
     <div class="topbar-actions">
       <span class="locale" aria-label="Language">
-        {{ $cur := $.Site.Language.Lang }}
+        {{ $cur := .Site.Language.Lang }}
+        {{ $page := . }}
         {{ range $idx, $lang := .Site.Languages }}
           {{ if gt $idx 0 }}<span class="sep">·</span>{{ end }}
           {{ if eq $lang.Lang $cur }}<button class="on" aria-current="true">{{ slicestr $lang.LanguageName 0 2 }}</button>
-          {{ else }}<a href="{{ relLangURL $.Page.RelPermalink }}">{{ slicestr $lang.LanguageName 0 2 }}</a>{{ end }}
+          {{ else }}
+            {{ $href := "" }}
+            {{ range $page.Translations }}
+              {{ if eq .Site.Language.Lang $lang.Lang }}{{ $href = .RelPermalink }}{{ end }}
+            {{ end }}
+            {{ if not $href }}
+              {{ if eq $lang.Lang $page.Site.LanguagePrefix }}{{ $href = "/" }}
+              {{ else }}{{ $href = printf "/%s/" $lang.Lang }}{{ end }}
+            {{ end }}
+            <a href="{{ $href }}" hreflang="{{ $lang.Lang }}">{{ slicestr $lang.LanguageName 0 2 }}</a>
+          {{ end }}
         {{ end }}
       </span>
-      <a href="{{ .Site.Params.webappUrl }}" class="btn btn-ghost btn-sm">{{ i18n "nav_signin" }}</a>
-      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-sm">
+      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-sm topbar-cta">
         <span>{{ i18n "cta_open_bot" }}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg>
       </a>
+      <button class="topbar-toggle" aria-label="{{ i18n "nav_menu" }}" aria-expanded="false" aria-controls="topbar-nav">
+        <span class="topbar-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
     </div>
   </div>
 </header>

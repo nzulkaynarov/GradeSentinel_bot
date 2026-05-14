@@ -6,10 +6,11 @@ nav_day: { other: "Bir kun" }
 nav_pricing: { other: "Tariflar" }
 nav_docs: { other: "Yoʻriqnoma" }
 nav_signin: { other: "Kirish" }
+nav_menu: { other: "Menyu" }
 cta_open_bot: { other: "Botni ochish" }
 
-meta_live: { other: "Hozir Oʻzbekistonda · v2.5" }
-meta_center: { other: "<b>1 247</b> oila · <b>3 412</b> bola · <b>↑ 18%</b> oʻrt. baho" }
+meta_live: { other: "Hozir Oʻzbekistonda" }
+meta_center: { other: "Pushgacha 5 daqiqa · 3 til · Telegramda toʻlov" }
 meta_right: { other: "Toshkent · UTC+5" }
 meta_3min: { other: "Ulash uchun 3 daqiqa" }
 hero_h1: { other: "Matematika boʻyicha <span class=\"fancy\">«5»</span> baho haqida<br>bilib olasiz<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">bolaning oʻzidan oldin</span>." }
