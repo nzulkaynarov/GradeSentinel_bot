@@ -3,6 +3,8 @@ Description=GradeSentinel WebApp (Flask)
 Documentation=https://github.com/anthropics/gradesentinel
 After=network-online.target gradesentinel-bot.service
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -32,8 +34,6 @@ ExecStart=/opt/gradesentinel/venv/bin/gunicorn \
     webapp.app:app
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # ── Hardening ────────────────────────────────────────────
 NoNewPrivileges=true

@@ -325,6 +325,9 @@ def init_db():
 
         # 12. Индексы для производительности
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_date ON grade_history(student_id, date_added)')
+        # idx_grade_history_student_cell — НЕ UNIQUE после этапа 1C, но всё ещё
+        # используется как покрывающий для get_existing_grade / update_grade
+        # (`WHERE student_id = ? AND cell_reference = ?`). Не дропать.
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_cell ON grade_history(student_id, cell_reference)')
         # Покрывающий индекс под чтения по фактической дате оценки (этап 1C).
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_grade_date ON grade_history(student_id, grade_date)')

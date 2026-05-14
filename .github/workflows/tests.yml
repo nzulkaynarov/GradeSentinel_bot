@@ -14,7 +14,9 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          # Версия должна совпадать с прод (Ubuntu 24.04 на 3.12) — иначе CI
+          # не ловит 3.12-specific баги, а прод врезается в них впервые.
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install dependencies

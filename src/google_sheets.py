@@ -45,6 +45,9 @@ def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -
         logger.error(f"Credentials file not found at {CREDENTIALS_FILE}")
         return None
         
+    # Логирование retry-цикла: первая попытка тихая (debug — это просто
+    # сетевой шум), вторая+ уже WARNING (retry не помог сразу — стоит
+    # обратить внимание). 429 (quota) всегда WARNING с тегом [GOOGLE_QUOTA].
     for attempt in range(max_retries):
         try:
             sheet = service.spreadsheets()
@@ -53,8 +56,7 @@ def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -
         except HttpError as err:
             if err.resp.status == 429:
                 wait_time = (2 ** attempt) + 1
-                # Тег [GOOGLE_QUOTA] нужен для отдельного грепа в логах:
-                # помогает увидеть, упёрлись ли в Sheets quota (300 read/min/user).
+                # 429 — реальный сигнал об упёре в квоту. Всегда warning + тег.
                 logger.warning(
                     f"[GOOGLE_QUOTA] Sheets API 429 for {spreadsheet_id}. "
                     f"Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})"
@@ -62,7 +64,8 @@ def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -
                 time.sleep(wait_time)
             elif err.resp.status == 503:
                 wait_time = (2 ** attempt) + 1
-                logger.warning(
+                level = logger.warning if attempt > 0 else logger.debug
+                level(
                     f"Google Sheets API 503 (Service Unavailable) for {spreadsheet_id}. "
                     f"Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})"
                 )
@@ -72,7 +75,8 @@ def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -
                 return None
         except (socket.error, urllib.error.URLError) as e:
             wait_time = (2 ** attempt) + 1
-            logger.warning(f"Network error ({e}). Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+            level = logger.warning if attempt > 0 else logger.debug
+            level(f"Network error ({e}). Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
             time.sleep(wait_time)
 
     logger.error(f"Max retries exceeded while fetching data for {spreadsheet_id}")
@@ -98,7 +102,8 @@ def get_spreadsheet_title(spreadsheet_id: str, max_retries: int = 3) -> Optional
                 time.sleep(wait_time)
             elif err.resp.status == 503:
                 wait_time = (2 ** attempt) + 1
-                logger.warning(
+                level = logger.warning if attempt > 0 else logger.debug
+                level(
                     f"Google Sheets API 503 fetching title. "
                     f"Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})"
                 )
@@ -108,7 +113,8 @@ def get_spreadsheet_title(spreadsheet_id: str, max_retries: int = 3) -> Optional
                 return None
         except (socket.error, urllib.error.URLError) as e:
             wait_time = (2 ** attempt) + 1
-            logger.warning(f"Network error ({e}). Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
+            level = logger.warning if attempt > 0 else logger.debug
+            level(f"Network error ({e}). Retrying in {wait_time}s (attempt {attempt+1}/{max_retries})")
             time.sleep(wait_time)
 
     logger.error(f"Max retries exceeded while fetching title for {spreadsheet_id}")

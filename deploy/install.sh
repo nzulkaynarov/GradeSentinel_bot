@@ -163,6 +163,11 @@ install -m 0644 "${REPO_DIR}/deploy/gradesentinel-bot.service" /etc/systemd/syst
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-webapp.service" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.service" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.timer" /etc/systemd/system/
+install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.service" /etc/systemd/system/
+install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.timer" /etc/systemd/system/
+
+# Каталог для бэкапов БД (gradesentinel:gradesentinel 0750).
+install -d -o gradesentinel -g gradesentinel -m 0750 /var/backups/gradesentinel
 
 # Sudoers: visudo -c проверяет синтаксис; падаем если невалиден
 visudo -cf "${REPO_DIR}/deploy/deploy-sudoers" >/dev/null \
@@ -171,6 +176,7 @@ install -m 0440 -o root -g root "${REPO_DIR}/deploy/deploy-sudoers" /etc/sudoers
 
 systemctl daemon-reload
 systemctl enable gradesentinel-heartbeat.timer
+systemctl enable gradesentinel-backup.timer
 # bot/webapp юниты НЕ enable'ятся здесь — их активирует первый деплой
 # (раньше бы пытались стартовать без кода в /opt/gradesentinel и упали).
 

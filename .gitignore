@@ -9,6 +9,11 @@ data/*.db
 data/*.sqlite3
 *.db
 *.sqlite3
+# SQLite WAL/SHM sidecars — появляются при работе бота локально через WAL mode
+*.db-wal
+*.db-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Логи
 logs/*.log

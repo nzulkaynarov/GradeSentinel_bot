@@ -3,6 +3,11 @@ Description=GradeSentinel Telegram Bot
 Documentation=https://github.com/anthropics/gradesentinel
 After=network-online.target
 Wants=network-online.target
+# StartLimit* должны быть в [Unit], не [Service] — иначе systemd ругается
+# «Unknown key name» при каждом старте. Семантика: не более 5 рестартов
+# за 300с подряд, иначе systemd прекращает попытки и юнит уходит в failed.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -17,8 +22,6 @@ Environment="PYTHONPATH=/opt/gradesentinel"
 ExecStart=/opt/gradesentinel/venv/bin/python -m src.main
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 # ── Hardening ────────────────────────────────────────────
 NoNewPrivileges=true
