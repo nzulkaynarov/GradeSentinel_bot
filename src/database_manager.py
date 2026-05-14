@@ -625,111 +625,10 @@ def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
     return []
 
-def get_parent_by_phone(phone: str) -> Optional[Dict[str, Any]]:
-    """Находит родителя по номеру телефона."""
-    # Нормализуем номер (удаляем +)
-    phone = phone.replace("+", "")
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM parents WHERE phone = ? OR phone = ?', (phone, "+" + phone))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-def update_parent_telegram_id(phone: str, telegram_id: int):
-    """Привязывает telegram_id к родителю по номеру телефона."""
-    phone = phone.replace("+", "")
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('UPDATE parents SET telegram_id = ? WHERE phone = ? OR phone = ?', (telegram_id, phone, "+" + phone))
-
-def get_parent_role(telegram_id: int) -> Optional[str]:
-    """Возвращает роль пользователя по его telegram_id."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (telegram_id,))
-        row = cursor.fetchone()
-        return row['role'] if row else None
-    return None
-
-def get_user_lang(telegram_id: int) -> str:
-    """Возвращает язык пользователя (ru/uz/en). По умолчанию 'ru'."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT lang FROM parents WHERE telegram_id = ?', (telegram_id,))
-        row = cursor.fetchone()
-        return row['lang'] if row and row['lang'] else 'ru'
-
-def set_user_lang(telegram_id: int, lang: str):
-    """Устанавливает язык пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('UPDATE parents SET lang = ? WHERE telegram_id = ?', (lang, telegram_id))
-
-
-def get_notify_mode(telegram_id: int) -> str:
-    """Возвращает режим уведомлений: 'instant' (по умолчанию) или 'summary_only'."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT notify_mode FROM parents WHERE telegram_id = ?', (telegram_id,))
-        row = cursor.fetchone()
-        return row['notify_mode'] if row and row['notify_mode'] else 'instant'
-
-
-def set_notify_mode(telegram_id: int, mode: str):
-    """Устанавливает режим уведомлений ('instant' или 'summary_only')."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('UPDATE parents SET notify_mode = ? WHERE telegram_id = ?', (mode, telegram_id))
-
-def get_families_for_head(head_telegram_id: int) -> List[Dict[str, Any]]:
-    """Возвращает список семей, в которых данный пользователь является главой."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT f.id, f.family_name 
-            FROM families f
-            JOIN parents p ON f.head_id = p.id
-            WHERE p.telegram_id = ?
-        ''', (head_telegram_id,))
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-def is_head_of_any_family(telegram_id: int) -> bool:
-    """Проверяет, является ли пользователь главой хотя бы одной семьи."""
-    families = get_families_for_head(telegram_id)
-    return len(families) > 0
-
-
-def is_head_of_family(telegram_id: int, family_id: int) -> bool:
-    """Проверяет, является ли пользователь главой конкретной семьи."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 1 FROM families f
-            JOIN parents p ON f.head_id = p.id
-            WHERE p.telegram_id = ? AND f.id = ?
-        ''', (telegram_id, family_id))
-        return cursor.fetchone() is not None
-
-
-def is_member_of_family(telegram_id: int, family_id: int) -> bool:
-    """Проверяет, является ли пользователь членом семьи (через family_links)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT 1 FROM family_links fl
-            JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND fl.family_id = ?
-            LIMIT 1
-        ''', (telegram_id, family_id))
-        return cursor.fetchone() is not None
-
-
-def can_manage_family(telegram_id: int, family_id: int) -> bool:
-    """Может ли пользователь управлять семьёй (admin или head этой семьи)."""
-    if get_parent_role(telegram_id) == 'admin':
-        return True
-    return is_head_of_family(telegram_id, family_id)
+# Auth (lookup родителя, профиль, авторизационные предикаты) — в src/db/auth.py.
+# Re-export перенесён в конец файла из-за обратного импорта внутри auth.py
+# (он re-export'ит get_families_for_student / is_subscription_active которые
+# определены ниже). См. [feedback-codebase-gotchas] пункт 18.
 
 
 def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
@@ -1124,76 +1023,9 @@ def get_parent_by_telegram(telegram_id: int) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-# ====================
-# Подписки
-# ====================
-def get_family_subscription(family_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает информацию о подписке семьи."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT subscription_end FROM families WHERE id = ?', (family_id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return {'subscription_end': row['subscription_end']}
-
-
-def extend_subscription(family_id: int, months: int = 1):
-    """Продлевает подписку семьи на N месяцев от текущей даты или от конца текущей подписки."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT subscription_end FROM families WHERE id = ?', (family_id,))
-        row = cursor.fetchone()
-        if not row:
-            return
-
-        current_end = row['subscription_end']
-        if current_end:
-            # Продлеваем от конца текущей подписки (если ещё активна)
-            cursor.execute('''
-                UPDATE families SET subscription_end =
-                    CASE
-                        WHEN subscription_end > datetime('now')
-                        THEN datetime(subscription_end, ?)
-                        ELSE datetime('now', ?)
-                    END
-                WHERE id = ?
-            ''', (f'+{months} months', f'+{months} months', family_id))
-        else:
-            cursor.execute(
-                "UPDATE families SET subscription_end = datetime('now', ?) WHERE id = ?",
-                (f'+{months} months', family_id))
-
-
-def record_payment(family_id: int, paid_by_parent_id: int, amount: int,
-                   currency: str, plan: str, months: int,
-                   telegram_charge_id: str = None, provider_charge_id: str = None):
-    """Записывает платёж в историю."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO payments (family_id, paid_by, amount, currency, plan, months,
-                                  telegram_payment_charge_id, provider_payment_charge_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (family_id, paid_by_parent_id, amount, currency, plan, months,
-              telegram_charge_id, provider_charge_id))
-
-
-def is_subscription_active(family_id: int) -> bool:
-    """Проверяет, активна ли подписка семьи."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT subscription_end FROM families WHERE id = ?
-        ''', (family_id,))
-        row = cursor.fetchone()
-        if not row or not row['subscription_end']:
-            return False
-        # Сравниваем с текущим временем
-        cursor.execute(
-            "SELECT ? > datetime('now') as active",
-            (row['subscription_end'],))
-        return cursor.fetchone()['active'] == 1
+# Подписки и платежи — имплементация в src/db/payments.py.
+# Re-export ниже в файле (после get_families_for_user, который ещё в этом
+# файле и нужен has_any_active_subscription как lazy dep).
 
 
 def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
@@ -1217,10 +1049,7 @@ def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def has_any_active_subscription(telegram_id: int) -> bool:
-    """Проверяет, есть ли у пользователя хотя бы одна семья с активной подпиской."""
-    families = get_families_for_user(telegram_id)
-    return any(is_subscription_active(f['id']) for f in families)
+# has_any_active_subscription — в src/db/payments.py (re-export ниже в файле)
 
 
 # ====================
@@ -1270,56 +1099,48 @@ from src.db.promo import (  # noqa: E402
 )
 
 
-# ====================
-# Отмена подписки
-# ====================
-def cancel_subscription(family_id: int) -> bool:
-    """Аннулирует подписку семьи (устанавливает subscription_end = now)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE families SET subscription_end = datetime('now') WHERE id = ?",
-            (family_id,))
-        return cursor.rowcount > 0
-
-
-def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
-    """Возвращает семьи, чья подписка истекает ровно через N дней (±12ч)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT f.id as family_id, f.family_name, f.subscription_end
-            FROM families f
-            WHERE f.subscription_end IS NOT NULL
-              AND f.subscription_end > datetime('now')
-              AND f.subscription_end <= datetime('now', ?)
-        ''', (f'+{days + 1} days',))
-        results = []
-        from datetime import datetime, timedelta
-        target_date = (datetime.utcnow() + timedelta(days=days)).date()
-        for row in cursor.fetchall():
-            end_str = row['subscription_end']
-            try:
-                end_date = datetime.fromisoformat(end_str).date()
-            except (ValueError, TypeError):
-                continue
-            if end_date == target_date:
-                results.append(dict(row))
-        return results
-
-
-def get_families_expired_today() -> List[Dict[str, Any]]:
-    """Возвращает семьи, чья подписка истекла сегодня (по Ташкенту, UTC+5)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT f.id as family_id, f.family_name, f.subscription_end
-            FROM families f
-            WHERE f.subscription_end IS NOT NULL
-              AND date(f.subscription_end, '+5 hours') = date('now', '+5 hours')
-              AND f.subscription_end <= datetime('now')
-        ''')
-        return [dict(row) for row in cursor.fetchall()]
+# cancel_subscription / get_families_expiring_in_days / get_families_expired_today —
+# в src/db/payments.py (re-export ниже).
 
 
 # get_all_parents_with_children — теперь в src/db/stats.py (re-export сверху)
+
+
+# ─── Payments re-export ──────────────────────────────────────────────
+# Подписки и платежи в src/db/payments.py. Сначала payments — потому что
+# auth.py через обратный re-export берёт is_subscription_active из этого
+# файла, и к моменту его импорта is_subscription_active должна быть
+# доступна как имя в database_manager.
+from src.db.payments import (  # noqa: E402, F401
+    get_family_subscription,
+    extend_subscription,
+    record_payment,
+    is_subscription_active,
+    has_any_active_subscription,
+    cancel_subscription,
+    get_families_expiring_in_days,
+    get_families_expired_today,
+)
+
+# ─── Auth re-export ──────────────────────────────────────────────────
+# Помещён В САМЫЙ КОНЕЦ файла, потому что auth.py делает обратный re-export
+# `get_families_for_student` / `is_student_under_active_subscription` /
+# `is_subscription_active` — эти функции определены выше в этом файле (или
+# уже re-export'ятся через payments выше), и к моменту выполнения этой
+# строки уже доступны. См. [feedback-codebase-gotchas] пункт 18.
+from src.db.auth import (  # noqa: E402, F401
+    get_parent_by_phone,
+    get_parent_by_telegram,
+    get_parent_id_by_telegram,
+    update_parent_telegram_id,
+    get_parent_role,
+    get_user_lang,
+    set_user_lang,
+    get_notify_mode,
+    set_notify_mode,
+    get_families_for_head,
+    is_head_of_any_family,
+    is_head_of_family,
+    is_member_of_family,
+    can_manage_family,
+)
