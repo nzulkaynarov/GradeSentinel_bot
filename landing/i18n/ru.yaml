@@ -8,11 +8,12 @@ nav_day: { other: "День из жизни" }
 nav_pricing: { other: "Тарифы" }
 nav_docs: { other: "Инструкция" }
 nav_signin: { other: "Войти" }
+nav_menu: { other: "Меню" }
 cta_open_bot: { other: "Открыть бот" }
 
 # === Hero ===
-meta_live: { other: "Сейчас работает в Узбекистане · v2.5" }
-meta_center: { other: "<b>1 247</b> семей · <b>3 412</b> детей · <b>↑ 18%</b> ср. балл" }
+meta_live: { other: "Сейчас работает в Узбекистане" }
+meta_center: { other: "5 минут до пуша · 3 языка · оплата в Telegram" }
 meta_right: { other: "Tashkent · UTC+5" }
 meta_3min: { other: "3 минуты на подключение" }
 hero_h1: { other: "Узнаёте о&nbsp;<span class=\"fancy\">«пятёрке»</span><br>по математике<br>раньше,&nbsp;<span class=\"italic-display\" style=\"color: var(--ink-3);\">чем сам ребёнок</span>." }

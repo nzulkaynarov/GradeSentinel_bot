@@ -6,11 +6,22 @@
         <p>{{ i18n "footer_about" }}</p>
         <div style="margin-top: 24px;">
           <span class="locale">
-            {{ $cur := $.Site.Language.Lang }}
+            {{ $cur := .Site.Language.Lang }}
+            {{ $page := . }}
             {{ range $idx, $lang := .Site.Languages }}
               {{ if gt $idx 0 }}<span class="sep">·</span>{{ end }}
               {{ if eq $lang.Lang $cur }}<button class="on">{{ slicestr $lang.LanguageName 0 2 }}</button>
-              {{ else }}<a href="{{ relLangURL $.Page.RelPermalink }}">{{ slicestr $lang.LanguageName 0 2 }}</a>{{ end }}
+              {{ else }}
+                {{ $href := "" }}
+                {{ range $page.Translations }}
+                  {{ if eq .Site.Language.Lang $lang.Lang }}{{ $href = .RelPermalink }}{{ end }}
+                {{ end }}
+                {{ if not $href }}
+                  {{ if eq $lang.Lang "ru" }}{{ $href = "/" }}
+                  {{ else }}{{ $href = printf "/%s/" $lang.Lang }}{{ end }}
+                {{ end }}
+                <a href="{{ $href }}" hreflang="{{ $lang.Lang }}">{{ slicestr $lang.LanguageName 0 2 }}</a>
+              {{ end }}
             {{ end }}
           </span>
         </div>
@@ -21,7 +32,6 @@
           <li><a href="/#features">{{ i18n "nav_features" }}</a></li>
           <li><a href="/#pricing">{{ i18n "nav_pricing" }}</a></li>
           <li><a href="/docs/">{{ i18n "nav_docs" }}</a></li>
-          <li><a href="{{ .Site.Params.webappUrl }}">{{ i18n "footer_cabinet" }}</a></li>
         </ul>
       </div>
       <div>

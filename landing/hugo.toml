@@ -6,6 +6,10 @@ title = "GradeSentinel"
 enableRobotsTXT = true
 enableGitInfo = true
 
+# Не нужны таксономии — это лендинг, не блог.
+# Убирает пустые /categories/, /tags/, /ru/ директории из public/.
+disableKinds = ["taxonomy", "term"]
+
 [markup.goldmark.renderer]
   unsafe = true
 
@@ -36,7 +40,8 @@ enableGitInfo = true
 [params]
   brand = "GradeSentinel"
   botUrl = "https://t.me/GradeSentinel_bot"
-  webappUrl = "https://app.grades.railtech.uz"
+  # Будущий веб-портал родителей — появится в Phase 3 на /cabinet/. Сейчас 404.
+  webappUrl = "/cabinet/"
   supportEmail = "support@grades.railtech.uz"
 
 [outputs]
