@@ -974,227 +974,40 @@ def delete_student_from_family(family_id: int, student_id: int):
             cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
 
 
-def delete_family_cascade(family_id: int) -> bool:
-    """Удаляет семью со всеми связанными данными в одной транзакции.
+# delete_family_cascade — в src/db/maintenance.py (re-export ниже)
 
-    Чистит: payments, family_invites, family_links, осиротевших students
-    (вместе с их grade_history и quarter_grades), и саму запись families.
+# Статистика и листинг — в src/db/stats.py.
+from src.db.stats import (  # noqa: E402, F401
+    get_global_stats,
+    get_user_stats,
+    get_all_telegram_ids,
+    get_user_info_by_tg_id,
+    get_all_parents_with_children,
+)
 
-    Возвращает True если семья удалена, False если её не существовало.
-    """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
 
-        cursor.execute('SELECT id FROM families WHERE id = ?', (family_id,))
-        if not cursor.fetchone():
-            return False
-
-        # Сначала находим студентов, которые останутся осиротевшими после удаления связей
-        cursor.execute('''
-            SELECT DISTINCT student_id FROM family_links
-            WHERE family_id = ? AND student_id IS NOT NULL
-        ''', (family_id,))
-        student_ids = [row['student_id'] for row in cursor.fetchall()]
-
-        # Удаляем связи
-        cursor.execute('DELETE FROM family_links WHERE family_id = ?', (family_id,))
-
-        # Студенты, у которых не осталось других семей — удаляем со всеми данными
-        for s_id in student_ids:
-            cursor.execute('SELECT COUNT(*) as cnt FROM family_links WHERE student_id = ?', (s_id,))
-            if cursor.fetchone()['cnt'] == 0:
-                cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (s_id,))
-                cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (s_id,))
-                cursor.execute('DELETE FROM students WHERE id = ?', (s_id,))
-
-        # Связанные с семьёй данные
-        cursor.execute('DELETE FROM payments WHERE family_id = ?', (family_id,))
-        cursor.execute('DELETE FROM family_invites WHERE family_id = ?', (family_id,))
-        cursor.execute('DELETE FROM family_groups WHERE family_id = ?', (family_id,))
-
-        # И сама семья
-        cursor.execute('DELETE FROM families WHERE id = ?', (family_id,))
-
-        logger.info(f"Family {family_id} cascade-deleted (orphaned students: {len(student_ids)})")
-        return True
-
-def get_global_stats() -> Dict[str, Any]:
-    """Возвращает глобальную статистику системы для администраторов."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        stats = {}
-        stats['families'] = cursor.execute('SELECT COUNT(*) as c FROM families').fetchone()['c']
-        stats['parents'] = cursor.execute('SELECT COUNT(*) as c FROM parents').fetchone()['c']
-        stats['students'] = cursor.execute('SELECT COUNT(*) as c FROM students').fetchone()['c']
-        stats['history_records'] = cursor.execute('SELECT COUNT(*) as c FROM grade_history').fetchone()['c']
-        return stats
-    return {}
-
-def get_user_stats(telegram_id: int) -> Dict[str, Any]:
-    """Возвращает персонализированную статистику для конкретного пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        stats = {}
-        
-        # Получаем ID родителя
-        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
-        parent_row = cursor.fetchone()
-        if not parent_row:
-            return {'families': 0, 'students': 0, 'history_records': 0}
-            
-        parent_id = parent_row['id']
-        
-        # Количество семей
-        stats['families'] = cursor.execute('SELECT COUNT(DISTINCT family_id) as c FROM family_links WHERE parent_id = ?', (parent_id,)).fetchone()['c']
-        
-        # Количество доступных детей
-        stats['students'] = cursor.execute('''
-            SELECT COUNT(DISTINCT student_id) as c 
-            FROM family_links 
-            WHERE parent_id = ? AND student_id IS NOT NULL
-        ''', (parent_id,)).fetchone()['c']
-        
-        # Количество записей оценок для этих детей
-        stats['history_records'] = cursor.execute('''
-            SELECT COUNT(*) as c
-            FROM grade_history
-            WHERE student_id IN (SELECT DISTINCT student_id FROM family_links WHERE parent_id = ?)
-        ''', (parent_id,)).fetchone()['c']
-
-        return stats
-
-def get_all_telegram_ids() -> List[int]:
-    """Возвращает список telegram_id всех зарегистрированных пользователей."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT telegram_id FROM parents WHERE telegram_id IS NOT NULL")
-        return [row['telegram_id'] for row in cursor.fetchall()]
-    return []
-
-def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает основную информацию о пользователе и его семьях по telegram_id."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, fio, phone, role FROM parents WHERE telegram_id = ?", (telegram_id,))
-        user = cursor.fetchone()
-        if not user:
-            return None
-            
-        # Get family names
-        cursor.execute('''
-            SELECT DISTINCT f.family_name 
-            FROM families f 
-            JOIN family_links fl ON f.id = fl.family_id 
-            WHERE fl.parent_id = ?
-        ''', (user['id'],))
-        families = [row['family_name'] for row in cursor.fetchall()]
-        
-        return {
-            'id': user['id'],
-            'fio': user['fio'],
-            'phone': user['phone'],
-            'role': user['role'],
-            'families': families
-        }
-        
 if __name__ == '__main__':
     init_db()
     print("Database initialized successfully at", DB_PATH)
 
-def get_last_menu_id(user_id: int) -> Optional[int]:
-    """Возвращает ID последнего сообщения меню для пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT last_menu_msg_id FROM app_states WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-        return row['last_menu_msg_id'] if row else None
-
-def update_last_menu_id(user_id: int, msg_id: Optional[int]):
-    """Обновляет ID последнего сообщения меню для пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO app_states (user_id, last_menu_msg_id)
-            VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET last_menu_msg_id = excluded.last_menu_msg_id
-        ''', (user_id, msg_id))
-
-# ====================
-# Персистентные user_states
-# ====================
-def set_user_state(user_id: int, state: str, data: str = None):
-    """Сохраняет состояние пользователя в БД."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO user_states (user_id, state, data, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET state = excluded.state, data = excluded.data, updated_at = CURRENT_TIMESTAMP
-        ''', (user_id, state, data))
-
-def get_user_state(user_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает состояние пользователя из БД."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT state, data FROM user_states WHERE user_id = ?', (user_id,))
-        row = cursor.fetchone()
-        if row:
-            return {'state': row['state'], 'data': row['data']}
-        return None
-
-def clear_user_state(user_id: int):
-    """Удаляет состояние пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM user_states WHERE user_id = ?', (user_id,))
-
-# ====================
-# Персистентный маппинг сообщений поддержки
-# ====================
-def save_support_msg_map(admin_msg_id: int, user_id: int):
-    """Сохраняет связь между сообщением в админ-группе и пользователем."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO support_msg_map (admin_msg_id, user_id) VALUES (?, ?)
-        ''', (admin_msg_id, user_id))
-
-def get_support_user_id(admin_msg_id: int) -> Optional[int]:
-    """Находит user_id по ID сообщения в админ-группе."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT user_id FROM support_msg_map WHERE admin_msg_id = ?', (admin_msg_id,))
-        row = cursor.fetchone()
-        return row['user_id'] if row else None
+# Персистентное состояние (FSM, last_menu_id, support_msg_map) — в src/db/state.py.
+from src.db.state import (  # noqa: E402, F401
+    get_last_menu_id,
+    update_last_menu_id,
+    set_user_state,
+    get_user_state,
+    clear_user_state,
+    save_support_msg_map,
+    get_support_user_id,
+)
 
 
-# ====================
-# Очередь уведомлений (тихие часы)
-# ====================
-def queue_notification(telegram_id: int, message: str):
-    """Сохраняет уведомление в очередь для отложенной отправки."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO notification_queue (telegram_id, message) VALUES (?, ?)',
-                       (telegram_id, message))
-
-
-def get_and_clear_queued_notifications(telegram_id: int) -> List[str]:
-    """Извлекает и удаляет все отложенные уведомления для пользователя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT message FROM notification_queue WHERE telegram_id = ? ORDER BY created_at', (telegram_id,))
-        messages = [row['message'] for row in cursor.fetchall()]
-        cursor.execute('DELETE FROM notification_queue WHERE telegram_id = ?', (telegram_id,))
-        return messages
-
-
-def get_all_queued_telegram_ids() -> List[int]:
-    """Возвращает список уникальных telegram_id с отложенными уведомлениями."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT telegram_id FROM notification_queue')
-        return [row['telegram_id'] for row in cursor.fetchall()]
+# Очередь уведомлений (тихие часы) — в src/db/notifications.py.
+from src.db.notifications import (  # noqa: E402, F401
+    queue_notification,
+    get_and_clear_queued_notifications,
+    get_all_queued_telegram_ids,
+)
 
 
 # ====================
@@ -1285,46 +1098,12 @@ def has_recent_grades_for_parent(telegram_id: int, hours: int = 48) -> bool:
         return cursor.fetchone()['c'] > 0
 
 
-# ====================
-# Инвайт-ссылки
-# ====================
-def create_invite(family_id: int, created_by_parent_id: int, expires_hours: int = 48) -> str:
-    """Создаёт инвайт-ссылку для семьи. Возвращает invite_code."""
-    import secrets
-    code = secrets.token_urlsafe(12)
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO family_invites (family_id, invite_code, created_by, expires_at)
-            VALUES (?, ?, ?, datetime('now', ?))
-        ''', (family_id, code, created_by_parent_id, f'+{expires_hours} hours'))
-    return code
-
-
-def get_invite(invite_code: str) -> Optional[Dict[str, Any]]:
-    """Возвращает данные инвайта, если он валиден (не использован, не истёк)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT fi.*, f.family_name
-            FROM family_invites fi
-            JOIN families f ON fi.family_id = f.id
-            WHERE fi.invite_code = ? AND fi.is_used = 0
-              AND fi.expires_at > datetime('now')
-        ''', (invite_code,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-
-def use_invite(invite_code: str, used_by_parent_id: int) -> bool:
-    """Помечает инвайт как использованный."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE family_invites SET is_used = 1, used_by = ?
-            WHERE invite_code = ? AND is_used = 0
-        ''', (used_by_parent_id, invite_code))
-        return cursor.rowcount > 0
+# Инвайт-ссылки — имплементация в src/db/invites.py.
+from src.db.invites import (  # noqa: E402, F401
+    create_invite,
+    get_invite,
+    use_invite,
+)
 
 
 def get_parent_id_by_telegram(telegram_id: int) -> Optional[int]:
@@ -1446,211 +1225,34 @@ def has_any_active_subscription(telegram_id: int) -> bool:
 
 # ====================
 # Настройки (key-value)
-# ====================
-# ====================
-# Семейные групповые чаты (бот в чате семьи)
-# ====================
-def link_group_to_family(family_id: int, chat_id: int, chat_title: str,
-                         added_by_parent_id: int,
-                         message_thread_id: Optional[int] = None) -> bool:
-    """Привязывает Telegram-группу к семье. Возвращает True если привязка создана,
-    False если этот chat_id уже привязан (к этой или другой семье).
-
-    message_thread_id — для супергрупп с темами. Если задан, все уведомления
-    будут падать именно в эту тему (через Telegram Bot API param `message_thread_id`)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO family_groups (family_id, chat_id, chat_title, message_thread_id, added_by)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (family_id, chat_id, chat_title, message_thread_id, added_by_parent_id))
-            return True
-        except sqlite3.IntegrityError:
-            return False
+# Семейные групповые чаты — имплементация в src/db/groups.py.
+from src.db.groups import (  # noqa: E402, F401
+    link_group_to_family,
+    get_family_for_group,
+    get_groups_for_family,
+    get_groups_for_student,
+    unlink_group,
+    update_group_thread,
+)
 
 
-def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает {'family_id', 'family_name', 'message_thread_id'} для chat_id или None."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT fg.family_id, fg.message_thread_id, f.family_name
-            FROM family_groups fg
-            JOIN families f ON f.id = fg.family_id
-            WHERE fg.chat_id = ?
-        ''', (chat_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
+# Обслуживание БД (архивирование, чистки, каскад) — в src/db/maintenance.py.
+from src.db.maintenance import (  # noqa: E402, F401
+    archive_old_grades,
+    cleanup_old_notification_queue,
+    cleanup_expired_invites,
+    delete_family_cascade,
+)
 
 
-def get_groups_for_family(family_id: int) -> List[Dict[str, Any]]:
-    """Возвращает список dict с chat_id и message_thread_id для семьи."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            'SELECT chat_id, message_thread_id FROM family_groups WHERE family_id = ?',
-            (family_id,)
-        )
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def get_groups_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает список dict {chat_id, message_thread_id} для всех групп
-    привязанных к семьям этого ученика (с дедупликацией по chat_id)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT fg.chat_id, fg.message_thread_id
-            FROM family_groups fg
-            JOIN family_links fl ON fl.family_id = fg.family_id
-            WHERE fl.student_id = ?
-        ''', (student_id,))
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def unlink_group(chat_id: int) -> bool:
-    """Удаляет привязку группы. True если удалили, False если её и не было."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM family_groups WHERE chat_id = ?', (chat_id,))
-        return cursor.rowcount > 0
-
-
-def update_group_thread(chat_id: int, message_thread_id: Optional[int]) -> bool:
-    """Меняет тему привязанной группы (для супергрупп с темами).
-    Передать None чтобы сбросить (писать в General)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE family_groups SET message_thread_id = ? WHERE chat_id = ?',
-            (message_thread_id, chat_id),
-        )
-        return cursor.rowcount > 0
-
-
-def archive_old_grades(days: Optional[int] = None) -> int:
-    """Переносит оценки старше N дней из grade_history в grade_history_archive.
-
-    days по умолчанию берётся из config.GRADE_ARCHIVE_DAYS.
-
-    Атомарно по отношению к параллельным INSERT'ам: переносим только конкретные
-    id, отобранные SELECT'ом, а не запрос по `date_added < cutoff` в каждом
-    statement'е (иначе DELETE мог бы захватить запись, которая не попала в
-    INSERT — или удалить ту, что прилетела между запросами).
-    Возвращает число перенесённых записей.
-    """
-    if days is None:
-        from src.config import GRADE_ARCHIVE_DAYS
-        days = GRADE_ARCHIVE_DAYS
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # BEGIN IMMEDIATE — запрашиваем write-lock сразу, чтобы между SELECT и
-        # DELETE никто не вставил новые строки в обозреваемый диапазон
-        cursor.execute('BEGIN IMMEDIATE')
-        cutoff = f'-{int(days)} days'
-        cursor.execute(
-            'SELECT id FROM grade_history WHERE date_added < datetime("now", ?)',
-            (cutoff,),
-        )
-        ids = [row['id'] for row in cursor.fetchall()]
-        if not ids:
-            return 0
-
-        # Переносим именно эти id (порциями по 500, чтобы не упереться в лимит
-        # параметров SQLite — обычно 999, но safer)
-        moved = 0
-        chunk_size = 500
-        for i in range(0, len(ids), chunk_size):
-            chunk = ids[i:i + chunk_size]
-            placeholders = ','.join('?' * len(chunk))
-            cursor.execute(
-                f'''INSERT INTO grade_history_archive
-                    (student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added)
-                    SELECT student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added
-                    FROM grade_history
-                    WHERE id IN ({placeholders})''',
-                chunk,
-            )
-            moved += cursor.rowcount
-            cursor.execute(
-                f'DELETE FROM grade_history WHERE id IN ({placeholders})',
-                chunk,
-            )
-
-        logger.info(f"Archived {moved} grades older than {days} days")
-        return moved
-
-
-def cleanup_old_notification_queue(hours: Optional[int] = None) -> int:
-    """Удаляет нерасфлушенные сообщения старше N часов (страховка от утечек).
-    hours по умолчанию из config.NOTIFICATION_QUEUE_TTL_HOURS."""
-    if hours is None:
-        from src.config import NOTIFICATION_QUEUE_TTL_HOURS
-        hours = NOTIFICATION_QUEUE_TTL_HOURS
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            DELETE FROM notification_queue
-            WHERE created_at < datetime('now', ?)
-        ''', (f'-{int(hours)} hours',))
-        if cursor.rowcount > 0:
-            logger.info(f"Cleaned {cursor.rowcount} stale notifications older than {hours}h")
-        return cursor.rowcount
-
-
-def cleanup_expired_invites(days: Optional[int] = None) -> int:
-    """Удаляет инвайты, истекшие более N дней назад.
-    days по умолчанию из config.EXPIRED_INVITE_TTL_DAYS."""
-    if days is None:
-        from src.config import EXPIRED_INVITE_TTL_DAYS
-        days = EXPIRED_INVITE_TTL_DAYS
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            DELETE FROM family_invites
-            WHERE expires_at < datetime('now', ?)
-        ''', (f'-{int(days)} days',))
-        if cursor.rowcount > 0:
-            logger.info(f"Cleaned {cursor.rowcount} expired invites")
-        return cursor.rowcount
-
-
-def get_setting(key: str, default: str = None) -> Optional[str]:
-    """Возвращает значение настройки по ключу."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
-        row = cursor.fetchone()
-        return row['value'] if row else default
-
-
-def set_setting(key: str, value: str):
-    """Устанавливает настройку."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO settings (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        ''', (key, value))
-
-
-def get_plans_from_db() -> Optional[Dict[str, Any]]:
-    """Возвращает тарифы из БД или None если не заданы."""
-    import json
-    raw = get_setting('plans')
-    if raw:
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return None
-    return None
-
-
-def save_plans_to_db(plans: Dict[str, Any]):
-    """Сохраняет тарифы в БД."""
-    import json
-    set_setting('plans', json.dumps(plans, ensure_ascii=False))
+# Settings k-v — имплементация переехала в src/db/settings.py.
+# Re-export для backward compat: `from src.database_manager import get_setting`.
+from src.db.settings import (  # noqa: E402, F401
+    get_setting,
+    set_setting,
+    get_plans_from_db,
+    save_plans_to_db,
+)
 
 
 # ====================
@@ -1720,16 +1322,4 @@ def get_families_expired_today() -> List[Dict[str, Any]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_all_parents_with_children() -> List[Dict[str, Any]]:
-    """Возвращает всех родителей с их детьми (для массовых рассылок)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT p.telegram_id, s.id as student_id,
-                   COALESCE(s.display_name, s.fio) as display_name
-            FROM parents p
-            JOIN family_links fl ON p.id = fl.parent_id
-            JOIN students s ON fl.student_id = s.id
-            WHERE p.telegram_id IS NOT NULL AND s.spreadsheet_id IS NOT NULL
-        ''')
-        return [dict(row) for row in cursor.fetchall()]
+# get_all_parents_with_children — теперь в src/db/stats.py (re-export сверху)
