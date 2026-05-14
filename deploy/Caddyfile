@@ -9,12 +9,33 @@
 }
 
 # ═══════════════════════════════════════════════════════════
-#  GradeSentinel — Telegram WebApp dashboard
+#  grades.railtech.uz
+#  /          → Hugo landing (статика, /var/www/gradesentinel-landing)
+#  /webapp*   → Flask Mini App (127.0.0.1:8443) — Telegram WebApp dashboard
+#  /api/*     → Flask Mini App endpoints (dashboard/init, quarters, students)
+#  /static/*  → Flask static (chart.js bundled, фронт-ассеты Mini App)
+#  /health    → Flask /health endpoint (для мониторинга)
+#
+#  TODO Phase 2: новый FastAPI на 127.0.0.1:8444 займёт отдельный prefix
+#  (например /portal-api/*) — не /api/*, чтобы не задеть Mini App.
 # ═══════════════════════════════════════════════════════════
 grades.railtech.uz {
-    reverse_proxy 127.0.0.1:8443
-
     encode gzip zstd
+
+    # Mini App + его API/static/health — всё в Flask на :8443
+    @flask {
+        path /webapp* /api/* /static/* /health
+    }
+    handle @flask {
+        reverse_proxy 127.0.0.1:8443
+    }
+
+    # Остальное — статика Hugo
+    handle {
+        root * /var/www/gradesentinel-landing
+        file_server
+        try_files {path} {path}/ {path}.html /index.html
+    }
 
     header {
         # HSTS на год (после первого успешного TLS-handshake браузер
@@ -24,11 +45,13 @@ grades.railtech.uz {
         X-Frame-Options "SAMEORIGIN"
         Referrer-Policy "strict-origin-when-cross-origin"
 
-        # CSP под Telegram WebApp:
-        # - script-src: разрешаем JS Telegram (telegram-web-app.js) и инлайн
-        # - connect-src: API endpoints — same-origin
-        # - img-src: data: для inline-графиков Chart.js
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors https://web.telegram.org"
+        # CSP под Telegram WebApp + лендинг с Google Fonts.
+        # - script-src: 'self' для Hugo JS bundle + telegram-web-app.js + 'unsafe-inline' (Mini App инлайн-скрипты)
+        # - style-src:  'self' + fonts.googleapis.com + 'unsafe-inline'
+        # - font-src:   fonts.gstatic.com
+        # - img-src:    data: для inline-графиков Chart.js
+        # - frame-ancestors: разрешаем встраивание только в Telegram WebView
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self'; frame-ancestors https://web.telegram.org"
 
         # Скрываем Server header
         -Server
@@ -40,7 +63,6 @@ grades.railtech.uz {
             roll_keep 5
         }
         format json
-        # Не логируем health-check'и от мониторинга — спам
         level INFO
     }
 }

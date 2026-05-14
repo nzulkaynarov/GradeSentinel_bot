@@ -1,0 +1,70 @@
+name: Deploy Landing (Hugo)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - '.github/workflows/landing-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    # Self-hosted runner на VPS под юзером 'deploy'.
+    # Hugo бинарь скачивается peaceiris/actions-hugo каждый раз — на VPS Hugo не ставим.
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.140.2'
+          extended: true
+
+      - name: Build (3 языка, минификация)
+        working-directory: landing
+        run: |
+          hugo --minify --gc --baseURL "https://grades.railtech.uz/"
+
+      - name: Smoke — каталог public собран
+        working-directory: landing
+        run: |
+          test -f public/index.html || (echo "public/index.html не собран" && exit 1)
+          test -f public/uz/index.html || (echo "uz/index.html не собран" && exit 1)
+          test -f public/en/index.html || (echo "en/index.html не собран" && exit 1)
+          test -f public/docs/index.html || (echo "docs/index.html не собран" && exit 1)
+          du -sh public
+
+      - name: Создать целевую директорию (idempotent)
+        run: |
+          sudo /usr/bin/install -d -o www-data -g www-data -m 0755 /var/www/gradesentinel-landing
+
+      - name: Rsync public/ → /var/www/gradesentinel-landing/
+        run: |
+          # --delete чтобы убрать удалённые файлы. Не трогаем сам каталог (только содержимое).
+          sudo /usr/bin/rsync -a --delete \
+            "${GITHUB_WORKSPACE}/landing/public/" \
+            /var/www/gradesentinel-landing/
+          sudo /usr/bin/chown -R www-data:www-data /var/www/gradesentinel-landing
+
+      - name: Smoke check — Caddy отдаёт лендинг
+        run: |
+          # /health на :8443 продолжает работать (Mini App), а / должен отдать Hugo index
+          sleep 2
+          if curl -fsS -o /dev/null -w "%{http_code}" https://grades.railtech.uz/ | grep -q "200"; then
+            echo "Landing root OK"
+          else
+            echo "Landing root не отвечает 200"
+            curl -v https://grades.railtech.uz/ 2>&1 | head -20
+            exit 1
+          fi
+
+          if curl -fsS -o /dev/null -w "%{http_code}" https://grades.railtech.uz/docs/ | grep -q "200"; then
+            echo "Landing /docs/ OK"
+          else
+            echo "Landing /docs/ не отвечает 200"
+            exit 1
+          fi

@@ -1,20 +1,438 @@
 {{ define "main" }}
+
+<!-- ============ HERO ============ -->
 <section class="hero">
   <div class="container">
-    <span class="label"><span class="label-line"></span> {{ i18n "hero_eyebrow" }} <span class="live-dot"></span></span>
-    <h1>{{ i18n "hero_title" }}</h1>
-    <p class="lead">{{ .Site.Params.description }}</p>
-    <div class="hero-cta">
-      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-lg">{{ i18n "cta_start_bot" }}</a>
-      <a href="/docs/" class="btn btn-ghost btn-lg">{{ i18n "cta_read_docs" }}</a>
+
+    <div class="hero-meta reveal">
+      <div><span class="label"><span class="live-dot"></span> {{ i18n "meta_live" | safeHTML }}</span></div>
+      <div class="center">{{ i18n "meta_center" | safeHTML }}</div>
+      <div class="right">{{ i18n "meta_right" }}</div>
+    </div>
+
+    <div class="hero-grid">
+      <div class="reveal" style="--reveal-delay: 100ms;">
+        <h1>{{ i18n "hero_h1" | safeHTML }}</h1>
+        <div class="hero-cta-row">
+          <a href="{{ .Site.Params.botUrl }}" class="btn btn-energy btn-lg">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+            <span>{{ i18n "cta_primary_label" }}</span>
+          </a>
+          <a href="/docs/" class="btn btn-ghost btn-lg">{{ i18n "cta_secondary" }} →</a>
+          <span class="meta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>
+            <span>{{ i18n "meta_3min" }}</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Telegram conversation stack -->
+      <div class="tg-stack reveal" style="--reveal-delay: 200ms;">
+        <div class="tg-stack-head">
+          <span class="live-dot"></span>
+          <span>{{ i18n "tg_head" }}</span>
+          <span style="margin-left: auto;">14:32</span>
+        </div>
+
+        <div class="tg-msg-wrap">
+          <div class="av">G</div>
+          <div class="tg-card" style="flex: 1;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">14:32</span></div>
+            <div class="tg-text">
+              📚 {{ i18n "tg_msg1_pre" | safeHTML }}<br>
+              <span style="display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;">
+                {{ i18n "tg_msg1_subj" }}&nbsp;·&nbsp;{{ i18n "tg_msg1_kind" }}&nbsp;<span class="tg-grade g5">5</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap">
+          <div class="av">G</div>
+          <div class="tg-card" style="flex: 1;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">14:38</span></div>
+            <div class="tg-text">
+              ✏️ {{ i18n "tg_msg2_pre" }}<br>
+              <span style="display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;">
+                {{ i18n "tg_msg2_subj" }} · {{ i18n "tg_was" }}&nbsp;<span class="tg-grade g3" style="text-decoration: line-through; opacity: .55;">3</span>
+                <span style="color: #888;">→</span>
+                {{ i18n "tg_now" }}&nbsp;<span class="tg-grade g4">4</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap" style="margin-top: 4px;">
+          <div class="av" style="background: var(--energy);">М</div>
+          <div class="tg-card" style="background: #d6eaf3; border-radius: 14px 14px 4px 14px; max-width: 260px;">
+            <div class="tg-text">
+              {{ i18n "tg_msg3" }} 🤍
+              <span class="tg-time">14:39</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap" style="opacity: .6;">
+          <div class="av">G</div>
+          <div class="tg-msg-typing"><span></span><span></span><span></span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ FLOW ============ -->
+<section class="section" id="flow" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span>{{ i18n "flow_label" }}</span>
+      </div>
+      <h2>{{ i18n "flow_h" | safeHTML }}</h2>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step reveal">
+        <div class="num">{{ i18n "flow_1_num" }}</div>
+        <h3>{{ i18n "flow_1_h" }}</h3>
+        <p>{{ i18n "flow_1_p" }}</p>
+        <div class="visual">
+          <div class="sheet-mini">
+            <div class="sheet-row head">
+              <div></div><div>{{ i18n "sh_subj" }}</div><div>{{ i18n "sh_g" }}</div>
+            </div>
+            <div class="sheet-row"><div>4</div><div>{{ i18n "sh_math" }} · 12.05</div><div>5</div></div>
+            <div class="sheet-row"><div>5</div><div>{{ i18n "sh_phys" }} · 11.05</div><div>4</div></div>
+            <div class="sheet-row"><div>6</div><div>{{ i18n "sh_hist" }} · 10.05</div><div class="new-cell">5</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h18M14 6l7 6-7 6"/></svg>
+      </div>
+
+      <div class="flow-step reveal" style="--reveal-delay: 80ms;">
+        <div class="num">{{ i18n "flow_2_num" }}</div>
+        <h3>{{ i18n "flow_2_h" }}</h3>
+        <p>{{ i18n "flow_2_p" }}</p>
+        <div class="visual">
+          <div class="diff">
+            <span class="ln com"># snapshot diff @ 14:32</span>
+            <span class="ln add">+ math · alisher · 5</span>
+            <span class="ln rm">- history · alisher · 3</span>
+            <span class="ln add">+ history · alisher · 4</span>
+            <span class="ln com">— 2 events ready</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h18M14 6l7 6-7 6"/></svg>
+      </div>
+
+      <div class="flow-step reveal" style="--reveal-delay: 160ms;">
+        <div class="num">{{ i18n "flow_3_num" }}</div>
+        <h3>{{ i18n "flow_3_h" }}</h3>
+        <p>{{ i18n "flow_3_p" }}</p>
+        <div class="visual">
+          <div class="push-mini">
+            <div class="nm">GradeSentinel</div>
+            <div>📚 {{ i18n "push_mini_t" | safeHTML }}</div>
+          </div>
+          <div class="push-mini" style="margin-top: 6px; transform: translateX(8px);">
+            <div class="nm">GradeSentinel</div>
+            <div>✏️ {{ i18n "push_mini_t2" | safeHTML }}</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="placeholder">
+<!-- ============ BENTO FEATURES ============ -->
+<section class="section" id="features">
   <div class="container">
-    <h2>{{ i18n "phase0_notice_title" }}</h2>
-    <p>{{ i18n "phase0_notice_body" }}</p>
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span>{{ i18n "feat_label" }}</span>
+      </div>
+      <h2>{{ i18n "feat_h" | safeHTML }}</h2>
+    </div>
+
+    <div class="bento">
+      <div class="bento-tile dark b1 reveal">
+        <div class="b-meta">{{ i18n "f1_meta" }}</div>
+        <h3 style="font-size: 36px; max-width: 14ch;">{{ i18n "f1_h" }}</h3>
+        <p>{{ i18n "f1_p" }}</p>
+        <div class="b-visual">
+          <div class="dial">
+            <div class="bar" style="height: 12%;"></div>
+            <div class="bar" style="height: 28%;"></div>
+            <div class="bar" style="height: 18%;"></div>
+            <div class="bar" style="height: 42%;"></div>
+            <div class="bar" style="height: 36%;"></div>
+            <div class="bar" style="height: 60%;"></div>
+            <div class="bar" style="height: 48%;"></div>
+            <div class="bar" style="height: 80%;"></div>
+            <div class="bar" style="height: 70%;"></div>
+            <div class="bar" style="height: 92%;"></div>
+            <div class="bar" style="height: 84%;"></div>
+            <div class="bar" style="height: 100%; background: var(--energy);"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 10px; font-family: var(--mono); font-size: 10px; color: var(--ink-5); letter-spacing: .12em; text-transform: uppercase;">
+            <span>{{ i18n "f1_lt" }}</span><span>14:32</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bento-tile b2 reveal" style="--reveal-delay: 60ms;">
+        <div class="b-meta">{{ i18n "f2_meta" }}</div>
+        <h3>{{ i18n "f2_h" }}</h3>
+        <p>{{ i18n "f2_p" }}</p>
+        <div class="b-visual" style="display: flex; align-items: center; gap: 12px;">
+          <div class="fam-cluster">
+            <div class="fam-av">З</div>
+            <div class="fam-av">Б</div>
+            <div class="fam-av">Д</div>
+            <div class="fam-av">+</div>
+          </div>
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--ink-4); letter-spacing: .12em; text-transform: uppercase;">{{ i18n "f2_count" }}</span>
+        </div>
+      </div>
+
+      <div class="bento-tile b3 reveal" style="--reveal-delay: 120ms;">
+        <div class="b-meta">{{ i18n "f3_meta" }}</div>
+        <h3>{{ i18n "f3_h" }}</h3>
+        <p>{{ i18n "f3_p" }}</p>
+      </div>
+
+      <div class="bento-tile energy b4 reveal" style="--reveal-delay: 180ms;">
+        <div class="b-meta">{{ i18n "f4_meta" }}</div>
+        <h3 style="font-size: 22px;">Ru · Oʻz · En</h3>
+        <p style="font-size: 12px;">{{ i18n "f4_p" }}</p>
+      </div>
+
+      <div class="bento-tile b5 reveal" style="--reveal-delay: 240ms;">
+        <div class="b-meta">{{ i18n "f5_meta" }}</div>
+        <h3>{{ i18n "f5_h" }}</h3>
+        <p style="margin-bottom: 18px;">{{ i18n "f5_p" }}</p>
+        <div class="b-visual">
+          <div class="quiet-bar">
+            <span class="label-tick" style="left: 0%;">0</span>
+            <span class="label-tick" style="left: 29.2%;">7:00</span>
+            <span class="label-tick" style="left: 91.7%;">22:00</span>
+            <span class="label-tick" style="left: 100%;">24</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="bento-tile b6 reveal" style="--reveal-delay: 300ms;">
+        <div class="b-meta">{{ i18n "f6_meta" }}</div>
+        <h3>{{ i18n "f6_h" }}</h3>
+        <p>{{ i18n "f6_p" }}</p>
+      </div>
+    </div>
   </div>
 </section>
+
+<!-- ============ DAY IN LIFE ============ -->
+<section class="section" id="day" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span>{{ i18n "day_label" }}</span>
+      </div>
+      <h2>{{ i18n "day_h" | safeHTML }}</h2>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-row reveal">
+        <div class="tl-time">8:24<strong>{{ i18n "day_1_label" }}</strong></div>
+        <div class="tl-context">
+          <h3>{{ i18n "day_1_h" }}</h3>
+          <p>{{ i18n "day_1_p" }}</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">8:24</span></div>
+            <div class="tg-text">
+              📚 {{ i18n "day_1_msg_pre" | safeHTML }}<br>
+              {{ i18n "day_1_msg_subj" }}&nbsp;<span class="tg-grade g5">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">11:08<strong>{{ i18n "day_2_label" }}</strong></div>
+        <div class="tl-context">
+          <h3>{{ i18n "day_2_h" }}</h3>
+          <p>{{ i18n "day_2_p" }}</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">11:08</span></div>
+            <div class="tg-text">
+              📚 {{ i18n "day_2_msg_pre" | safeHTML }}<br>
+              {{ i18n "day_2_msg_subj" }}&nbsp;<span class="tg-grade g4">4</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">16:42<strong>{{ i18n "day_3_label" }}</strong></div>
+        <div class="tl-context">
+          <h3>{{ i18n "day_3_h" }}</h3>
+          <p>{{ i18n "day_3_p" }}</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">16:42</span></div>
+            <div class="tg-text">
+              ✏️ {{ i18n "day_3_msg_pre" }}<br>
+              {{ i18n "day_3_msg_subj" }} · {{ i18n "tg_was" }}&nbsp;<span class="tg-grade g3" style="text-decoration: line-through; opacity: .55;">3</span>
+              <span style="color: #888;">→</span>
+              {{ i18n "tg_now" }}&nbsp;<span class="tg-grade g4">4</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">19:00<strong>{{ i18n "day_4_label" }}</strong></div>
+        <div class="tl-context">
+          <h3>{{ i18n "day_4_h" }}</h3>
+          <p>{{ i18n "day_4_p" }}</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card" style="max-width: 320px;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">19:00</span></div>
+            <div class="tg-text" style="font-size: 14px;">
+              🌙 <b>{{ i18n "day_4_msg_h" }}</b><br>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee; margin-top: 6px;">{{ i18n "day_subj_math" }}&nbsp;<span class="tg-grade g5">5</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">{{ i18n "day_subj_phys" }}&nbsp;<span class="tg-grade g4">4</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">{{ i18n "day_subj_hist" }}&nbsp;<span class="tg-grade g4">4</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">{{ i18n "day_subj_bio" }}&nbsp;<span class="tg-grade g5">5</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee; font-size: 12px; color: #777;">{{ i18n "day_4_msg_avg" | safeHTML }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRICING ============ -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span>{{ i18n "price_label" }}</span>
+      </div>
+      <h2>{{ i18n "price_h" | safeHTML }}</h2>
+    </div>
+
+    <div class="price-grid">
+      <div class="price-cell reveal">
+        <div class="price-name">{{ i18n "p1_name" }}</div>
+        <div class="price-num">29 900<small>UZS</small></div>
+        <div class="price-per">{{ i18n "p1_per" }}</div>
+        <ul class="price-list">
+          <li>{{ i18n "p1_l1" }}</li>
+          <li>{{ i18n "p1_l2" }}</li>
+          <li>{{ i18n "p1_l3" | safeHTML }}</li>
+          <li>{{ i18n "p1_l4" }}</li>
+          <li>{{ i18n "p1_l5" }}</li>
+        </ul>
+        <a href="{{ .Site.Params.botUrl }}" class="btn btn-ghost">{{ i18n "p1_cta" }}</a>
+      </div>
+
+      <div class="price-cell feat reveal" style="--reveal-delay: 100ms;">
+        <div class="price-tag">{{ i18n "p2_tag" }}</div>
+        <div class="price-name">{{ i18n "p2_name" }}</div>
+        <div class="price-num">79 900<small>UZS</small></div>
+        <div class="price-per">{{ i18n "p2_per" }}</div>
+        <ul class="price-list">
+          <li>{{ i18n "p2_l1" }}</li>
+          <li>{{ i18n "p2_l2" | safeHTML }}</li>
+          <li>{{ i18n "p2_l3" }}</li>
+          <li>{{ i18n "p2_l4" }}</li>
+          <li>{{ i18n "p2_l5" }}</li>
+        </ul>
+        <a href="{{ .Site.Params.botUrl }}" class="btn btn-energy">{{ i18n "p2_cta" }}</a>
+      </div>
+
+      <div class="price-cell reveal" style="--reveal-delay: 200ms;">
+        <div class="price-tag">{{ i18n "p3_tag" }}</div>
+        <div class="price-name">{{ i18n "p3_name" }}</div>
+        <div class="price-num">249 900<small>UZS</small></div>
+        <div class="price-per">{{ i18n "p3_per" }}</div>
+        <ul class="price-list">
+          <li>{{ i18n "p3_l1" }}</li>
+          <li>{{ i18n "p3_l2" | safeHTML }}</li>
+          <li>{{ i18n "p3_l3" }}</li>
+          <li>{{ i18n "p3_l4" }}</li>
+          <li>{{ i18n "p3_l5" }}</li>
+        </ul>
+        <a href="{{ .Site.Params.botUrl }}" class="btn btn-ghost">{{ i18n "p3_cta" }}</a>
+      </div>
+    </div>
+
+    <p style="font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-4); text-align: center; margin-top: 32px;">
+      {{ i18n "price_foot" }}
+    </p>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="section" id="faq" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container-narrow">
+    <div class="section-head reveal" style="grid-template-columns: 1fr;">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span>{{ i18n "faq_label" }}</span>
+      </div>
+      <h2>{{ i18n "faq_h" | safeHTML }}</h2>
+    </div>
+
+    <div class="faq-list">
+      {{ range $i := seq 1 5 }}
+      <div class="faq-item{{ if eq $i 1 }} open{{ end }} reveal">
+        <div class="faq-q">
+          <span>{{ i18n (printf "faq_q%d" $i) }}</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a">{{ i18n (printf "faq_a%d" $i) }}</div>
+      </div>
+      {{ end }}
+    </div>
+  </div>
+</section>
+
+<!-- ============ BIG CTA ============ -->
+<section class="section">
+  <div class="container">
+    <div class="big-cta reveal">
+      <h2>{{ i18n "cta_h" | safeHTML }}</h2>
+      <div class="big-cta-side">
+        <div style="display: flex; flex-direction: column; gap: 14px; align-items: flex-start;">
+          <a href="{{ .Site.Params.botUrl }}" class="btn btn-energy btn-lg">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+            <span>{{ i18n "cta_open_l" }}</span>
+          </a>
+          <a href="/docs/" class="btn btn-ghost btn-lg" style="color: var(--paper); border-color: rgba(255,255,255,.18);">{{ i18n "cta_docs" }}</a>
+          <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-5); margin-top: 8px;">@GradeSentinel_bot · grades.railtech.uz</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 {{ end }}
