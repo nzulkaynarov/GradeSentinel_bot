@@ -51,3 +51,9 @@ deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel/venv/bin/pip install -r 
 
 # Валидация Caddyfile до reload
 deploy ALL=(root) NOPASSWD: /usr/bin/caddy validate --config /etc/caddy/Caddyfile
+
+# ── Phase 1: Hugo лендинг — /var/www/gradesentinel-landing ─────────────────
+# Целевая директория, синк собранной статики, owner www-data.
+deploy ALL=(root) NOPASSWD: /usr/bin/install -d -o www-data -g www-data -m 0755 /var/www/gradesentinel-landing
+deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete /home/deploy/actions-runner/_work/GradeSentinel_bot/GradeSentinel_bot/landing/public/ /var/www/gradesentinel-landing/
+deploy ALL=(root) NOPASSWD: /usr/bin/chown -R www-data\:www-data /var/www/gradesentinel-landing

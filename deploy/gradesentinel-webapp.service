@@ -1,6 +1,6 @@
 [Unit]
 Description=GradeSentinel WebApp (Flask)
-Documentation=https://github.com/anthropics/gradesentinel
+Documentation=https://github.com/nzulkaynarov/GradeSentinel_bot
 After=network-online.target gradesentinel-bot.service
 Wants=network-online.target
 StartLimitIntervalSec=300
