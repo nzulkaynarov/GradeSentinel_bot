@@ -455,152 +455,23 @@ def init_db():
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_archive_student_date ON grade_history_archive(student_id, date_added)')
                 
-def add_grade(student_id: int, subject: str, grade_value: Optional[float],
-              raw_text: str, cell_reference: str,
-              grade_date: Optional[str] = None) -> bool:
-    """
-    Добавляет новую оценку в БД, если такой еще нет.
-    Возвращает True, если оценка новая (успешно добавлена),
-    и False, если дубликат (по UNIQUE(student, subject, grade_date, raw_text)).
-
-    grade_date — фактическая дата оценки (YYYY-MM-DD). Должна передаваться
-    явно вызывающим (monitor из cell_ref «Сегодня!subject:date», history_importer
-    из заголовка столбца). После этапа 1C колонка NOT NULL; если caller не
-    передал — дефолтим на сегодняшний день по Ташкенту (UTC+5), это домен
-    monitor'а и единственный безопасный fallback.
-    """
-    if grade_date is None:
-        grade_date = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO grade_history
-                  (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
-            return cursor.rowcount > 0
-        except sqlite3.IntegrityError:
-            # Дубликат по новому UNIQUE (student, subject, grade_date, raw_text)
-            # ИЛИ (на legacy-БД где этап 1C ещё не применён) по старому
-            # UNIQUE(student, cell_reference).
-            return False
-    return False
-
-
-def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[str, Any]]:
-    """Возвращает существующую оценку по cell_reference, или None если не найдена."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT grade_value, raw_text, subject
-            FROM grade_history
-            WHERE student_id = ? AND cell_reference = ?
-        ''', (student_id, cell_reference))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-
-def update_grade(student_id: int, cell_reference: str, grade_value: Optional[float], raw_text: str) -> bool:
-    """Обновляет значение оценки по cell_reference. Возвращает True если обновлено."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE grade_history
-            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
-            WHERE student_id = ? AND cell_reference = ?
-        ''', (grade_value, raw_text, student_id, cell_reference))
-        return cursor.rowcount > 0
-
-def upsert_quarter_grade(student_id: int, subject: str, quarter: int,
-                         grade_value: Optional[float], raw_text: str) -> bool:
-    """Вставляет или обновляет четвертную оценку. Возвращает True если значение изменилось."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT grade_value, raw_text FROM quarter_grades
-            WHERE student_id = ? AND subject = ? AND quarter = ?
-        ''', (student_id, subject, quarter))
-        existing = cursor.fetchone()
-
-        if existing and existing['raw_text'] == raw_text:
-            return False  # Не изменилось
-
-        cursor.execute('''
-            INSERT INTO quarter_grades (student_id, subject, quarter, grade_value, raw_text)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(student_id, subject, quarter)
-            DO UPDATE SET grade_value = excluded.grade_value, raw_text = excluded.raw_text,
-                          updated_at = CURRENT_TIMESTAMP
-        ''', (student_id, subject, quarter, grade_value, raw_text))
-        return True
-
-
-def get_quarter_grades(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все четвертные оценки студента."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT subject, quarter, grade_value, raw_text
-            FROM quarter_grades
-            WHERE student_id = ?
-            ORDER BY subject, quarter
-        ''', (student_id,))
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[str, Any]]:
-    """Возвращает историю оценок студента за последние N дней по grade_date
-    (фактическая дата оценки). date_added — технический timestamp вставки —
-    возвращается отдельно для tiebreaker'ов и обратной совместимости.
-
-    Пока в БД есть legacy-записи с grade_date IS NULL (write-path ещё не пишет
-    его — это придёт в этапе 3 RFC), используем COALESCE-fallback на дату из
-    date_added переведённую в Tashkent TZ. После завершения этапа 1C+3 fallback
-    можно убрать."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT subject, grade_value, raw_text, grade_date, date_added
-            FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  >= date('now', '+5 hours', ?)
-            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')),
-                     date_added
-        ''', (student_id, f'-{days} days'))
-        return [dict(row) for row in cursor.fetchall()]
-
-def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[Dict[str, Any]]:
-    """Возвращает полную историю оценок студента за N дней (для WebApp API).
-    Период — по grade_date (фактическая дата оценки), не по date_added (это
-    технический timestamp вставки). См. RFC Docs/rfc-grades-source-of-truth.md.
-    Fallback на date_added пока write-path не переключён (этап 3)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
-            FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  >= date('now', '+5 hours', ?)
-            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')) DESC,
-                     date_added DESC
-        ''', (student_id, f'-{days} days'))
-        return [dict(row) for row in cursor.fetchall()]
-
-def get_parents_for_student(student_id: int) -> List[int]:
-    """Возвращает список telegram_id всех родителей, привязанных к данному студенту через семью."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT p.telegram_id 
-            FROM parents p
-            JOIN family_links fl ON p.id = fl.parent_id
-            WHERE fl.student_id = ? AND p.telegram_id IS NOT NULL
-        ''', (student_id,))
-        return [row['telegram_id'] for row in cursor.fetchall()]
-    return []
+# Оценки (write-path + четвертные + получение для дашборда / scheduler'а) —
+# в src/db/grades.py. Re-export здесь же, безопасно (нет обратных импортов).
+from src.db.grades import (  # noqa: E402, F401
+    add_grade,
+    get_existing_grade,
+    update_grade,
+    upsert_quarter_grade,
+    get_quarter_grades,
+    get_grade_history_for_student,
+    get_grade_history_for_student_all,
+    get_today_grades_for_student,
+    get_overnight_grades_for_student,
+    get_yesterday_grades_for_student,
+    has_today_grades_for_parent,
+    has_recent_grades_for_parent,
+    get_parents_for_student,
+)
 
 def get_active_spreadsheets() -> List[Dict[str, Any]]:
     """Возвращает список всех словарей {student_id, spreadsheet_id, fio, display_name} для опроса таблиц."""
@@ -984,17 +855,12 @@ def has_today_grades_for_parent(telegram_id: int) -> bool:
         return cursor.fetchone()['c'] > 0
 
 
-def has_recent_grades_for_parent(telegram_id: int, hours: int = 48) -> bool:
-    """Проверяет, есть ли оценки у детей родителя за последние N часов."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT COUNT(*) as c FROM grade_history gh
-            JOIN family_links fl ON gh.student_id = fl.student_id
-            JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND gh.date_added >= datetime('now', ?)
-        ''', (telegram_id, f'-{hours} hours'))
-        return cursor.fetchone()['c'] > 0
+# Очередь уведомлений (тихие часы) — в src/db/notifications.py.
+from src.db.notifications import (  # noqa: E402, F401
+    queue_notification,
+    get_and_clear_queued_notifications,
+    get_all_queued_telegram_ids,
+)
 
 
 # Инвайт-ссылки — имплементация в src/db/invites.py.
