@@ -1,6 +1,6 @@
 [Unit]
 Description=GradeSentinel Telegram Bot
-Documentation=https://github.com/anthropics/gradesentinel
+Documentation=https://github.com/nzulkaynarov/GradeSentinel_bot
 After=network-online.target
 Wants=network-online.target
 # StartLimit* должны быть в [Unit], не [Service] — иначе systemd ругается
