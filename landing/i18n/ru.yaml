@@ -1,32 +1,202 @@
-hero_eyebrow:
-  other: "GradeSentinel"
-hero_title:
-  other: "Узнаёте о пятёрке раньше, чем сам ребёнок"
-cta_start_bot:
-  other: "Запустить бота"
-cta_read_docs:
-  other: "Документация"
-cta_open_bot:
-  other: "Открыть бота"
-nav_how:
-  other: "Как работает"
-nav_features:
-  other: "Возможности"
-nav_pricing:
-  other: "Тарифы"
-nav_docs:
-  other: "Документация"
-docs_eyebrow:
-  other: "Документация"
-phase0_notice_title:
-  other: "Phase 0 — заглушка"
-phase0_notice_body:
-  other: "Это скаффолд Hugo-проекта. В Phase 1 сюда переедет контент из мокапов frontend/index.html и frontend/instructions.html."
-footer_tagline:
-  other: "Мониторинг школьных оценок · Узбекистан"
-footer_product:
-  other: "Продукт"
-footer_contact:
-  other: "Контакты"
-footer_open_portal:
-  other: "Открыть кабинет"
+# Russian i18n bundle for GradeSentinel landing
+# Все ключи используются в layouts/index.html, layouts/docs/list.html и partials.
+
+# === Nav / topbar ===
+nav_how: { other: "Как устроено" }
+nav_features: { other: "Возможности" }
+nav_day: { other: "День из жизни" }
+nav_pricing: { other: "Тарифы" }
+nav_docs: { other: "Инструкция" }
+nav_signin: { other: "Войти" }
+cta_open_bot: { other: "Открыть бот" }
+
+# === Hero ===
+meta_live: { other: "Сейчас работает в Узбекистане · v2.5" }
+meta_center: { other: "<b>1 247</b> семей · <b>3 412</b> детей · <b>↑ 18%</b> ср. балл" }
+meta_right: { other: "Tashkent · UTC+5" }
+meta_3min: { other: "3 минуты на подключение" }
+hero_h1: { other: "Узнаёте о&nbsp;<span class=\"fancy\">«пятёрке»</span><br>по математике<br>раньше,&nbsp;<span class=\"italic-display\" style=\"color: var(--ink-3);\">чем сам ребёнок</span>." }
+cta_primary_label: { other: "Подключить бесплатно" }
+cta_secondary: { other: "Как это работает" }
+
+# Telegram conversation in hero
+tg_head: { other: "@GradeSentinel_bot · в эфире" }
+tg_msg1_pre: { other: "У <b>Алишера</b> новая оценка" }
+tg_msg1_subj: { other: "Математика" }
+tg_msg1_kind: { other: "контрольная" }
+tg_msg2_pre: { other: "Учитель исправил оценку" }
+tg_msg2_subj: { other: "История" }
+tg_msg3: { other: "Молодец! Расскажешь после школы" }
+tg_was: { other: "было" }
+tg_now: { other: "стало" }
+
+# === Flow ===
+flow_label: { other: "01 · Как устроено" }
+flow_h: { other: "Школа ведёт <span class=\"fancy\">Google Таблицу</span> — мы превращаем её в моментальные пуши." }
+
+flow_1_num: { other: "Шаг 1 · Источник" }
+flow_1_h: { other: "Дневник в Google Sheets" }
+flow_1_p: { other: "Учитель ставит «5» в обычной таблице. Бот читает её через сервисный аккаунт Google — без логинов в школьную систему." }
+
+flow_2_num: { other: "Шаг 2 · Движок" }
+flow_2_h: { other: "Snapshot diff каждые 5 минут" }
+flow_2_p: { other: "Сравниваем текущее состояние с предыдущим. Находим всё новое и изменённое. Ничего не пропускаем — даже исправления задним числом." }
+
+flow_3_num: { other: "Шаг 3 · Доставка" }
+flow_3_h: { other: "Пуш в Telegram" }
+flow_3_p: { other: "Через 5 минут после оценки уведомление уже у вас. Маме, папе, бабушке — всем, кто состоит в семье." }
+
+sh_subj: { other: "Предмет" }
+sh_g: { other: "Оц" }
+sh_math: { other: "Математика" }
+sh_phys: { other: "Физика" }
+sh_hist: { other: "История" }
+push_mini_t: { other: "Алишер · математика · <b style=\"color: var(--g5);\">5</b>" }
+push_mini_t2: { other: "История <span style=\"text-decoration: line-through; color: #aaa;\">3</span> → <b style=\"color: var(--g4);\">4</b>" }
+
+# === Features (bento) ===
+feat_label: { other: "02 · Возможности" }
+feat_h: { other: "Один бот вместо <span class=\"italic-display\" style=\"color: var(--ink-3);\">десятка</span> родительских чатов и звонков учителю." }
+
+f1_meta: { other: "Скорость" }
+f1_h: { other: "5 минут от учительской ручки до вашего Telegram." }
+f1_p: { other: "Snapshot-движок проверяет дневник раз в 5 минут. Если у учителя дрогнула рука — увидите «было 3 → стало 4» в тот же день." }
+f1_lt: { other: "12 ч назад" }
+
+f2_meta: { other: "Семья" }
+f2_h: { other: "Мама, папа, бабушка — в одном бипе." }
+f2_p: { other: "Глава семьи генерирует одноразовую инвайт-ссылку. Все получают одинаковые уведомления — в собственном Telegram." }
+f2_count: { other: "5 родственников · 2 ребёнка" }
+
+f3_meta: { other: "AI · Claude" }
+f3_h: { other: "Воскресный разбор за вас." }
+f3_p: { other: "Каждое воскресенье в 19:00 — разбор недели: где провисло, где растёт, что подтянуть." }
+
+f4_meta: { other: "Языки" }
+f4_p: { other: "Бабушка — на узбекском, папа — на русском." }
+
+f5_meta: { other: "Тихие часы" }
+f5_h: { other: "Не звенит ночью." }
+f5_p: { other: "С 22:00 до 7:00 уведомления копятся и приходят утром одним сообщением." }
+
+f6_meta: { other: "Оплата" }
+f6_h: { other: "Click и Payme — прямо в Telegram." }
+f6_p: { other: "Без переходов на сайт банка, без автопродления, без мелкого шрифта. Подписка просто заканчивается в указанный день." }
+
+# === Day in life ===
+day_label: { other: "03 · День из жизни" }
+day_h: { other: "Один обычный школьный <span class=\"italic-display\" style=\"color: var(--ink-3);\">вторник</span>." }
+
+day_1_label: { other: "Утро" }
+day_1_h: { other: "Контрольная" }
+day_1_p: { other: "Учитель математики выставляет первые оценки за контрольную работу. Ребёнок пишет, родитель — на работе." }
+day_1_msg_pre: { other: "У <b>Алишера</b> новая оценка" }
+day_1_msg_subj: { other: "Математика · контрольная" }
+
+day_2_label: { other: "Перемена" }
+day_2_h: { other: "Лабораторная" }
+day_2_p: { other: "Физик выставляет оценки по лабораторной работе. До конца дня — ещё две и тест по биологии." }
+day_2_msg_pre: { other: "У <b>Алишера</b> новая оценка" }
+day_2_msg_subj: { other: "Физика · лабораторная" }
+
+day_3_label: { other: "После уроков" }
+day_3_h: { other: "Учитель передумал" }
+day_3_p: { other: "Учитель истории пересмотрел доклад и поднял оценку. Без бота вы бы об этом узнали разве что из электронного дневника, и то — если бы зашли его проверить." }
+day_3_msg_pre: { other: "Оценка изменена" }
+day_3_msg_subj: { other: "История" }
+
+day_4_label: { other: "Ужин" }
+day_4_h: { other: "Сводка дня" }
+day_4_p: { other: "За ужином — один цельный отчёт. Ничего не упустили, не нужно собирать оценки по разным сообщениям." }
+day_4_msg_h: { other: "Сводка за вторник" }
+day_4_msg_avg: { other: "Средний балл за день: <b style=\"color: var(--g5);\">4.5</b>" }
+day_subj_math: { other: "Математика" }
+day_subj_phys: { other: "Физика" }
+day_subj_hist: { other: "История" }
+day_subj_bio: { other: "Биология" }
+
+# === Pricing ===
+price_label: { other: "04 · Тарифы" }
+price_h: { other: "Один счёт <span class=\"italic-display\" style=\"color: var(--ink-3);\">на всю семью</span>. Никакого автопродления." }
+price_foot: { other: "Click · Payme · оплата прямо в Telegram. Чек — в чат." }
+
+p1_name: { other: "1 месяц" }
+p1_per: { other: "~2.30 USD · попробовать без обязательств" }
+p1_l1: { other: "Уведомления о новых оценках" }
+p1_l2: { other: "Вечерняя сводка" }
+p1_l3: { other: "<b>До 5 детей</b> в семье" }
+p1_l4: { other: "Неограниченно родственников" }
+p1_l5: { other: "AI-анализ по запросу" }
+p1_cta: { other: "Начать с месяца" }
+
+p2_name: { other: "3 месяца" }
+p2_tag: { other: "Чаще всего выбирают" }
+p2_per: { other: "26 633 / мес · −11%" }
+p2_l1: { other: "Всё из месячного" }
+p2_l2: { other: "<b>Воскресный AI-разбор</b>" }
+p2_l3: { other: "Дашборд с динамикой" }
+p2_l4: { other: "Приоритетная поддержка" }
+p2_l5: { other: "История правок оценок" }
+p2_cta: { other: "Выбрать тариф" }
+
+p3_name: { other: "12 месяцев" }
+p3_tag: { other: "−30% на год" }
+p3_per: { other: "20 825 / мес · −30%" }
+p3_l1: { other: "Всё из квартального" }
+p3_l2: { other: "<b>Архив за весь год</b>" }
+p3_l3: { other: "Экспорт PDF / Excel" }
+p3_l4: { other: "Фиксация цены" }
+p3_l5: { other: "Передача семьи между родителями" }
+p3_cta: { other: "Взять на год" }
+
+# === FAQ ===
+faq_label: { other: "05 · Вопросы" }
+faq_h: { other: "То, что родители <span class=\"italic-display\" style=\"color: var(--ink-3);\">обычно</span> спрашивают первым." }
+faq_q1: { other: "Откуда бот берёт оценки?" }
+faq_a1: { other: "Из электронного дневника, который ведёт школа в Google Таблицах. Бот читает таблицу через сервисный аккаунт Google и сравнивает её с предыдущим состоянием — так находит новые и изменённые оценки. Никаких других источников не используем; учётной записи школьного журнала нам не нужно." }
+faq_q2: { other: "Это безопасно? Что вы видите в наших таблицах?" }
+faq_a2: { other: "У бота есть доступ только на чтение и только к той таблице, ссылку на которую вы добавили сами. Авторизация в дашборде идёт через подпись Telegram (HMAC-SHA256), к школьному кабинету ребёнка мы вообще не подключены." }
+faq_q3: { other: "Что будет, если учитель исправит оценку задним числом?" }
+faq_a3: { other: "Бот заметит изменение в течение 5 минут и пришлёт «было 3 → стало 4». История правок сохраняется в дашборде — спорные ситуации легко восстанавливать." }
+faq_q4: { other: "У меня двое детей в разных школах. Подключатся оба?" }
+faq_a4: { other: "Да, до 5 детей в одной семье — каждому своя таблица, в Telegram переключение в один клик. Один родитель может состоять в нескольких семьях: например, в семье с супругом и в семье со своими родителями." }
+faq_q5: { other: "Как отменить подписку?" }
+faq_a5: { other: "Никак — она просто заканчивается в указанную дату, без автопродления и списаний. За три дня до окончания бот напомнит и предложит продлить, если нужно." }
+
+# === Big CTA ===
+cta_h: { other: "Подключите за <i>3 минуты</i><br>и больше не открывайте дневник руками." }
+cta_open_l: { other: "Открыть в Telegram" }
+cta_docs: { other: "Посмотреть инструкцию" }
+
+# === Footer ===
+footer_about: { other: "Telegram-бот, который мгновенно уведомляет родителей о новых оценках в школьном электронном дневнике. Работает в Узбекистане с 2024 года." }
+footer_product: { other: "Продукт" }
+footer_team: { other: "Команда" }
+footer_help: { other: "Помощь" }
+footer_cabinet: { other: "Личный кабинет" }
+footer_about_link: { other: "О проекте" }
+footer_privacy: { other: "Политика конфиденциальности" }
+footer_terms: { other: "Условия" }
+footer_made: { other: "Сделано в Ташкенте" }
+
+# === Docs (instructions) ===
+docs_h1: { other: "Руководство пользователя" }
+docs_lead: { other: "Всё, что нужно знать, чтобы подключить дневник, пригласить родственников и начать получать оценки в Telegram." }
+docs_eyebrow: { other: "Документация · v2.5" }
+docs_tag_read: { other: "⏱ Время чтения 6 минут" }
+docs_tag_updated: { other: "Обновлено 8 мая 2026" }
+docs_toc_title: { other: "Содержание" }
+docs_s1_h: { other: "С чего начать" }
+docs_s2_h: { other: "Роли в семье" }
+docs_s3_h: { other: "Создание семьи" }
+docs_s4_h: { other: "Добавление ребёнка" }
+docs_s5_h: { other: "Пригласить родственников" }
+docs_s6_h: { other: "Уведомления" }
+docs_s7_h: { other: "AI-аналитика" }
+docs_s8_h: { other: "Подписка и оплата" }
+docs_s9_h: { other: "Команды бота" }
+docs_s10_h: { other: "Решение проблем" }
+docs_rail_h: { other: "Готовы начать?" }
+docs_rail_p: { other: "Откройте бота в Telegram и создайте свою первую семью за 3 минуты." }
+docs_rail_cta: { other: "Открыть бот" }
+docs_rail_small: { other: "Не нашли ответ?" }

@@ -1,0 +1,51 @@
+{{ define "main" }}
+<div class="doc-shell">
+
+  <!-- TOC -->
+  <aside class="doc-toc">
+    <h4>{{ i18n "docs_toc_title" }}</h4>
+    <ul>
+      <li><a href="#start" class="active">{{ i18n "docs_s1_h" }}</a></li>
+      <li><a href="#roles">{{ i18n "docs_s2_h" }}</a></li>
+      <li><a href="#first-family">{{ i18n "docs_s3_h" }}</a></li>
+      <li><a href="#add-child">{{ i18n "docs_s4_h" }}</a></li>
+      <li><a href="#invite">{{ i18n "docs_s5_h" }}</a></li>
+      <li><a href="#notifications">{{ i18n "docs_s6_h" }}</a></li>
+      <li><a href="#ai">{{ i18n "docs_s7_h" }}</a></li>
+      <li><a href="#payment">{{ i18n "docs_s8_h" }}</a></li>
+      <li><a href="#commands">{{ i18n "docs_s9_h" }}</a></li>
+      <li><a href="#troubleshoot">{{ i18n "docs_s10_h" }}</a></li>
+    </ul>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="doc-content">
+    <div class="doc-hero">
+      <span class="label"><span class="label-line"></span> {{ i18n "docs_eyebrow" }}</span>
+      <h1 style="margin-top: 12px;">{{ i18n "docs_h1" }}</h1>
+      <p class="lead">{{ i18n "docs_lead" }}</p>
+      <div class="doc-meta">
+        <span class="doc-tag">{{ i18n "docs_tag_read" }}</span>
+        <span class="doc-tag gray">{{ i18n "docs_tag_updated" }}</span>
+      </div>
+    </div>
+
+    {{ .Content }}
+
+  </main>
+
+  <!-- Right rail -->
+  <aside class="doc-rail">
+    <div class="rail-card">
+      <h4>{{ i18n "docs_rail_h" }}</h4>
+      <p>{{ i18n "docs_rail_p" }}</p>
+      <a href="{{ .Site.Params.botUrl }}" class="btn btn-energy">{{ i18n "docs_rail_cta" }}</a>
+    </div>
+    <div class="small-card">
+      <div style="color: var(--ink-3); margin-bottom: 8px;">{{ i18n "docs_rail_small" }}</div>
+      <a href="mailto:{{ .Site.Params.supportEmail }}">{{ .Site.Params.supportEmail }}</a>
+    </div>
+  </aside>
+
+</div>
+{{ end }}

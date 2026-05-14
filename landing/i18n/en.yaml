@@ -1,32 +1,174 @@
-hero_eyebrow:
-  other: "GradeSentinel"
-hero_title:
-  other: "Know about an A before your child does"
-cta_start_bot:
-  other: "Launch bot"
-cta_read_docs:
-  other: "Documentation"
-cta_open_bot:
-  other: "Open bot"
-nav_how:
-  other: "How it works"
-nav_features:
-  other: "Features"
-nav_pricing:
-  other: "Pricing"
-nav_docs:
-  other: "Docs"
-docs_eyebrow:
-  other: "Documentation"
-phase0_notice_title:
-  other: "Phase 0 — placeholder"
-phase0_notice_body:
-  other: "This is the Hugo project scaffold. Phase 1 will port content from frontend/index.html and frontend/instructions.html into here."
-footer_tagline:
-  other: "School grade monitoring · Uzbekistan"
-footer_product:
-  other: "Product"
-footer_contact:
-  other: "Contact"
-footer_open_portal:
-  other: "Open portal"
+# English i18n bundle. Источник переводов — JS dict в frontend/index.html.
+
+nav_how: { other: "How it works" }
+nav_features: { other: "Features" }
+nav_day: { other: "A day" }
+nav_pricing: { other: "Pricing" }
+nav_docs: { other: "Docs" }
+nav_signin: { other: "Sign in" }
+cta_open_bot: { other: "Open the bot" }
+
+meta_live: { other: "Live in Uzbekistan · v2.5" }
+meta_center: { other: "<b>1,247</b> families · <b>3,412</b> kids · <b>↑ 18%</b> avg grade" }
+meta_right: { other: "Tashkent · UTC+5" }
+meta_3min: { other: "3 minutes to set up" }
+hero_h1: { other: "Find out about that <span class=\"fancy\">A</span><br>in math<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">before your kid does</span>." }
+cta_primary_label: { other: "Connect for free" }
+cta_secondary: { other: "How it works" }
+
+tg_head: { other: "@GradeSentinel_bot · live" }
+tg_msg1_pre: { other: "<b>Alisher</b> has a new grade" }
+tg_msg1_subj: { other: "Math" }
+tg_msg1_kind: { other: "test" }
+tg_msg2_pre: { other: "Teacher updated a grade" }
+tg_msg2_subj: { other: "History" }
+tg_msg3: { other: "Well done! Tell me after school" }
+tg_was: { other: "was" }
+tg_now: { other: "now" }
+
+flow_label: { other: "01 · How it works" }
+flow_h: { other: "School runs a <span class=\"fancy\">Google Sheet</span> — we turn it into instant pushes." }
+flow_1_num: { other: "Step 1 · Source" }
+flow_1_h: { other: "Diary in Google Sheets" }
+flow_1_p: { other: "Teacher writes a 5 in a normal sheet. The bot reads it via a Google service account — no school system login needed." }
+flow_2_num: { other: "Step 2 · Engine" }
+flow_2_h: { other: "Snapshot diff every 5 minutes" }
+flow_2_p: { other: "We compare current state with the previous one. Catch everything new and changed — even backdated edits." }
+flow_3_num: { other: "Step 3 · Delivery" }
+flow_3_h: { other: "Push to Telegram" }
+flow_3_p: { other: "5 minutes after the grade is in, the notification is yours. Mom, dad, grandma — everyone in the family." }
+
+sh_subj: { other: "Subject" }
+sh_g: { other: "Gr" }
+sh_math: { other: "Math" }
+sh_phys: { other: "Physics" }
+sh_hist: { other: "History" }
+push_mini_t: { other: "Alisher · math · <b style=\"color: var(--g5);\">5</b>" }
+push_mini_t2: { other: "History <span style=\"text-decoration: line-through; color: #aaa;\">3</span> → <b style=\"color: var(--g4);\">4</b>" }
+
+feat_label: { other: "02 · Features" }
+feat_h: { other: "One bot instead of <span class=\"italic-display\" style=\"color: var(--ink-3);\">a dozen</span> parent chats and calls to teachers." }
+f1_meta: { other: "Speed" }
+f1_h: { other: "5 minutes from the teacher's pen to your Telegram." }
+f1_p: { other: "Snapshot engine checks the diary every 5 minutes. If a teacher rewrites a grade — you see «was 3 → now 4» the same day." }
+f1_lt: { other: "12h ago" }
+f2_meta: { other: "Family" }
+f2_h: { other: "Mom, dad, grandma — one beep." }
+f2_p: { other: "Family head creates a one-time invite link. Everyone gets the same notifications — in their own Telegram." }
+f2_count: { other: "5 relatives · 2 kids" }
+f3_meta: { other: "AI · Claude" }
+f3_h: { other: "Sunday review, done for you." }
+f3_p: { other: "Every Sunday at 19:00 — a week review: what slipped, what's growing, what to focus on." }
+f4_meta: { other: "Languages" }
+f4_p: { other: "Grandma — in Uzbek, dad — in Russian." }
+f5_meta: { other: "Quiet hours" }
+f5_h: { other: "Doesn't ring at night." }
+f5_p: { other: "Between 22:00 and 7:00 notifications queue up and arrive together in the morning." }
+f6_meta: { other: "Payment" }
+f6_h: { other: "Click and Payme — right inside Telegram." }
+f6_p: { other: "No bank redirects, no auto-renewal, no fine print. Subscription just ends on the date." }
+
+day_label: { other: "03 · A day in life" }
+day_h: { other: "An ordinary school <span class=\"italic-display\" style=\"color: var(--ink-3);\">Tuesday</span>." }
+day_1_label: { other: "Morning" }
+day_1_h: { other: "Test" }
+day_1_p: { other: "Math teacher posts the first grades from a test. The kid is writing, the parent is at work." }
+day_1_msg_pre: { other: "<b>Alisher</b> has a new grade" }
+day_1_msg_subj: { other: "Math · test" }
+day_2_label: { other: "Break" }
+day_2_h: { other: "Lab work" }
+day_2_p: { other: "Physics teacher posts lab grades. Two more before the day ends, plus a biology quiz." }
+day_2_msg_pre: { other: "<b>Alisher</b> has a new grade" }
+day_2_msg_subj: { other: "Physics · lab" }
+day_3_label: { other: "After class" }
+day_3_h: { other: "Teacher changed their mind" }
+day_3_p: { other: "History teacher reviewed an essay and raised the grade. Without the bot you'd never know unless you opened the diary." }
+day_3_msg_pre: { other: "Grade updated" }
+day_3_msg_subj: { other: "History" }
+day_4_label: { other: "Dinner" }
+day_4_h: { other: "Daily digest" }
+day_4_p: { other: "At dinner — a single complete report. Nothing missed, no need to piece together grades from different messages." }
+day_4_msg_h: { other: "Tuesday digest" }
+day_4_msg_avg: { other: "Daily average: <b style=\"color: var(--g5);\">4.5</b>" }
+day_subj_math: { other: "Math" }
+day_subj_phys: { other: "Physics" }
+day_subj_hist: { other: "History" }
+day_subj_bio: { other: "Biology" }
+
+price_label: { other: "04 · Pricing" }
+price_h: { other: "One bill <span class=\"italic-display\" style=\"color: var(--ink-3);\">for the whole family</span>. No auto-renewal." }
+price_foot: { other: "Click · Payme · payments inside Telegram. Receipt in chat." }
+p1_name: { other: "1 month" }
+p1_per: { other: "~2.30 USD · try without commitment" }
+p1_l1: { other: "Notifications for new grades" }
+p1_l2: { other: "Evening digest" }
+p1_l3: { other: "<b>Up to 5 kids</b> per family" }
+p1_l4: { other: "Unlimited relatives" }
+p1_l5: { other: "AI analysis on demand" }
+p1_cta: { other: "Start monthly" }
+p2_name: { other: "3 months" }
+p2_tag: { other: "Most popular" }
+p2_per: { other: "26,633 / month · −11%" }
+p2_l1: { other: "Everything in monthly" }
+p2_l2: { other: "<b>Sunday AI review</b>" }
+p2_l3: { other: "Dashboard with trends" }
+p2_l4: { other: "Priority support" }
+p2_l5: { other: "Grade-change history" }
+p2_cta: { other: "Pick this plan" }
+p3_name: { other: "12 months" }
+p3_tag: { other: "−30% yearly" }
+p3_per: { other: "20,825 / month · −30%" }
+p3_l1: { other: "Everything in quarterly" }
+p3_l2: { other: "<b>Full-year archive</b>" }
+p3_l3: { other: "PDF / Excel export" }
+p3_l4: { other: "Price lock" }
+p3_l5: { other: "Family ownership transfer" }
+p3_cta: { other: "Get the year" }
+
+faq_label: { other: "05 · Questions" }
+faq_h: { other: "What parents <span class=\"italic-display\" style=\"color: var(--ink-3);\">usually</span> ask first." }
+faq_q1: { other: "Where does the bot get grades from?" }
+faq_a1: { other: "From the electronic diary the school runs in Google Sheets. The bot reads the sheet through a Google service account and compares it to the previous state to find new and updated grades. We don't use any other sources; no school system login needed." }
+faq_q2: { other: "Is it safe? What can you see in our sheets?" }
+faq_a2: { other: "The bot has read-only access only to the sheet you added yourself. Dashboard authorization uses a Telegram signature (HMAC-SHA256); we're not connected to the school cabinet at all." }
+faq_q3: { other: "What if the teacher updates a grade later?" }
+faq_a3: { other: "The bot notices the change within 5 minutes and sends «was 3 → now 4». Change history is kept in the dashboard — disputes are easy to resolve." }
+faq_q4: { other: "I have two kids in different schools. Can both be connected?" }
+faq_a4: { other: "Yes, up to 5 kids per family — each with their own sheet, one-tap switching in Telegram. One parent can be in several families: e.g., one with their spouse and one with their parents." }
+faq_q5: { other: "How do I cancel the subscription?" }
+faq_a5: { other: "You don't — it simply expires on the date, no auto-renewal or unexpected charges. The bot reminds you 3 days before the end and offers to renew if you want." }
+
+cta_h: { other: "Connect in <i>3 minutes</i><br>and never open the diary by hand again." }
+cta_open_l: { other: "Open in Telegram" }
+cta_docs: { other: "Read the docs" }
+
+footer_about: { other: "A Telegram bot that instantly notifies parents about new grades in the school's electronic diary. Live in Uzbekistan since 2024." }
+footer_product: { other: "Product" }
+footer_team: { other: "Company" }
+footer_help: { other: "Help" }
+footer_cabinet: { other: "Cabinet" }
+footer_about_link: { other: "About" }
+footer_privacy: { other: "Privacy policy" }
+footer_terms: { other: "Terms" }
+footer_made: { other: "Made in Tashkent" }
+
+docs_h1: { other: "User guide" }
+docs_lead: { other: "Everything you need to connect the diary, invite relatives and start receiving grades in Telegram." }
+docs_eyebrow: { other: "Documentation · v2.5" }
+docs_tag_read: { other: "⏱ 6 min read" }
+docs_tag_updated: { other: "Updated May 8, 2026" }
+docs_toc_title: { other: "Contents" }
+docs_s1_h: { other: "Getting started" }
+docs_s2_h: { other: "Family roles" }
+docs_s3_h: { other: "Create a family" }
+docs_s4_h: { other: "Add a child" }
+docs_s5_h: { other: "Invite relatives" }
+docs_s6_h: { other: "Notifications" }
+docs_s7_h: { other: "AI analytics" }
+docs_s8_h: { other: "Subscription & payment" }
+docs_s9_h: { other: "Bot commands" }
+docs_s10_h: { other: "Troubleshooting" }
+docs_rail_h: { other: "Ready to start?" }
+docs_rail_p: { other: "Open the bot in Telegram and create your first family in 3 minutes." }
+docs_rail_cta: { other: "Open the bot" }
+docs_rail_small: { other: "Didn't find an answer?" }

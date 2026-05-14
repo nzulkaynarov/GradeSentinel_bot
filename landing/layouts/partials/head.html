@@ -12,6 +12,9 @@
 {{ $css    := slice $tokens $main | resources.Concat "css/bundle.css" | resources.Minify | resources.Fingerprint }}
 <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">
 
+{{ $js := resources.Get "js/main.js" | resources.Minify | resources.Fingerprint }}
+<script defer src="{{ $js.RelPermalink }}" integrity="{{ $js.Data.Integrity }}"></script>
+
 <meta property="og:title" content="{{ .Title }}">
 <meta property="og:description" content="{{ .Site.Params.description }}">
 <meta property="og:type" content="website">

@@ -1,23 +1,29 @@
 <header class="topbar">
-  <div class="container topbar-inner">
+  <div class="topbar-inner">
     <a href="/" class="brand-mark">
       <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
     </a>
-    <nav class="topbar-links">
-      <a href="/#how">{{ i18n "nav_how" }}</a>
+    <nav>
+      <a href="/#flow">{{ i18n "nav_how" }}</a>
       <a href="/#features">{{ i18n "nav_features" }}</a>
+      <a href="/#day">{{ i18n "nav_day" }}</a>
       <a href="/#pricing">{{ i18n "nav_pricing" }}</a>
       <a href="/docs/">{{ i18n "nav_docs" }}</a>
     </nav>
     <div class="topbar-actions">
       <span class="locale" aria-label="Language">
-        {{ range .Site.Languages }}
-          {{ if eq .Lang $.Site.Language.Lang }}<button class="on" aria-current="true">{{ slicestr .LanguageName 0 2 }}</button>
-          {{ else }}<a href="{{ relLangURL $.Page.RelPermalink }}"><button>{{ slicestr .LanguageName 0 2 }}</button></a>
-          {{ end }}
+        {{ $cur := $.Site.Language.Lang }}
+        {{ range $idx, $lang := .Site.Languages }}
+          {{ if gt $idx 0 }}<span class="sep">·</span>{{ end }}
+          {{ if eq $lang.Lang $cur }}<button class="on" aria-current="true">{{ slicestr $lang.LanguageName 0 2 }}</button>
+          {{ else }}<a href="{{ relLangURL $.Page.RelPermalink }}">{{ slicestr $lang.LanguageName 0 2 }}</a>{{ end }}
         {{ end }}
       </span>
-      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-sm">{{ i18n "cta_open_bot" }}</a>
+      <a href="{{ .Site.Params.webappUrl }}" class="btn btn-ghost btn-sm">{{ i18n "nav_signin" }}</a>
+      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-sm">
+        <span>{{ i18n "cta_open_bot" }}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg>
+      </a>
     </div>
   </div>
 </header>

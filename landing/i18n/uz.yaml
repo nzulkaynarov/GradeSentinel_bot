@@ -1,32 +1,174 @@
-hero_eyebrow:
-  other: "GradeSentinel"
-hero_title:
-  other: "Bola oʻzidan oldin besh haqida biling"
-cta_start_bot:
-  other: "Botni ishga tushirish"
-cta_read_docs:
-  other: "Hujjatlar"
-cta_open_bot:
-  other: "Botni ochish"
-nav_how:
-  other: "Qanday ishlaydi"
-nav_features:
-  other: "Imkoniyatlar"
-nav_pricing:
-  other: "Tariflar"
-nav_docs:
-  other: "Hujjatlar"
-docs_eyebrow:
-  other: "Hujjatlar"
-phase0_notice_title:
-  other: "Phase 0 — zaglushka"
-phase0_notice_body:
-  other: "Bu Hugo loyihasining karkasidir. Phase 1 da bu yerga frontend/index.html va frontend/instructions.html dan tarkib koʻchiriladi."
-footer_tagline:
-  other: "Maktab baholarini monitoring qilish · Oʻzbekiston"
-footer_product:
-  other: "Mahsulot"
-footer_contact:
-  other: "Kontaktlar"
-footer_open_portal:
-  other: "Kabinetni ochish"
+# Uzbek i18n bundle. Источник переводов — JS dict в frontend/index.html.
+
+nav_how: { other: "Qanday ishlaydi" }
+nav_features: { other: "Imkoniyatlar" }
+nav_day: { other: "Bir kun" }
+nav_pricing: { other: "Tariflar" }
+nav_docs: { other: "Yoʻriqnoma" }
+nav_signin: { other: "Kirish" }
+cta_open_bot: { other: "Botni ochish" }
+
+meta_live: { other: "Hozir Oʻzbekistonda · v2.5" }
+meta_center: { other: "<b>1 247</b> oila · <b>3 412</b> bola · <b>↑ 18%</b> oʻrt. baho" }
+meta_right: { other: "Toshkent · UTC+5" }
+meta_3min: { other: "Ulash uchun 3 daqiqa" }
+hero_h1: { other: "Matematika boʻyicha <span class=\"fancy\">«5»</span> baho haqida<br>bilib olasiz<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">bolaning oʻzidan oldin</span>." }
+cta_primary_label: { other: "Bepul ulash" }
+cta_secondary: { other: "Qanday ishlaydi" }
+
+tg_head: { other: "@GradeSentinel_bot · efirda" }
+tg_msg1_pre: { other: "<b>Alisher</b>ning yangi bahosi" }
+tg_msg1_subj: { other: "Matematika" }
+tg_msg1_kind: { other: "nazorat" }
+tg_msg2_pre: { other: "Oʻqituvchi bahoni tuzatdi" }
+tg_msg2_subj: { other: "Tarix" }
+tg_msg3: { other: "Yaxshi! Maktabdan keyin gaplashamiz" }
+tg_was: { other: "edi" }
+tg_now: { other: "boʻldi" }
+
+flow_label: { other: "01 · Qanday ishlaydi" }
+flow_h: { other: "Maktab <span class=\"fancy\">Google Sheets</span> yuritadi — biz bu yerdan zudlik bilan push yuboramiz." }
+flow_1_num: { other: "1-bosqich · Manba" }
+flow_1_h: { other: "Google Sheets kundalik" }
+flow_1_p: { other: "Oʻqituvchi oddiy jadvalga «5» qoʻyadi. Bot uni Google xizmat hisobi orqali oʻqiydi — maktab tizimiga login kerak emas." }
+flow_2_num: { other: "2-bosqich · Vosita" }
+flow_2_h: { other: "Har 5 daqiqada snapshot diff" }
+flow_2_p: { other: "Joriy holatni avvalgisi bilan solishtiramiz. Hammasini topamiz — keyin tuzatilgan baholarni ham." }
+flow_3_num: { other: "3-bosqich · Yetkazib berish" }
+flow_3_h: { other: "Telegramga push" }
+flow_3_p: { other: "Bahodan 5 daqiqa keyin bildirishnoma sizda. Oilada hammaga." }
+
+sh_subj: { other: "Fan" }
+sh_g: { other: "Baho" }
+sh_math: { other: "Matematika" }
+sh_phys: { other: "Fizika" }
+sh_hist: { other: "Tarix" }
+push_mini_t: { other: "Alisher · matematika · <b style=\"color: var(--g5);\">5</b>" }
+push_mini_t2: { other: "Tarix <span style=\"text-decoration: line-through; color: #aaa;\">3</span> → <b style=\"color: var(--g4);\">4</b>" }
+
+feat_label: { other: "02 · Imkoniyatlar" }
+feat_h: { other: "Bitta bot — oʻnlab ota-ona chatlari va oʻqituvchiga qoʻngʻiroqlar oʻrniga." }
+f1_meta: { other: "Tezlik" }
+f1_h: { other: "Oʻqituvchi qalamidan Telegramgacha 5 daqiqa." }
+f1_p: { other: "Snapshot-vosita kundalikni har 5 daqiqada tekshiradi. Oʻqituvchi tuzatsa — «edi 3 → boʻldi 4» oʻsha kuni koʻrasiz." }
+f1_lt: { other: "12 soat oldin" }
+f2_meta: { other: "Oila" }
+f2_h: { other: "Ona, ota, buvi — bir signalda." }
+f2_p: { other: "Oila boshligʻi bir martalik taklif havola yaratadi. Hamma bir xil bildirishnomalarni oladi — oʻz Telegramida." }
+f2_count: { other: "5 qarindosh · 2 bola" }
+f3_meta: { other: "AI · Claude" }
+f3_h: { other: "Yakshanba tahlili siz uchun." }
+f3_p: { other: "Har yakshanba 19:00 da — haftalik tahlil: nima orqaga qolgan, nima oʻsmoqda." }
+f4_meta: { other: "Tillar" }
+f4_p: { other: "Buvi — oʻzbekcha, ota — rusiy." }
+f5_meta: { other: "Sukut soatlari" }
+f5_h: { other: "Tunda jiringlamaydi." }
+f5_p: { other: "22:00 dan 7:00 gacha bildirishnomalar toʻplanib, ertalab bitta xabar bilan keladi." }
+f6_meta: { other: "Toʻlov" }
+f6_h: { other: "Click va Payme — toʻgʻridan-toʻgʻri Telegramda." }
+f6_p: { other: "Bank saytiga oʻtishlarsiz, avto-yangilanishsiz. Obuna belgilangan kunda tugaydi." }
+
+day_label: { other: "03 · Bir kun" }
+day_h: { other: "Oddiy maktab <span class=\"italic-display\" style=\"color: var(--ink-3);\">seshanbasi</span>." }
+day_1_label: { other: "Ertalab" }
+day_1_h: { other: "Nazorat ishi" }
+day_1_p: { other: "Matematika oʻqituvchisi nazorat boʻyicha birinchi baholarni qoʻyadi. Bola yozyapti, ota-ona ishda." }
+day_1_msg_pre: { other: "<b>Alisher</b>ning yangi bahosi" }
+day_1_msg_subj: { other: "Matematika · nazorat" }
+day_2_label: { other: "Tanaffus" }
+day_2_h: { other: "Laboratoriya" }
+day_2_p: { other: "Fizik laboratoriya boʻyicha baho qoʻyadi. Kun oxirigacha — yana ikkita va biologiya testi." }
+day_2_msg_pre: { other: "<b>Alisher</b>ning yangi bahosi" }
+day_2_msg_subj: { other: "Fizika · laboratoriya" }
+day_3_label: { other: "Darslardan keyin" }
+day_3_h: { other: "Oʻqituvchi fikrini oʻzgartirdi" }
+day_3_p: { other: "Tarix oʻqituvchisi referatni qayta koʻrib chiqdi va bahoni oshirdi. Botisiz buni elektron kundalikdan bilar edingiz, agar uni tekshirib chiqsangiz." }
+day_3_msg_pre: { other: "Baho oʻzgartirildi" }
+day_3_msg_subj: { other: "Tarix" }
+day_4_label: { other: "Kechki ovqat" }
+day_4_h: { other: "Kunlik xulosa" }
+day_4_p: { other: "Kechki ovqatda — bitta yaxlit hisobot. Hech narsa qolib ketmagan, turli xabarlardan baholarni yigʻish kerak emas." }
+day_4_msg_h: { other: "Seshanba uchun xulosa" }
+day_4_msg_avg: { other: "Kunlik oʻrtacha: <b style=\"color: var(--g5);\">4.5</b>" }
+day_subj_math: { other: "Matematika" }
+day_subj_phys: { other: "Fizika" }
+day_subj_hist: { other: "Tarix" }
+day_subj_bio: { other: "Biologiya" }
+
+price_label: { other: "04 · Tariflar" }
+price_h: { other: "Bitta hisob — <span class=\"italic-display\" style=\"color: var(--ink-3);\">butun oilaga</span>. Avtomatik yangilanishsiz." }
+price_foot: { other: "Click · Payme · toʻlov Telegramda. Chek — chatda." }
+p1_name: { other: "1 oy" }
+p1_per: { other: "~2.30 USD · sinab koʻrish" }
+p1_l1: { other: "Yangi baholar haqida bildirishnoma" }
+p1_l2: { other: "Kechki xulosa" }
+p1_l3: { other: "Oilada <b>5 bolagacha</b>" }
+p1_l4: { other: "Cheksiz qarindoshlar" }
+p1_l5: { other: "Soʻrov boʻyicha AI tahlili" }
+p1_cta: { other: "Oydan boshlash" }
+p2_name: { other: "3 oy" }
+p2_tag: { other: "Eng koʻp tanlanadi" }
+p2_per: { other: "26 633 / oy · −11%" }
+p2_l1: { other: "Oylikdagi hamma narsa" }
+p2_l2: { other: "<b>Yakshanba AI-tahlili</b>" }
+p2_l3: { other: "Dinamika dashbordi" }
+p2_l4: { other: "Birinchi navbatdagi qoʻllab-quvvatlash" }
+p2_l5: { other: "Baholar tuzatish tarixi" }
+p2_cta: { other: "Tarifni tanlash" }
+p3_name: { other: "12 oy" }
+p3_tag: { other: "Yiliga −30%" }
+p3_per: { other: "20 825 / oy · −30%" }
+p3_l1: { other: "Choraklikning hammasi" }
+p3_l2: { other: "<b>Butun yil arxivi</b>" }
+p3_l3: { other: "PDF / Excel eksport" }
+p3_l4: { other: "Narxni qotirish" }
+p3_l5: { other: "Oila boshligʻini almashtirish" }
+p3_cta: { other: "Yilga olish" }
+
+faq_label: { other: "05 · Savollar" }
+faq_h: { other: "Ota-onalar koʻpincha <span class=\"italic-display\" style=\"color: var(--ink-3);\">avval</span> shu savollarni beradi." }
+faq_q1: { other: "Bot baholarni qayerdan oladi?" }
+faq_a1: { other: "Maktab Google Sheets da yuritadigan elektron kundalikdan. Bot jadvalni Google xizmat hisobi orqali oʻqiydi va oldingi holat bilan solishtiradi — yangi va oʻzgartirilgan baholarni shunday topadi." }
+faq_q2: { other: "Bu xavfsizmi? Siz bizning jadvallarimizda nima koʻrasiz?" }
+faq_a2: { other: "Botda faqat oʻqish va faqat siz oʻzingiz qoʻshgan jadvalga ruxsat bor. Dashborddagi avtorizatsiya Telegram imzosi (HMAC-SHA256) orqali." }
+faq_q3: { other: "Oʻqituvchi bahoni keyinroq tuzatsa nima boʻladi?" }
+faq_a3: { other: "Bot oʻzgarishni 5 daqiqada sezadi va «edi 3 → boʻldi 4» yuboradi. Tuzatish tarixi dashbordda saqlanadi." }
+faq_q4: { other: "Mening ikki bolam turli maktablarda. Ikkalasi ham ulanadimi?" }
+faq_a4: { other: "Ha, bir oilada 5 bolagacha — har biriga oʻz jadvali, Telegramda bir bosishda almashtirish." }
+faq_q5: { other: "Obunani qanday bekor qilish kerak?" }
+faq_a5: { other: "Hech qanday — u koʻrsatilgan sanada tugaydi, avto-yangilanishsiz va yechimsiz." }
+
+cta_h: { other: "<i>3 daqiqada</i> ulang<br>va kundalikni qoʻlda ochmang." }
+cta_open_l: { other: "Telegramda ochish" }
+cta_docs: { other: "Yoʻriqnomani koʻrish" }
+
+footer_about: { other: "Telegram-bot — maktab elektron kundaligidagi yangi baholar haqida ota-onalarga zudlik bilan xabar beradi. Oʻzbekistonda 2024-yildan beri ishlaydi." }
+footer_product: { other: "Mahsulot" }
+footer_team: { other: "Jamoa" }
+footer_help: { other: "Yordam" }
+footer_cabinet: { other: "Shaxsiy kabinet" }
+footer_about_link: { other: "Loyiha haqida" }
+footer_privacy: { other: "Maxfiylik siyosati" }
+footer_terms: { other: "Shartlar" }
+footer_made: { other: "Toshkentda yaratildi" }
+
+docs_h1: { other: "Foydalanuvchi qoʻllanmasi" }
+docs_lead: { other: "Kundalikni ulash, qarindoshlarni taklif qilish va Telegramda baholarni olishni boshlash uchun bilish kerak boʻlgan hamma narsa." }
+docs_eyebrow: { other: "Hujjatlar · v2.5" }
+docs_tag_read: { other: "⏱ Oʻqish vaqti 6 daqiqa" }
+docs_tag_updated: { other: "Yangilangan 8-may 2026" }
+docs_toc_title: { other: "Mundarija" }
+docs_s1_h: { other: "Nimadan boshlash" }
+docs_s2_h: { other: "Oiladagi rollar" }
+docs_s3_h: { other: "Oila yaratish" }
+docs_s4_h: { other: "Bola qoʻshish" }
+docs_s5_h: { other: "Qarindoshlarni taklif qilish" }
+docs_s6_h: { other: "Bildirishnomalar" }
+docs_s7_h: { other: "AI tahlili" }
+docs_s8_h: { other: "Obuna va toʻlov" }
+docs_s9_h: { other: "Bot buyruqlari" }
+docs_s10_h: { other: "Muammolarni hal qilish" }
+docs_rail_h: { other: "Boshlashga tayyormisiz?" }
+docs_rail_p: { other: "Telegramda botni oching va birinchi oilangizni 3 daqiqada yarating." }
+docs_rail_cta: { other: "Botni ochish" }
+docs_rail_small: { other: "Javob topa olmadingizmi?" }
