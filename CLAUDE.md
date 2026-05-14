@@ -316,10 +316,8 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 
 ## Открытые задачи / технический долг
 
-**Архитектурные (большие, требуют отдельной сессии каждый):**
-- **`database_manager.py` 1789 строк** — частично есть `src/db/{auth,connection,groups,maintenance}.py`, но они **re-export shim'ы**, имплементации всё ещё в database_manager. Реальное разделение: вынести тела функций в `src/db/{auth,families,grades,payments,promo,settings}.py`, оставить database_manager как фасад. ~100 функций к категоризации.
-- **`handlers/subscription.py` 1222 строки** — разбить на subscription/{payment_flow,promo,grant}.py. Платёжный код — повышенная осторожность.
-- **`register_next_step_handler` теряется при рестарте** — мигрировать все multi-step flow (add_family, broadcast, invite, support, lang switch) на `user_states` таблицу. Состояние переживёт рестарт. Затрагивает ~15-20 хендлеров в 6 файлах.
+**Архитектурные:**
+- **`handlers/subscription.py` 1318 строк** — отложено сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Split безопаснее делать когда платежи активны и линии разделения яснее. State-machine flow уже мигрирован на user_states.
 
 **Этапы RFC grade_date — заблокированы на входных от владельца:**
 - **Этап 4 (`MONOSOURCE_GRADES`)** — monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run. См. [Docs/rfc-grades-source-of-truth.md](Docs/rfc-grades-source-of-truth.md).
@@ -331,10 +329,7 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - **`_rate_limit_store` / `_panel_cache`** в памяти — допустимо для single-instance. При переходе в multi-instance нужен Redis (далеко в будущем).
 
 **Косметика / следующие фичи:**
-- **AI-инсайт в дашборде** — добавить мини-инсайт от Claude (1-2 предложения «что делать») в hero дашборда. Кэшировать 6 часов.
-- **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных.
-- **WebApp кнопка в user panel напрямую** — сейчас она появляется только после `/grades`. Лучше промо-плашка в главной user panel.
-- **Pylance `datetime.utcnow()` deprecated** — Python 3.12 предлагает `datetime.now(timezone.utc)`. ~10 callsites, тривиальная замена.
+- **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас всегда 200.
 
 **Закрыто (история):**
 - ✅ Этап 1A–1C RFC (grade_date NOT NULL + UNIQUE по содержимому). 14.05.2026 in prod.
@@ -343,6 +338,11 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - ✅ Бэкап БД systemd timer'ом (ежедневно 03:30 TST). 14.05.2026.
 - ✅ Network log noise (retry на debug, WARN только на 2+). 14.05.2026.
 - ✅ systemd `StartLimitIntervalSec` warning при каждом старте. 14.05.2026.
+- ✅ `database_manager.py` split: 1789 → 655 строк (–63%), 12 модулей в `src/db/`. 14.05.2026.
+- ✅ `register_next_step_handler` → `user_states` (все 11 callsite'ов через state_flows.py). 14.05.2026.
+- ✅ `datetime.utcnow()` → timezone-aware (Python 3.12 deprecation, 16 callsite'ов). 14.05.2026.
+- ✅ AI-инсайт в дашборде (`compute_dashboard_insight` в analytics_engine + кэш в webapp).
+- ✅ WebApp кнопка прямо в user panel (когда `has_kids`, не только после `/grades`).
 
 ---
 

@@ -33,6 +33,7 @@ from src.database_manager import (
     get_user_info_by_tg_id,
 )
 from src.db.auth import is_student_under_active_subscription
+from src.db.connection import get_db_connection
 from src.i18n import load_translations
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -313,6 +314,43 @@ def dashboard():
     return render_template("dashboard.html")
 
 
+def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:
+    """ETag для /api/dashboard. Дёшево: SHA1(watermark + 6h-bucket).
+
+    Watermark — MAX(date_added) для оценок этого ученика → меняется при
+    любом INSERT/UPDATE через monitor или history_importer.
+
+    6h-bucket совпадает с TTL AI-инсайта (compute_dashboard_insight кэширует
+    на 6 часов). Гарантирует что после обновления insight клиент получит
+    новый ETag.
+
+    Включаем days и telegram_id — иначе разные клиенты с разными ?days
+    или разный lang/first_name получили бы одинаковый ETag.
+    """
+    from hashlib import sha1
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        # MAX + COUNT: MAX ловит UPDATE (date_added = CURRENT_TIMESTAMP),
+        # COUNT ловит INSERT даже когда несколько вставок в одну секунду
+        # (CURRENT_TIMESTAMP в SQLite — секундная точность).
+        cur.execute(
+            "SELECT MAX(date_added), COUNT(*) FROM grade_history WHERE student_id = ?",
+            (student_id,),
+        )
+        row = cur.fetchone()
+        watermark = (row[0] if row and row[0] else "") if row else ""
+        count = row[1] if row else 0
+
+    # 6h-bucket в UTC. Сменяется в 0/6/12/18 UTC = 5/11/17/23 TST.
+    # Совпадает с TTL AI-инсайта (6h cache) — гарантирует invalidation
+    # после обновления insight'а.
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    bucket = now_utc.strftime("%Y%m%d") + str(now_utc.hour // 6)
+
+    src = f"{telegram_id}:{student_id}:{days}:{watermark}:{count}:{bucket}"
+    return sha1(src.encode("utf-8")).hexdigest()[:16]
+
+
 @app.route("/api/dashboard/<int:student_id>")
 def api_dashboard(student_id):
     """
@@ -325,11 +363,21 @@ def api_dashboard(student_id):
 
     Query params:
       days — длина периода (по умолчанию 7, max 365)
+
+    Поддерживает ETag / If-None-Match → 304 Not Modified для экономии трафика
+    при повторных открытиях дашборда без новых оценок.
     """
     telegram_id = _authorize_student_access(student_id)
 
     days = request.args.get("days", 7, type=int)
     days = max(1, min(days, 365))
+
+    # ETag check ДО построения тяжёлого ответа (AI insight + queries).
+    etag = _dashboard_etag(student_id, days, telegram_id)
+    client_etag = request.headers.get("If-None-Match", "").strip('"')
+    if client_etag and client_etag == etag:
+        # 304 Not Modified — тело пустое, клиент использует кэшированное
+        return ("", 304, {"ETag": f'"{etag}"', "Cache-Control": "private, max-age=0"})
 
     # Тащим за days*2 чтобы посчитать delta vs предыдущий период
     all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
@@ -382,7 +430,13 @@ def api_dashboard(student_id):
         },
     }
 
-    return jsonify(response_data)
+    response = jsonify(response_data)
+    response.headers["ETag"] = f'"{etag}"'
+    # private — кэш только в браузере клиента (Caddy/proxy не должны кэшировать
+    # под одним ключом для разных пользователей). max-age=0 — клиент должен
+    # ревалидировать через If-None-Match.
+    response.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
+    return response
 
 
 @app.route("/api/dashboard/init")
