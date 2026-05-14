@@ -1,11 +1,13 @@
 # RFC: Web-портал, админка и публичный сайт
 
-**Статус:** Approved (Phase 0 в работе)
+**Статус:** Phase 0+1 DONE и в проде, Phase 2 NEXT
 **Автор:** @nzulkaynarov + Claude
-**Дата:** 2026-05-14
+**Создан:** 2026-05-14
+**Обновлён:** 2026-05-14 (single-domain топология, см. §4)
 **Связанные документы:**
-- `docs/grade-date-refactor-rfc.md` (другой текущий RFC, не пересекается)
-- Память: `project_web_portal_2026_05.md`
+
+- `Docs/web-rewrite-status.md` — текущее состояние, что в проде, action items
+- `Docs/rfc-grades-source-of-truth.md` — другой RFC, не пересекается
 
 ---
 
@@ -41,15 +43,44 @@
 
 ## 4. Топология деплоя
 
-| Хост | Что | Технология |
-|---|---|---|
-| `grades.railtech.uz/` | Лендинг + `/docs` | Hugo (статика → Caddy) |
-| `grades.railtech.uz/webapp/*` | **Telegram Mini App** (НЕ трогаем) | Flask (текущий) |
-| `app.grades.railtech.uz` | Веб-портал родителей | Next.js, route group `(portal)` |
-| `admin.grades.railtech.uz` | Админ-панель | Тот же Next.js, route group `(admin)` |
-| `api.grades.railtech.uz` или `/api/*` | REST API портала+админки | FastAPI |
+**Single domain** — `grades.railtech.uz` обслуживает всё. Никаких поддоменов `app.*`/`admin.*`/`api.*` (зафиксировано 2026-05-14 после Phase 1).
 
-Решение по `api.*` vs `/api/*` принимаем в Phase 2.
+| Путь | Назначение | Бэкенд |
+|---|---|---|
+| `/` | Hugo лендинг (paper editorial) | Hugo статика (`/var/www/gradesentinel-landing/`) |
+| `/docs/`, `/uz/`, `/en/` | Документация и i18n-версии | Hugo статика |
+| `/webapp*`, `/static/*`, `/health` | Telegram Mini App (HMAC initData) | Flask `127.0.0.1:8443` |
+| `/api/dashboard/*`, `/api/quarters/*`, `/api/students`, `/api/grades` | Legacy Mini App API (НЕ трогаем) | Flask `127.0.0.1:8443` |
+| `/api/*` (всё остальное под /api/) | Новые endpoints — auth, me, admin, family, subscription, digest | FastAPI `127.0.0.1:8444` (Phase 2+) |
+| `/cabinet/*` | Веб-портал родителей | Next.js `127.0.0.1:3000` (Phase 3) |
+| `/admin/*` | Админ-панель | Тот же Next.js `127.0.0.1:3000` (Phase 5), route group |
+
+### Caddyfile carve-out для `/api/*`
+
+Mini App и FastAPI делят `/api/*` namespace. Caddy ищет совпадение по path-matchers в порядке появления `handle` блоков (first match wins) — legacy endpoints перехватываются явным списком, всё остальное под `/api/*` идёт в FastAPI:
+
+```caddy
+# 1. Specific legacy Mini App API endpoints (проверяются первыми)
+@flask_legacy_api path /api/dashboard/* /api/quarters/* /api/students /api/grades
+handle @flask_legacy_api { reverse_proxy 127.0.0.1:8443 }
+
+# 2. Всё остальное под /api/* — FastAPI
+handle /api/* { reverse_proxy 127.0.0.1:8444 }
+
+# 3. Next.js — один процесс, два пути через route groups
+handle /cabinet* { reverse_proxy 127.0.0.1:3000 }
+handle /admin* { reverse_proxy 127.0.0.1:3000 }
+
+# 4. Прочие Mini App пути
+handle /webapp* /static/* /health { reverse_proxy 127.0.0.1:8443 }
+
+# 5. Catchall — Hugo статика
+handle { root * /var/www/gradesentinel-landing; file_server }
+```
+
+**Правило именования FastAPI endpoints:** ВСЕ новые endpoints должны попадать под `/api/*` но НЕ начинаться с `dashboard/`, `quarters/`, `students`, `grades` (занято Mini App'ом). Допустимые префиксы: `/api/auth/*`, `/api/me`, `/api/admin/*`, `/api/family/*`, `/api/subscription/*`, `/api/digest/*`.
+
+**Next.js — один процесс, два пути:** не `basePath` (он принимает одно значение), а через роуты — `app/cabinet/...` и `app/admin/...` (или route groups для шареных layout'ов: `app/(parent)/cabinet/...`, `app/(admin)/admin/...`). Один systemd unit `gradesentinel-web.service` на `127.0.0.1:3000`.
 
 ## 5. Аутентификация
 
@@ -133,17 +164,17 @@ CREATE INDEX idx_auth_admin_log_ip_ts ON auth_admin_log(ip, created_at);
 
 ## 7. Фазы
 
-| # | Фаза | Длительность | Риск |
-|---|---|---|---|
-| **0** | RFC + дизайн-токены + 3 пустых скаффолда + CI lint | 1-2 дня | 🟢 |
-| **1** | Hugo лендинг + `/docs` на проде (`grades.railtech.uz/`) | 3-5 дней | 🟢 |
-| **2** | FastAPI + Phone OTP + миграция БД + admin brute-force защита | 6-8 дней | 🟡 |
-| **3** | Next.js портал родителей (без AI digest) | 7-10 дней | 🟡 |
-| **3.5** | AI Digest endpoint + кэш 6h | 2-3 дня | 🟢 |
-| **4** | Next.js админка поверх той же базы | 10-14 дней | 🟡 |
-| **5** | Бэкапы БД, мониторинг, SSH-харднинг | 2-3 дня | 🟢 |
+| # | Фаза | Статус | Длительность | Риск |
+|---|---|---|---|---|
+| **0** | RFC + дизайн-токены + 3 пустых скаффолда + CI lint | **DONE** 2026-05-14 (PR #37) | 1-2 дня | 🟢 |
+| **1** | Hugo лендинг + `/docs` на проде (`grades.railtech.uz/`) | **DONE** 2026-05-14 (PR #38 + fix #39) | 3-5 дней | 🟢 |
+| **2** | FastAPI + Phone OTP + миграция БД + admin brute-force защита | **NEXT** | 6-8 дней | 🟡 |
+| **3** | Next.js портал родителей (`/cabinet/*`, без AI digest) | pending | 7-10 дней | 🟡 |
+| **3.5** | AI Digest endpoint + кэш 6h | pending | 2-3 дня | 🟢 |
+| **4** | Next.js админка (`/admin/*`) поверх той же базы | pending | 10-14 дней | 🟡 |
+| **5** | Бэкапы БД (MinIO S3), мониторинг, SSH-харднинг | pending | 2-3 дня | 🟢 |
 
-**Итого ~6-8 недель календарно.**
+**Итого ~6-8 недель календарно.** Подробный статус — см. [`Docs/web-rewrite-status.md`](web-rewrite-status.md).
 
 ## 8. Гарантии
 
@@ -154,10 +185,12 @@ CREATE INDEX idx_auth_admin_log_ip_ts ON auth_admin_log(ip, created_at);
 - Деплой systemd-юнитов `gradesentinel-bot.service` и `gradesentinel-webapp.service`.
 
 Что **добавляем**:
-- Новые директории: `landing/`, `web/`, `api/`, `docs/web-rewrite-*.md`.
-- Новые systemd-юниты (Phase 2+): `gradesentinel-api.service`.
-- Caddyfile-правила для новых поддоменов.
+
+- Новые директории: `landing/`, `web/`, `api/`, `Docs/web-rewrite-*.md`.
+- Новые systemd-юниты: `gradesentinel-api.service` (Phase 2), `gradesentinel-web.service` (Phase 3).
+- Caddyfile-правила для **path-based routing на одном домене** (никаких новых поддоменов — см. §4).
 - БД-миграции только аддитивные (новые таблицы, новые столбцы).
+- Расширения `deploy/deploy-sudoers` для каждого нового systemd unit'а + установка новых путей. **Sudoers не auto-rsync** — после каждого PR с изменением `deploy-sudoers` нужна ручная установка на проде: `install -m 0440 -o root -g root /opt/gradesentinel/deploy/deploy-sudoers /etc/sudoers.d/deploy-runner`.
 
 ## 9. Дизайн-система
 
