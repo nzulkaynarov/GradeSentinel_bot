@@ -316,16 +316,33 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 
 ## Открытые задачи / технический долг
 
-- **`database_manager.py` 1500+ строк** — нужно дробить по доменам (auth, payments, families, grades).
-- **`handlers/subscription.py` 1222 строки** — то же.
-- **`register_next_step_handler` теряется при рестарте** — миграция многошаговых flow на `user_states` в БД.
-- **`_rate_limit_store` / `_panel_cache` теряются при рестарте** — допустимо, но если пойдём в multi-instance, нужен Redis.
-- **CI всё ещё на Python 3.10** — обновить `.github/workflows/tests.yml` до 3.12 после первой стабильной недели на VPS (прод уже на 3.12).
-- **Бэкап БД cron'ом** — добавить systemd timer для ежедневного `sqlite3 .backup` в S3/Backblaze.
-- **SSH-хардненинг** — сейчас на VPS оставлены и password auth, и root login (для удобства восстановления). После первой стабильной недели — обсудить отключение root + только key-auth.
-- **AI-инсайт в дашборде** — pure-функции агрегации готовы, можно добавить мини-инсайт от Claude (1-2 предложения «что делать») в hero дашборда. Кэшировать 6 часов чтобы не палить токены.
-- **`/api/dashboard` ETag/cache** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас просто 200 каждый раз.
-- **WebApp кнопка в user panel напрямую** — сейчас она появляется только после `/grades`. Лучше дать промо-плашку в главной user panel «📊 Откройте дашборд».
+**Архитектурные (большие, требуют отдельной сессии каждый):**
+- **`database_manager.py` 1789 строк** — частично есть `src/db/{auth,connection,groups,maintenance}.py`, но они **re-export shim'ы**, имплементации всё ещё в database_manager. Реальное разделение: вынести тела функций в `src/db/{auth,families,grades,payments,promo,settings}.py`, оставить database_manager как фасад. ~100 функций к категоризации.
+- **`handlers/subscription.py` 1222 строки** — разбить на subscription/{payment_flow,promo,grant}.py. Платёжный код — повышенная осторожность.
+- **`register_next_step_handler` теряется при рестарте** — мигрировать все multi-step flow (add_family, broadcast, invite, support, lang switch) на `user_states` таблицу. Состояние переживёт рестарт. Затрагивает ~15-20 хендлеров в 6 файлах.
+
+**Этапы RFC grade_date — заблокированы на входных от владельца:**
+- **Этап 4 (`MONOSOURCE_GRADES`)** — monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run. См. [Docs/rfc-grades-source-of-truth.md](Docs/rfc-grades-source-of-truth.md).
+- **Этап 5** — удалить `_pending_grades` (двухфазное подтверждение). Только после недели стабильной работы этапа 4.
+
+**Эксплуатация прод-системы:**
+- **SSH-хардненинг VPS** — сейчас root login и password auth открыты (для recovery). После недели стабильной работы — отключить root + только key-auth. ВРУЧНУЮ, не автоматически, чтобы не залочиться.
+- **Бэкапы за пределы VPS** — сейчас snapshot в `/var/backups/gradesentinel/` (ротация 7 дней). При гибели VPS — потеряем. Хочется S3/Backblaze sync ежедневно.
+- **`_rate_limit_store` / `_panel_cache`** в памяти — допустимо для single-instance. При переходе в multi-instance нужен Redis (далеко в будущем).
+
+**Косметика / следующие фичи:**
+- **AI-инсайт в дашборде** — добавить мини-инсайт от Claude (1-2 предложения «что делать») в hero дашборда. Кэшировать 6 часов.
+- **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных.
+- **WebApp кнопка в user panel напрямую** — сейчас она появляется только после `/grades`. Лучше промо-плашка в главной user panel.
+- **Pylance `datetime.utcnow()` deprecated** — Python 3.12 предлагает `datetime.now(timezone.utc)`. ~10 callsites, тривиальная замена.
+
+**Закрыто (история):**
+- ✅ Этап 1A–1C RFC (grade_date NOT NULL + UNIQUE по содержимому). 14.05.2026 in prod.
+- ✅ Multi-grade «2/5» в sanitize_cell + двухфазное pending подтверждение. 13.05.2026 in prod.
+- ✅ CI Python 3.10 → 3.12. 14.05.2026.
+- ✅ Бэкап БД systemd timer'ом (ежедневно 03:30 TST). 14.05.2026.
+- ✅ Network log noise (retry на debug, WARN только на 2+). 14.05.2026.
+- ✅ systemd `StartLimitIntervalSec` warning при каждом старте. 14.05.2026.
 
 ---
 
