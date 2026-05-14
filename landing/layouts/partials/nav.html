@@ -1,0 +1,23 @@
+<header class="topbar">
+  <div class="container topbar-inner">
+    <a href="/" class="brand-mark">
+      <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
+    </a>
+    <nav class="topbar-links">
+      <a href="/#how">{{ i18n "nav_how" }}</a>
+      <a href="/#features">{{ i18n "nav_features" }}</a>
+      <a href="/#pricing">{{ i18n "nav_pricing" }}</a>
+      <a href="/docs/">{{ i18n "nav_docs" }}</a>
+    </nav>
+    <div class="topbar-actions">
+      <span class="locale" aria-label="Language">
+        {{ range .Site.Languages }}
+          {{ if eq .Lang $.Site.Language.Lang }}<button class="on" aria-current="true">{{ slicestr .LanguageName 0 2 }}</button>
+          {{ else }}<a href="{{ relLangURL $.Page.RelPermalink }}"><button>{{ slicestr .LanguageName 0 2 }}</button></a>
+          {{ end }}
+        {{ end }}
+      </span>
+      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-sm">{{ i18n "cta_open_bot" }}</a>
+    </div>
+  </div>
+</header>

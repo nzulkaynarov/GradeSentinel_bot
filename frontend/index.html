@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GradeSentinel — оценки в Telegram, в ту же минуту</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@10..48,75..100,300..700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-v2.css">
+<style>
+/* ============================================================
+   LANDING-SPECIFIC
+   ============================================================ */
+
+/* Top bar */
+.topbar {
+  position: sticky; top: 0; z-index: 60;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(240, 233, 221, .82);
+  border-bottom: 1px solid rgba(0,0,0,.04);
+}
+.topbar-inner {
+  max-width: 1240px; margin: 0 auto; padding: 18px 28px;
+  display: flex; align-items: center; gap: 32px;
+}
+.topbar nav { display: flex; gap: 28px; flex: 1; margin-left: 24px; }
+.topbar nav a {
+  font-size: 13px; color: var(--ink-3); font-weight: 500;
+  position: relative; padding: 4px 0;
+}
+.topbar nav a:hover { color: var(--ink); }
+.topbar nav a::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 1px;
+  background: var(--ink); transform: scaleX(0); transform-origin: left;
+  transition: transform .25s ease;
+}
+.topbar nav a:hover::after { transform: scaleX(1); }
+.topbar-actions { display: flex; align-items: center; gap: 18px; }
+
+/* ===== HERO ===== */
+.hero {
+  padding: 56px 0 100px;
+  position: relative;
+}
+.hero-meta {
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  gap: 28px; align-items: center;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-4);
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 56px;
+}
+.hero-meta .center { text-align: center; }
+.hero-meta .right { text-align: right; }
+.hero-meta b { color: var(--ink); font-weight: 600; }
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: end;
+}
+.hero h1 { max-width: 11ch; }
+.hero h1 .swap { display: inline-block; min-width: 6ch; }
+.hero-cta-row {
+  display: flex; gap: 16px; align-items: center;
+  margin-top: 56px; flex-wrap: wrap;
+}
+.hero-cta-row .meta {
+  font-size: 13px; color: var(--ink-3); margin-left: 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* Hero right column: real-feeling Telegram conversation stack */
+.tg-stack {
+  position: relative;
+  padding: 24px 28px 28px 28px;
+  background: #ece1cb;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px;
+  min-height: 480px;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(210, 76, 29, .07), transparent 30%),
+    radial-gradient(circle at 80% 70%, rgba(31, 91, 109, .08), transparent 35%);
+}
+.tg-stack-head {
+  display: flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-3); padding: 4px 8px 16px;
+  border-bottom: 1px dashed rgba(0,0,0,.1);
+  margin-bottom: 12px;
+}
+.tg-stack-head .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #2ec56b; }
+.tg-msg-wrap { display: flex; gap: 10px; }
+.tg-msg-wrap .av {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--ink); color: var(--paper);
+  display: grid; place-items: center;
+  font-family: var(--display); font-weight: 600; font-size: 14px;
+  flex-shrink: 0; align-self: flex-end;
+}
+
+.tg-msg-typing {
+  display: inline-flex; gap: 4px; padding: 12px 16px;
+  background: #fff; border-radius: 14px 14px 14px 4px;
+  width: fit-content;
+}
+.tg-msg-typing span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink-5);
+  animation: typing 1.2s ease-in-out infinite;
+}
+.tg-msg-typing span:nth-child(2) { animation-delay: .15s; }
+.tg-msg-typing span:nth-child(3) { animation-delay: .3s; }
+@keyframes typing {
+  0%, 100% { opacity: .3; transform: translateY(0); }
+  50%      { opacity: 1; transform: translateY(-3px); }
+}
+
+/* ===== Section headings ===== */
+.section { padding: 120px 0; position: relative; }
+.section-head { display: grid; grid-template-columns: 1fr 1.6fr; gap: 80px; margin-bottom: 64px; }
+.section-head .meta { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-4); padding-top: 12px; }
+.section-head h2 { max-width: 16ch; }
+
+/* ===== STAGE: data flow ===== */
+.flow {
+  display: grid; grid-template-columns: 1fr 64px 1fr 64px 1fr; gap: 12px;
+  align-items: stretch;
+}
+.flow-step {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 22px;
+  min-height: 280px;
+  display: flex; flex-direction: column;
+}
+.flow-step .num {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-4); margin-bottom: 12px;
+}
+.flow-step h3 { margin-bottom: 8px; }
+.flow-step p { font-size: 14px; color: var(--ink-3); line-height: 1.55; margin: 0 0 18px; }
+.flow-step .visual { margin-top: auto; }
+
+.flow-arrow {
+  display: grid; place-items: center;
+  color: var(--ink-4);
+}
+.flow-arrow svg { width: 28px; height: 28px; }
+
+/* Sheets simulation */
+.sheet-mini {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px; line-height: 1.4;
+  overflow: hidden;
+}
+.sheet-mini .sheet-row { display: grid; grid-template-columns: 28px 1fr 36px; border-bottom: 1px solid #eee; }
+.sheet-mini .sheet-row > div { padding: 5px 8px; }
+.sheet-mini .sheet-row > div:first-child { background: #f5f5f5; color: #888; text-align: center; border-right: 1px solid #eee; }
+.sheet-mini .sheet-row > div:last-child { border-left: 1px solid #eee; text-align: center; font-weight: 700; }
+.sheet-mini .sheet-row.head { background: #f8f8f8; color: #555; font-weight: 600; }
+.sheet-mini .sheet-row.head > div:first-child { background: #ebebeb; }
+.sheet-mini .new-cell { background: #fff8d0 !important; color: var(--g5) !important; animation: cellblink 2.5s ease-in-out infinite; }
+@keyframes cellblink {
+  0%, 100% { background: #fff !important; }
+  50%      { background: #fff8d0 !important; }
+}
+
+/* Snapshot diff */
+.diff {
+  font-family: var(--mono); font-size: 11px; line-height: 1.5;
+  background: #1a1614; color: #d8cfba; border-radius: 8px;
+  padding: 12px 14px;
+}
+.diff .ln { display: block; padding: 1px 0; }
+.diff .add { color: #6dd29e; }
+.diff .rm  { color: #e88c8c; }
+.diff .com { color: #837567; }
+
+/* Tg push mini */
+.push-mini {
+  background: #fff; border-radius: 12px 12px 12px 4px;
+  padding: 10px 12px; font-size: 12px; line-height: 1.4;
+  box-shadow: 0 8px 24px -10px rgba(0,0,0,.18);
+}
+.push-mini .nm { font-weight: 700; color: #2078b4; font-size: 11px; margin-bottom: 2px; }
+
+/* ===== BENTO FEATURES ===== */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  grid-auto-rows: 220px;
+  gap: 16px;
+}
+.b1 { grid-column: span 3; grid-row: span 2; }
+.b2 { grid-column: span 3; grid-row: span 1; }
+.b3 { grid-column: span 2; grid-row: span 1; }
+.b4 { grid-column: span 1; grid-row: span 1; }
+.b5 { grid-column: span 2; grid-row: span 1; }
+.b6 { grid-column: span 4; grid-row: span 1; }
+
+.bento-tile {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 26px;
+  display: flex; flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+.bento-tile.dark { background: var(--ink); color: var(--paper); border-color: var(--ink-2); }
+.bento-tile.dark .b-meta, .bento-tile.dark p { color: var(--ink-5); }
+.bento-tile.dark h3 { color: var(--paper); }
+.bento-tile.energy { background: var(--energy); color: #fff; border-color: transparent; }
+.bento-tile.energy h3, .bento-tile.energy p, .bento-tile.energy .b-meta { color: #fff; }
+.bento-tile.energy .b-meta { opacity: .75; }
+.bento-tile .b-meta {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-4); margin-bottom: 10px;
+}
+.bento-tile h3 { margin-bottom: 8px; max-width: 18ch; }
+.bento-tile p { font-size: 13.5px; color: var(--ink-3); line-height: 1.55; margin: 0; max-width: 36ch; }
+.bento-tile .b-visual { margin-top: auto; padding-top: 16px; }
+
+/* Speed dial visual */
+.dial {
+  display: flex; align-items: end; gap: 4px; height: 100px;
+}
+.dial .bar {
+  flex: 1; background: rgba(255,255,255,.18); border-radius: 3px;
+  transition: height .8s cubic-bezier(.2,.8,.2,1);
+}
+.dial .bar:nth-child(odd) { background: rgba(255,255,255,.32); }
+
+/* Family avatars cluster */
+.fam-cluster {
+  display: flex; align-items: center;
+}
+.fam-av {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--display); font-weight: 600; color: var(--paper);
+  border: 3px solid var(--card);
+  margin-right: -10px;
+}
+.fam-cluster .fam-av:nth-child(1) { background: var(--signal); }
+.fam-cluster .fam-av:nth-child(2) { background: var(--energy); }
+.fam-cluster .fam-av:nth-child(3) { background: var(--ink); }
+.fam-cluster .fam-av:nth-child(4) { background: var(--note); color: var(--ink); }
+.fam-cluster .fam-av:nth-child(5) { background: var(--ink-3); }
+
+/* Quiet hours visual */
+.quiet-bar {
+  height: 36px; border-radius: 8px; position: relative;
+  background: linear-gradient(90deg,
+    var(--paper-2) 0%, var(--paper-2) 29.2%,
+    var(--ink) 29.2%, var(--ink) 91.7%,
+    var(--paper-2) 91.7%, var(--paper-2) 100%);
+  overflow: hidden;
+}
+.quiet-bar .label-tick {
+  position: absolute; top: 100%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4);
+  margin-top: 6px;
+}
+
+/* ===== DAY IN LIFE ===== */
+.timeline {
+  position: relative;
+  padding: 0 0 0 0;
+}
+.tl-row {
+  display: grid; grid-template-columns: 100px 1fr 1.4fr;
+  gap: 32px;
+  padding: 36px 0;
+  border-top: 1px solid var(--line);
+  align-items: start;
+}
+.tl-row:last-child { border-bottom: 1px solid var(--line); }
+.tl-time {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .1em;
+  color: var(--ink-4); padding-top: 4px;
+}
+.tl-time strong { display: block; font-size: 18px; color: var(--ink); font-weight: 600; letter-spacing: -.02em; font-family: var(--display); }
+.tl-context p { font-size: 14px; color: var(--ink-3); line-height: 1.6; max-width: 32ch; margin: 0; }
+.tl-context h3 { margin-bottom: 10px; }
+.tl-msg { display: flex; justify-content: flex-start; }
+
+/* ===== PRICING ===== */
+.price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--card); }
+.price-cell { padding: 36px 32px; border-right: 1px solid var(--line); display: flex; flex-direction: column; position: relative; }
+.price-cell:last-child { border-right: none; }
+.price-cell.feat { background: var(--ink); color: var(--paper); }
+.price-cell.feat .price-name, .price-cell.feat .price-per, .price-cell.feat .price-list li { color: var(--ink-5); }
+.price-cell.feat .price-list li b { color: var(--paper); }
+.price-cell.feat .price-num { color: var(--paper); }
+.price-name { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+.price-num { font-family: var(--display); font-size: 56px; line-height: 1; font-weight: 500; letter-spacing: -.03em; margin: 18px 0 6px; font-variation-settings: "wdth" 95, "opsz" 60; }
+.price-num small { font-size: 16px; color: var(--ink-3); font-weight: 500; margin-left: 4px; }
+.price-cell.feat .price-num small { color: var(--ink-5); }
+.price-per { font-size: 13px; color: var(--ink-3); margin-bottom: 24px; }
+.price-list { list-style: none; padding: 0; margin: 0 0 32px; flex: 1; }
+.price-list li {
+  font-size: 14px; color: var(--ink-2); line-height: 1.5;
+  padding: 9px 0; border-top: 1px solid rgba(0,0,0,.06);
+}
+.price-cell.feat .price-list li { border-top-color: rgba(255,255,255,.08); }
+.price-list li:first-child { border-top: none; }
+.price-tag {
+  position: absolute; top: 36px; right: 32px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--energy);
+}
+
+/* ===== FAQ ===== */
+.faq-list { border-top: 1px solid var(--line); }
+.faq-item { border-bottom: 1px solid var(--line); }
+.faq-q {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 28px 0; cursor: pointer;
+  font-family: var(--display); font-size: 22px; font-weight: 500; letter-spacing: -.02em;
+  font-variation-settings: "wdth" 95, "opsz" 36;
+  transition: color .2s;
+}
+.faq-q:hover { color: var(--energy); }
+.faq-toggle {
+  width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--line-2);
+  display: grid; place-items: center;
+  flex-shrink: 0; transition: transform .25s ease, background .2s;
+}
+.faq-item.open .faq-toggle { transform: rotate(45deg); background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.faq-toggle svg { width: 14px; height: 14px; }
+.faq-a {
+  max-height: 0; overflow: hidden;
+  transition: max-height .35s ease;
+  font-size: 16px; color: var(--ink-3); line-height: 1.7;
+  padding-right: 80px;
+}
+.faq-item.open .faq-a { max-height: 600px; padding-bottom: 28px; }
+
+/* ===== Big CTA ===== */
+.big-cta {
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 24px;
+  padding: 80px;
+  display: grid; grid-template-columns: 1fr auto; gap: 56px; align-items: end;
+  position: relative; overflow: hidden;
+}
+.big-cta::before {
+  content: ""; position: absolute;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(210,76,29,.18), transparent 60%);
+  bottom: -250px; right: -150px;
+  pointer-events: none;
+}
+.big-cta h2 { font-size: clamp(40px, 5.5vw, 80px); color: var(--paper); position: relative; }
+.big-cta h2 i { color: var(--energy); font-style: italic; font-weight: 400; }
+.big-cta-side { position: relative; }
+
+/* ===== Footer ===== */
+.foot-grid {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 48px;
+}
+.foot-grid h4 {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--paper); font-weight: 500; margin-bottom: 18px;
+}
+.foot-grid ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.foot-grid a { font-size: 14px; color: var(--ink-5); }
+.foot-mark {
+  font-family: var(--display); font-size: 96px; line-height: 1; letter-spacing: -.04em;
+  color: var(--paper); font-weight: 500; font-variation-settings: "wdth" 80, "opsz" 96;
+}
+.foot-grid p { font-size: 14px; color: var(--ink-5); line-height: 1.6; margin: 12px 0 0; max-width: 30ch; }
+.foot-legal {
+  margin-top: 80px; padding-top: 28px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-5);
+}
+
+@media (max-width: 1024px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .section-head { grid-template-columns: 1fr; gap: 24px; }
+  .flow { grid-template-columns: 1fr; gap: 12px; }
+  .flow-arrow { transform: rotate(90deg); padding: 8px 0; }
+  .bento { grid-template-columns: 1fr; grid-auto-rows: auto; }
+  .bento-tile { grid-column: span 1 !important; grid-row: span 1 !important; min-height: 220px; }
+  .price-grid { grid-template-columns: 1fr; }
+  .price-cell { border-right: none; border-bottom: 1px solid var(--line); }
+  .tl-row { grid-template-columns: 1fr; gap: 16px; }
+  .big-cta { padding: 40px; grid-template-columns: 1fr; }
+  .foot-grid { grid-template-columns: 1fr 1fr; gap: 32px; }
+  .topbar nav { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ TOPBAR ============================ -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a href="index.html" class="brand-mark">
+      <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
+    </a>
+    <nav>
+      <a href="#flow" data-i="how">Как устроено</a>
+      <a href="#features" data-i="feat">Возможности</a>
+      <a href="#day" data-i="day">День из жизни</a>
+      <a href="#pricing" data-i="price">Тарифы</a>
+      <a href="instructions.html" data-i="docs">Инструкция</a>
+    </nav>
+    <div class="topbar-actions">
+      <div class="locale" id="locale">
+        <button class="on" data-lang="ru">Ru</button>
+        <span class="sep">·</span>
+        <button data-lang="uz">Oʻz</button>
+        <span class="sep">·</span>
+        <button data-lang="en">En</button>
+      </div>
+      <a href="dashboard.html" class="btn btn-ghost btn-sm" data-i="signin">Войти</a>
+      <a href="https://t.me/GradeSentinel_bot" class="btn btn-ink btn-sm" data-i="open">
+        <span data-i="open_label">Открыть бот</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M7 17L17 7M9 7h8v8"/></svg>
+      </a>
+    </div>
+  </div>
+</header>
+
+<!-- ============================ HERO ============================ -->
+<section class="hero">
+  <div class="container">
+
+    <div class="hero-meta reveal">
+      <div><span class="label"><span class="live-dot"></span><span data-i="meta_live">Сейчас работает в Узбекистане · v2.5</span></span></div>
+      <div class="center" data-i="meta_center"><b>1 247</b> семей · <b>3 412</b> детей · <b>↑ 18%</b> ср. балл</div>
+      <div class="right" data-i="meta_right">Tashkent · UTC+5</div>
+    </div>
+
+    <div class="hero-grid">
+      <div class="reveal" style="--reveal-delay: 100ms;">
+        <h1 data-i="h1" style="font-size: 80px">
+          Узнаёте о&nbsp;<span class="fancy">«пятёрке»</span><br>
+          по математике<br>
+          раньше,&nbsp;<span class="italic-display" style="color: var(--ink-3);">чем сам ребёнок</span>.
+        </h1>
+        <div class="hero-cta-row">
+          <a href="https://t.me/GradeSentinel_bot" class="btn btn-energy btn-lg" data-i="cta_primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+            <span data-i="cta_primary_label">Подключить бесплатно</span>
+          </a>
+          <a href="instructions.html" class="btn btn-ghost btn-lg" data-i="cta_secondary">Как это работает →</a>
+          <span class="meta">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>
+            <span data-i="meta_3min">3 минуты на подключение</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Realistic Telegram conversation -->
+      <div class="tg-stack reveal" style="--reveal-delay: 200ms;">
+        <div class="tg-stack-head">
+          <span class="live-dot"></span>
+          <span data-i="tg_head">@GradeSentinel_bot · в эфире</span>
+          <span style="margin-left: auto;">14:32</span>
+        </div>
+
+        <div class="tg-msg-wrap">
+          <div class="av">G</div>
+          <div class="tg-card" style="flex: 1;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">14:32</span></div>
+            <div class="tg-text" data-i="tg_msg1">
+              📚 У <b>Алишера</b> новая оценка<br>
+              <span style="display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;">
+                Математика&nbsp;·&nbsp;контрольная&nbsp;<span class="tg-grade g5">5</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap">
+          <div class="av">G</div>
+          <div class="tg-card" style="flex: 1;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">14:38</span></div>
+            <div class="tg-text" data-i="tg_msg2">
+              ✏️ Учитель исправил оценку<br>
+              <span style="display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;">
+                История · было&nbsp;<span class="tg-grade g3" style="text-decoration: line-through; opacity: .55;">3</span>
+                <span style="color: #888;">→</span>
+                стало&nbsp;<span class="tg-grade g4">4</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap" style="margin-top: 4px;">
+          <div class="av" style="background: var(--energy);">М</div>
+          <div class="tg-card" style="background: #d6eaf3; border-radius: 14px 14px 4px 14px; max-width: 260px;">
+            <div class="tg-text" data-i="tg_msg3">
+              Молодец! Расскажешь после школы 🤍
+              <span class="tg-time">14:39</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tg-msg-wrap" style="opacity: .6;">
+          <div class="av">G</div>
+          <div class="tg-msg-typing">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================ FLOW ============================ -->
+<section class="section" id="flow" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span data-i="flow_label">01 · Как устроено</span>
+      </div>
+      <h2 data-i="flow_h">Школа ведёт <span class="fancy">Google Таблицу</span> — мы превращаем её в моментальные пуши.</h2>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step reveal">
+        <div class="num" data-i="flow_1_num">Шаг 1 · Источник</div>
+        <h3 data-i="flow_1_h">Дневник в Google Sheets</h3>
+        <p data-i="flow_1_p">Учитель ставит «5» в обычной таблице. Бот читает её через сервисный аккаунт Google — без логинов в школьную систему.</p>
+        <div class="visual">
+          <div class="sheet-mini">
+            <div class="sheet-row head">
+              <div></div><div data-i="sh_subj">Предмет</div><div data-i="sh_g">Оц</div>
+            </div>
+            <div class="sheet-row">
+              <div>4</div><div data-i="sh_math">Математика · 12.05</div><div>5</div>
+            </div>
+            <div class="sheet-row">
+              <div>5</div><div data-i="sh_phys">Физика · 11.05</div><div>4</div>
+            </div>
+            <div class="sheet-row">
+              <div>6</div><div data-i="sh_hist">История · 10.05</div><div class="new-cell">5</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h18M14 6l7 6-7 6"/></svg>
+      </div>
+
+      <div class="flow-step reveal" style="--reveal-delay: 80ms;">
+        <div class="num" data-i="flow_2_num">Шаг 2 · Движок</div>
+        <h3 data-i="flow_2_h">Snapshot diff каждые 5 минут</h3>
+        <p data-i="flow_2_p">Сравниваем текущее состояние с предыдущим. Находим всё новое и изменённое. Ничего не пропускаем — даже исправления задним числом.</p>
+        <div class="visual">
+          <div class="diff">
+            <span class="ln com" data-i="dif_1"># snapshot diff @ 14:32</span>
+            <span class="ln add" data-i="dif_2">+ math · alisher · 5</span>
+            <span class="ln rm" data-i="dif_3">- history · alisher · 3</span>
+            <span class="ln add" data-i="dif_4">+ history · alisher · 4</span>
+            <span class="ln com">— 2 events ready</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h18M14 6l7 6-7 6"/></svg>
+      </div>
+
+      <div class="flow-step reveal" style="--reveal-delay: 160ms;">
+        <div class="num" data-i="flow_3_num">Шаг 3 · Доставка</div>
+        <h3 data-i="flow_3_h">Пуш в Telegram</h3>
+        <p data-i="flow_3_p">Через 5 минут после оценки уведомление уже у вас. Маме, папе, бабушке — всем, кто состоит в семье.</p>
+        <div class="visual">
+          <div class="push-mini">
+            <div class="nm">GradeSentinel</div>
+            <div data-i="push_mini_t">📚 Алишер · математика · <b style="color: var(--g5);">5</b></div>
+          </div>
+          <div class="push-mini" style="margin-top: 6px; transform: translateX(8px);">
+            <div class="nm">GradeSentinel</div>
+            <div data-i="push_mini_t2">✏️ История <span style="text-decoration: line-through; color: #aaa;">3</span> → <b style="color: var(--g4);">4</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ BENTO FEATURES ============================ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span data-i="feat_label">02 · Возможности</span>
+      </div>
+      <h2 data-i="feat_h">Один бот вместо <span class="italic-display" style="color: var(--ink-3);">десятка</span> родительских чатов и звонков учителю.</h2>
+    </div>
+
+    <div class="bento">
+      <!-- Big: Speed -->
+      <div class="bento-tile dark b1 reveal">
+        <div class="b-meta" data-i="f1_meta">Скорость</div>
+        <h3 style="font-size: 36px; max-width: 14ch;" data-i="f1_h">5 минут от учительской ручки до вашего Telegram.</h3>
+        <p data-i="f1_p">Snapshot-движок проверяет дневник раз в 5 минут. Если у учителя дрогнула рука — увидите «было 3 → стало 4» в тот же день.</p>
+        <div class="b-visual">
+          <div class="dial" id="dial">
+            <div class="bar" style="height: 12%;"></div>
+            <div class="bar" style="height: 28%;"></div>
+            <div class="bar" style="height: 18%;"></div>
+            <div class="bar" style="height: 42%;"></div>
+            <div class="bar" style="height: 36%;"></div>
+            <div class="bar" style="height: 60%;"></div>
+            <div class="bar" style="height: 48%;"></div>
+            <div class="bar" style="height: 80%;"></div>
+            <div class="bar" style="height: 70%;"></div>
+            <div class="bar" style="height: 92%;"></div>
+            <div class="bar" style="height: 84%;"></div>
+            <div class="bar" style="height: 100%; background: var(--energy);"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-top: 10px; font-family: var(--mono); font-size: 10px; color: var(--ink-5); letter-spacing: .12em; text-transform: uppercase;">
+            <span data-i="f1_lt">12 ч назад</span><span>14:32</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Family -->
+      <div class="bento-tile b2 reveal" style="--reveal-delay: 60ms;">
+        <div class="b-meta" data-i="f2_meta">Семья</div>
+        <h3 data-i="f2_h">Мама, папа, бабушка — в одном бипе.</h3>
+        <p data-i="f2_p">Глава семьи генерирует одноразовую инвайт-ссылку. Все получают одинаковые уведомления — в собственном Telegram.</p>
+        <div class="b-visual" style="display: flex; align-items: center; gap: 12px;">
+          <div class="fam-cluster">
+            <div class="fam-av">З</div>
+            <div class="fam-av">Б</div>
+            <div class="fam-av">Д</div>
+            <div class="fam-av">+</div>
+          </div>
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--ink-4); letter-spacing: .12em; text-transform: uppercase;" data-i="f2_count">5 родственников · 2 ребёнка</span>
+        </div>
+      </div>
+
+      <!-- AI -->
+      <div class="bento-tile b3 reveal" style="--reveal-delay: 120ms;">
+        <div class="b-meta" data-i="f3_meta">AI · Claude</div>
+        <h3 data-i="f3_h">Воскресный разбор за вас.</h3>
+        <p data-i="f3_p">Каждое воскресенье в 19:00 — разбор недели: где провисло, где растёт, что подтянуть.</p>
+      </div>
+
+      <!-- Languages -->
+      <div class="bento-tile energy b4 reveal" style="--reveal-delay: 180ms;">
+        <div class="b-meta" data-i="f4_meta">Языки</div>
+        <h3 style="font-size: 22px;" data-i="f4_h">Ru · Oʻz · En</h3>
+        <p style="font-size: 12px;" data-i="f4_p">Бабушка — на узбекском, папа — на русском.</p>
+      </div>
+
+      <!-- Quiet hours -->
+      <div class="bento-tile b5 reveal" style="--reveal-delay: 240ms;">
+        <div class="b-meta" data-i="f5_meta">Тихие часы</div>
+        <h3 data-i="f5_h">Не звенит ночью.</h3>
+        <p style="margin-bottom: 18px;" data-i="f5_p">С 22:00 до 7:00 уведомления копятся и приходят утром одним сообщением.</p>
+        <div class="b-visual">
+          <div class="quiet-bar">
+            <span class="label-tick" style="left: 0%;">0</span>
+            <span class="label-tick" style="left: 29.2%;">7:00</span>
+            <span class="label-tick" style="left: 91.7%;">22:00</span>
+            <span class="label-tick" style="left: 100%;">24</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment -->
+      <div class="bento-tile b6 reveal" style="--reveal-delay: 300ms;">
+        <div class="b-meta" data-i="f6_meta">Оплата</div>
+        <h3 data-i="f6_h">Click и Payme — прямо в Telegram.</h3>
+        <p data-i="f6_p">Без переходов на сайт банка, без автопродления, без мелкого шрифта. Подписка просто заканчивается в указанный день.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ DAY IN LIFE ============================ -->
+<section class="section" id="day" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span data-i="day_label">03 · День из жизни</span>
+      </div>
+      <h2 data-i="day_h">Один обычный школьный <span class="italic-display" style="color: var(--ink-3);">вторник</span>.</h2>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-row reveal">
+        <div class="tl-time">8:24<strong data-i="day_1_label">Утро</strong></div>
+        <div class="tl-context">
+          <h3 data-i="day_1_h">Контрольная</h3>
+          <p data-i="day_1_p">Учитель математики выставляет первые оценки за контрольную работу. Ребёнок пишет, родитель — на работе.</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">8:24</span></div>
+            <div class="tg-text" data-i="day_1_msg">
+              📚 У <b>Алишера</b> новая оценка<br>
+              Математика · контрольная&nbsp;<span class="tg-grade g5">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">11:08<strong data-i="day_2_label">Перемена</strong></div>
+        <div class="tl-context">
+          <h3 data-i="day_2_h">Лабораторная</h3>
+          <p data-i="day_2_p">Физик выставляет оценки по лабораторной работе. До конца дня — ещё две и тест по биологии.</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">11:08</span></div>
+            <div class="tg-text" data-i="day_2_msg">
+              📚 У <b>Алишера</b> новая оценка<br>
+              Физика · лабораторная&nbsp;<span class="tg-grade g4">4</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">16:42<strong data-i="day_3_label">После уроков</strong></div>
+        <div class="tl-context">
+          <h3 data-i="day_3_h">Учитель передумал</h3>
+          <p data-i="day_3_p">Учитель истории пересмотрел доклад и поднял оценку. Без бота вы бы об этом узнали разве что из электронного дневника, и то — если бы зашли его проверить.</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card">
+            <div class="tg-name">GradeSentinel <span class="tg-time">16:42</span></div>
+            <div class="tg-text" data-i="day_3_msg">
+              ✏️ Оценка изменена<br>
+              История · было&nbsp;<span class="tg-grade g3" style="text-decoration: line-through; opacity: .55;">3</span>
+              <span style="color: #888;">→</span>
+              стало&nbsp;<span class="tg-grade g4">4</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tl-row reveal">
+        <div class="tl-time">19:00<strong data-i="day_4_label">Ужин</strong></div>
+        <div class="tl-context">
+          <h3 data-i="day_4_h">Сводка дня</h3>
+          <p data-i="day_4_p">За ужином — один цельный отчёт. Ничего не упустили, не нужно собирать оценки по разным сообщениям.</p>
+        </div>
+        <div class="tl-msg">
+          <div class="tg-card" style="max-width: 320px;">
+            <div class="tg-name">GradeSentinel <span class="tg-time">19:00</span></div>
+            <div class="tg-text" style="font-size: 14px;" data-i="day_4_msg">
+              🌙 <b>Сводка за вторник</b><br>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee; margin-top: 6px;">Математика&nbsp;<span class="tg-grade g5">5</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">Физика&nbsp;<span class="tg-grade g4">4</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">История&nbsp;<span class="tg-grade g4">4</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee;">Биология&nbsp;<span class="tg-grade g5">5</span></span>
+              <span style="display: block; padding: 6px 0; border-top: 1px solid #eee; font-size: 12px; color: #777;">Средний балл за день: <b style="color: var(--g5);">4.5</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PRICING ============================ -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span data-i="price_label">04 · Тарифы</span>
+      </div>
+      <h2 data-i="price_h">Один счёт <span class="italic-display" style="color: var(--ink-3);">на всю семью</span>. Никакого автопродления.</h2>
+    </div>
+
+    <div class="price-grid">
+      <div class="price-cell reveal">
+        <div class="price-name" data-i="p1_name">1 месяц</div>
+        <div class="price-num">29 900<small>UZS</small></div>
+        <div class="price-per" data-i="p1_per">~2.30 USD · попробовать без обязательств</div>
+        <ul class="price-list">
+          <li data-i="p1_l1">Уведомления о новых оценках</li>
+          <li data-i="p1_l2">Вечерняя сводка</li>
+          <li data-i="p1_l3"><b>До 5 детей</b> в семье</li>
+          <li data-i="p1_l4">Неограниченно родственников</li>
+          <li data-i="p1_l5">AI-анализ по запросу</li>
+        </ul>
+        <a href="https://t.me/GradeSentinel_bot" class="btn btn-ghost" data-i="p1_cta">Начать с месяца</a>
+      </div>
+
+      <div class="price-cell feat reveal" style="--reveal-delay: 100ms;">
+        <div class="price-tag" data-i="p2_tag">Чаще всего выбирают</div>
+        <div class="price-name" data-i="p2_name">3 месяца</div>
+        <div class="price-num">79 900<small>UZS</small></div>
+        <div class="price-per" data-i="p2_per">26 633 / мес · −11%</div>
+        <ul class="price-list">
+          <li data-i="p2_l1">Всё из месячного</li>
+          <li data-i="p2_l2"><b>Воскресный AI-разбор</b></li>
+          <li data-i="p2_l3">Дашборд с динамикой</li>
+          <li data-i="p2_l4">Приоритетная поддержка</li>
+          <li data-i="p2_l5">История правок оценок</li>
+        </ul>
+        <a href="https://t.me/GradeSentinel_bot" class="btn btn-energy" data-i="p2_cta">Выбрать тариф</a>
+      </div>
+
+      <div class="price-cell reveal" style="--reveal-delay: 200ms;">
+        <div class="price-tag" data-i="p3_tag">−30% на год</div>
+        <div class="price-name" data-i="p3_name">12 месяцев</div>
+        <div class="price-num">249 900<small>UZS</small></div>
+        <div class="price-per" data-i="p3_per">20 825 / мес · −30%</div>
+        <ul class="price-list">
+          <li data-i="p3_l1">Всё из квартального</li>
+          <li data-i="p3_l2"><b>Архив за весь год</b></li>
+          <li data-i="p3_l3">Экспорт PDF / Excel</li>
+          <li data-i="p3_l4">Фиксация цены</li>
+          <li data-i="p3_l5">Передача семьи между родителями</li>
+        </ul>
+        <a href="https://t.me/GradeSentinel_bot" class="btn btn-ghost" data-i="p3_cta">Взять на год</a>
+      </div>
+    </div>
+
+    <p style="font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-4); text-align: center; margin-top: 32px;" data-i="price_foot">
+      Click · Payme · оплата прямо в Telegram. Чек — в чат.
+    </p>
+  </div>
+</section>
+
+<!-- ============================ FAQ ============================ -->
+<section class="section" style="background: var(--paper-2); border-block: 1px solid var(--line);">
+  <div class="container-narrow">
+    <div class="section-head reveal" style="grid-template-columns: 1fr;">
+      <div class="meta">
+        <span class="label-line"></span>
+        <span data-i="faq_label">05 · Вопросы</span>
+      </div>
+      <h2 data-i="faq_h">То, что родители <span class="italic-display" style="color: var(--ink-3);">обычно</span> спрашивают первым.</h2>
+    </div>
+
+    <div class="faq-list">
+      <div class="faq-item open reveal">
+        <div class="faq-q">
+          <span data-i="q1">Откуда бот берёт оценки?</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a" data-i="a1">Из электронного дневника, который ведёт школа в Google Таблицах. Бот читает таблицу через сервисный аккаунт Google и сравнивает её с предыдущим состоянием — так находит новые и изменённые оценки. Никаких других источников не используем; учётной записи школьного журнала нам не нужно.</div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q">
+          <span data-i="q2">Это безопасно? Что вы видите в наших таблицах?</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a" data-i="a2">У бота есть доступ только на чтение и только к той таблице, ссылку на которую вы добавили сами. Авторизация в дашборде идёт через подпись Telegram (HMAC-SHA256), к школьному кабинету ребёнка мы вообще не подключены.</div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q">
+          <span data-i="q3">Что будет, если учитель исправит оценку задним числом?</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a" data-i="a3">Бот заметит изменение в течение 5 минут и пришлёт «было 3 → стало 4». История правок сохраняется в дашборде — спорные ситуации легко восстанавливать.</div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q">
+          <span data-i="q4">У меня двое детей в разных школах. Подключатся оба?</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a" data-i="a4">Да, до 5 детей в одной семье — каждому своя таблица, в Telegram переключение в один клик. Один родитель может состоять в нескольких семьях: например, в семье с супругом и в семье со своими родителями.</div>
+      </div>
+
+      <div class="faq-item reveal">
+        <div class="faq-q">
+          <span data-i="q5">Как отменить подписку?</span>
+          <button class="faq-toggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        </div>
+        <div class="faq-a" data-i="a5">Никак — она просто заканчивается в указанную дату, без автопродления и списаний. За три дня до окончания бот напомнит и предложит продлить, если нужно.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ BIG CTA ============================ -->
+<section class="section">
+  <div class="container">
+    <div class="big-cta reveal">
+      <h2 data-i="cta_h">Подключите за <i>3 минуты</i><br>и больше не открывайте дневник руками.</h2>
+      <div class="big-cta-side">
+        <div style="display: flex; flex-direction: column; gap: 14px; align-items: flex-start;">
+          <a href="https://t.me/GradeSentinel_bot" class="btn btn-energy btn-lg" data-i="cta_open">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z"/></svg>
+            <span data-i="cta_open_l">Открыть в Telegram</span>
+          </a>
+          <a href="instructions.html" class="btn btn-ghost btn-lg" style="color: var(--paper); border-color: rgba(255,255,255,.18);" data-i="cta_docs">Посмотреть инструкцию</a>
+          <span style="font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-5); margin-top: 8px;" data-i="cta_meta">@GradeSentinel_bot · grades.railtech.uz</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FOOTER ============================ -->
+<footer class="foot">
+  <div class="container">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-mark">Grade<i style="color: var(--energy); font-style: normal;">·</i>Sentinel</div>
+        <p data-i="foot_about">Telegram-бот, который мгновенно уведомляет родителей о новых оценках в школьном электронном дневнике. Работает в Узбекистане с 2024 года.</p>
+        <div style="margin-top: 24px;">
+          <div class="locale">
+            <button class="on" data-lang="ru">Ru</button>
+            <span class="sep">·</span>
+            <button data-lang="uz">Oʻz</button>
+            <span class="sep">·</span>
+            <button data-lang="en">En</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h4 data-i="foot_h_product">Продукт</h4>
+        <ul>
+          <li><a href="#features" data-i="foot_features">Возможности</a></li>
+          <li><a href="#pricing" data-i="foot_pricing">Тарифы</a></li>
+          <li><a href="instructions.html" data-i="foot_docs">Инструкция</a></li>
+          <li><a href="dashboard.html" data-i="foot_cabinet">Личный кабинет</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 data-i="foot_h_team">Команда</h4>
+        <ul>
+          <li><a href="#" data-i="foot_about_l">О проекте</a></li>
+          <li><a href="#" data-i="foot_changelog">Changelog</a></li>
+          <li><a href="admin.html" data-i="foot_admin">Для администраторов</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 data-i="foot_h_help">Помощь</h4>
+        <ul>
+          <li><a href="https://t.me/GradeSentinel_bot">@GradeSentinel_bot</a></li>
+          <li><a href="/cdn-cgi/l/email-protection#8be3eee7e7e4cbecf9eaefeef8a5f9eae2e7ffeee8e3a5fef1"><span class="__cf_email__" data-cfemail="eb838e878784ab8c998a8f8e98c5998a82879f8e8883c59e91">[email&#160;protected]</span></a></li>
+          <li><a href="#" data-i="foot_privacy">Политика конфиденциальности</a></li>
+          <li><a href="#" data-i="foot_terms">Условия</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-legal">
+      <span data-i="foot_legal">© 2024–2026 GradeSentinel · grades.railtech.uz</span>
+      <span data-i="foot_made">Сделано в Ташкенте</span>
+    </div>
+  </div>
+</footer>
+
+<!-- ============================ SCRIPT ============================ -->
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  // Reveal on scroll
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { rootMargin: '0px 0px -10% 0px', threshold: 0.05 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // FAQ
+  document.querySelectorAll('.faq-item').forEach(item => {
+    const q = item.querySelector('.faq-q');
+    q.addEventListener('click', () => {
+      const wasOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      if (!wasOpen) item.classList.add('open');
+    });
+  });
+
+  // Hero word swap
+  const swapWords = ["«пятёрке»", "«четвёрке»", "«двойке»", "правке оценки"];
+  let swapIdx = 0;
+  // ... static for now; the word is part of headline copy
+
+  // Locale switch (lightweight — just toggles UI on visible labels)
+  const dict = {
+    ru: {}, // base — uses HTML defaults
+    uz: {
+      "h1": "Matematika boʻyicha <span class=\"fancy\">«5»</span> baho haqida<br>bilib olasiz<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">bolaning oʻzidan oldin</span>.",
+      "cta_primary_label": "Bepul ulash",
+      "cta_secondary": "Qanday ishlaydi →",
+      "meta_3min": "Ulash uchun 3 daqiqa",
+      "meta_live": "Hozir Oʻzbekistonda · v2.5",
+      "meta_center": "<b>1 247</b> oila · <b>3 412</b> bola · <b>↑ 18%</b> oʻrt. baho",
+      "meta_right": "Toshkent · UTC+5",
+      "tg_head": "@GradeSentinel_bot · efirda",
+      "open_label": "Botni ochish", "signin": "Kirish",
+      "how": "Qanday ishlaydi", "feat": "Imkoniyatlar", "day": "Bir kun", "price": "Tariflar", "docs": "Yoʻriqnoma",
+      "flow_label": "01 · Qanday ishlaydi",
+      "flow_h": "Maktab <span class=\"fancy\">Google Sheets</span> yuritadi — biz bu yerdan zudlik bilan push yuboramiz.",
+      "feat_label": "02 · Imkoniyatlar",
+      "feat_h": "Bitta bot — oʻnlab ota-ona chatlari va oʻqituvchiga qoʻngʻiroqlar oʻrniga.",
+      "day_label": "03 · Bir kun",
+      "day_h": "Oddiy maktab <span class=\"italic-display\" style=\"color: var(--ink-3);\">seshanbasi</span>.",
+      "price_label": "04 · Tariflar",
+      "price_h": "Bitta hisob — <span class=\"italic-display\" style=\"color: var(--ink-3);\">butun oilaga</span>. Avtomatik yangilanishsiz.",
+      "faq_label": "05 · Savollar",
+      "faq_h": "Ota-onalar koʻpincha <span class=\"italic-display\" style=\"color: var(--ink-3);\">avval</span> shu savollarni beradi.",
+      "cta_h": "<i>3 daqiqada</i> ulang<br>va kundalikni qoʻlda ochmang.",
+      "cta_open_l": "Telegramda ochish",
+      "cta_docs": "Yoʻriqnomani koʻrish",
+      "foot_about": "Telegram-bot — maktab elektron kundaligidagi yangi baholar haqida ota-onalarga zudlik bilan xabar beradi. Oʻzbekistonda 2024-yildan beri ishlaydi.",
+      "foot_h_product": "Mahsulot", "foot_h_team": "Jamoa", "foot_h_help": "Yordam",
+      "foot_features": "Imkoniyatlar", "foot_pricing": "Tariflar", "foot_docs": "Yoʻriqnoma", "foot_cabinet": "Shaxsiy kabinet",
+      "foot_about_l": "Loyiha haqida", "foot_changelog": "Changelog", "foot_admin": "Administratorlar uchun",
+      "foot_privacy": "Maxfiylik siyosati", "foot_terms": "Shartlar",
+      "foot_legal": "© 2024–2026 GradeSentinel · grades.railtech.uz",
+      "foot_made": "Toshkentda yaratildi"
+    },
+    en: {
+      "h1": "Find out about that <span class=\"fancy\">A</span><br>in math<br><span class=\"italic-display\" style=\"color: var(--ink-3);\">before your kid does</span>.",
+      "cta_primary_label": "Connect for free",
+      "cta_secondary": "How it works →",
+      "meta_3min": "3 minutes to set up",
+      "meta_live": "Live in Uzbekistan · v2.5",
+      "meta_center": "<b>1,247</b> families · <b>3,412</b> kids · <b>↑ 18%</b> avg grade",
+      "meta_right": "Tashkent · UTC+5",
+      "tg_head": "@GradeSentinel_bot · live",
+      "open_label": "Open the bot", "signin": "Sign in",
+      "how": "How it works", "feat": "Features", "day": "A day", "price": "Pricing", "docs": "Docs",
+      "flow_label": "01 · How it works",
+      "flow_h": "School runs a <span class=\"fancy\">Google Sheet</span> — we turn it into instant pushes.",
+      "feat_label": "02 · Features",
+      "feat_h": "One bot instead of <span class=\"italic-display\" style=\"color: var(--ink-3);\">a dozen</span> parent chats and calls to teachers.",
+      "day_label": "03 · A day in life",
+      "day_h": "An ordinary school <span class=\"italic-display\" style=\"color: var(--ink-3);\">Tuesday</span>.",
+      "price_label": "04 · Pricing",
+      "price_h": "One bill <span class=\"italic-display\" style=\"color: var(--ink-3);\">for the whole family</span>. No auto-renewal.",
+      "faq_label": "05 · Questions",
+      "faq_h": "What parents <span class=\"italic-display\" style=\"color: var(--ink-3);\">usually</span> ask first.",
+      "cta_h": "Connect in <i>3 minutes</i><br>and never open the diary by hand again.",
+      "cta_open_l": "Open in Telegram",
+      "cta_docs": "Read the docs",
+      "foot_about": "A Telegram bot that instantly notifies parents about new grades in the school's electronic diary. Live in Uzbekistan since 2024.",
+      "foot_h_product": "Product", "foot_h_team": "Company", "foot_h_help": "Help",
+      "foot_features": "Features", "foot_pricing": "Pricing", "foot_docs": "Docs", "foot_cabinet": "Cabinet",
+      "foot_about_l": "About", "foot_changelog": "Changelog", "foot_admin": "For admins",
+      "foot_privacy": "Privacy policy", "foot_terms": "Terms",
+      "foot_legal": "© 2024–2026 GradeSentinel · grades.railtech.uz",
+      "foot_made": "Made in Tashkent"
+    }
+  };
+
+  // Snapshot original RU strings on first load
+  const originals = {};
+  document.querySelectorAll('[data-i]').forEach(el => {
+    originals[el.dataset.i] = el.innerHTML;
+  });
+
+  function setLang(lang) {
+    document.querySelectorAll('.locale').forEach(box => {
+      box.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
+    });
+    const map = lang === 'ru' ? originals : { ...originals, ...dict[lang] };
+    document.querySelectorAll('[data-i]').forEach(el => {
+      const k = el.dataset.i;
+      if (map[k] !== undefined) el.innerHTML = map[k];
+    });
+    document.documentElement.lang = lang === 'uz' ? 'uz' : lang;
+  }
+
+  document.querySelectorAll('.locale button').forEach(b => {
+    b.addEventListener('click', () => setLang(b.dataset.lang));
+  });
+</script>
+
+</body>
+</html>

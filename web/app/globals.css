@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* Tailwind v4 CSS-first config.
+ * Дизайн-токены экстрактнуты из frontend/assets/theme-v2.css и theme.css.
+ * (portal) route group использует v2 (paper), (admin) — v1 (corporate).
+ * Phase 0 — общий пул токенов; в Phase 3+4 разнесём по слоям если нужно.
+ */
+
+@theme {
+  /* === Paper (v2 — portal) === */
+  --color-paper: #f0e9dd;
+  --color-paper-2: #e6dec9;
+  --color-paper-3: #d9cfb6;
+  --color-card: #fbf6ec;
+  --color-line: #d8cfba;
+  --color-line-2: #c5b99e;
+
+  /* === Ink (v2) === */
+  --color-ink: #1a1614;
+  --color-ink-2: #2a2622;
+  --color-ink-3: #5a4f47;
+  --color-ink-4: #837567;
+  --color-ink-5: #b3a795;
+
+  /* === Signals (v2) === */
+  --color-signal: #1f5b6d;
+  --color-signal-2: #2d7d96;
+  --color-energy: #d24c1d;
+  --color-energy-2: #ed7142;
+  --color-note: #f0c850;
+
+  /* === Grades (shared, v2 palette) === */
+  --color-g5: #1f6a3a;
+  --color-g4: #1f5b8a;
+  --color-g3: #a35c0d;
+  --color-g2: #98201e;
+
+  /* === Corporate teal (v1 — admin) === */
+  --color-brand: #35819b;
+  --color-brand-700: #2a6a80;
+  --color-brand-900: #173a48;
+  --color-corp-ink-900: #0c1f26;
+  --color-corp-ink-700: #1f3a44;
+  --color-corp-ink-500: #4a6670;
+  --color-corp-ink-400: #6f8993;
+  --color-corp-ink-300: #9bb1ba;
+  --color-corp-line: #e3ebef;
+  --color-corp-line-2: #ecf1f4;
+  --color-corp-bg: #f6f8f9;
+  --color-corp-surface: #ffffff;
+  --color-warn: #d97706;
+  --color-ok: #15803d;
+  --color-bad: #b91c1c;
+  --color-info: #2563eb;
+
+  /* === Type === */
+  --font-display: "Bricolage Grotesque", "Manrope", system-ui, sans-serif;
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* === Radii (v1) === */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+}
+
+/* Base */
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

@@ -781,7 +781,86 @@ from src.db.notifications import (  # noqa: E402, F401
 
 
 # ====================
-# Оценки за сегодня / вчера / overnight + health-checks — в src/db/grades.py.
+# Оценки за сегодня (для вечерней сводки)
+# ====================
+def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все оценки студента за сегодня (по Ташкенту, UTC+5).
+    Дедупликация по предмету: если оценка попала из 'Все оценки' и 'Сегодня',
+    берём самую свежую запись для каждого предмета. Дата сегодня — по grade_date,
+    fallback на date(date_added, '+5 hours') для legacy-записей."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, MAX(date_added) as date_added
+            FROM grade_history
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  = date('now', '+5 hours')
+            GROUP BY subject
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_overnight_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает оценки студента, добавленные за ночь (с 22:00 до 07:00 по Ташкенту).
+    Дедупликация по предмету: берём последнюю запись."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Берём оценки добавленные с 22:00 вчера по Ташкенту (17:00 UTC) до сейчас
+        # datetime('now','+5 hours','start of day','-2 hours','-5 hours')
+        #   = полночь Ташкента → -2ч = 22:00 вчера Ташкент → -5ч = 17:00 вчера UTC
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text, cell_reference,
+                   MAX(date_added) as date_added
+            FROM grade_history
+            WHERE student_id = ?
+              AND date_added >= datetime('now', '+5 hours', 'start of day', '-2 hours', '-5 hours')
+              AND date_added <= datetime('now')
+            GROUP BY subject
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
+    """Возвращает все оценки студента за вчера (по Ташкенту, UTC+5).
+    По grade_date с fallback на date(date_added, '+5 hours') для legacy-записей."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, grade_value, raw_text
+            FROM grade_history
+            WHERE student_id = ?
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  = date('now', '+5 hours', '-1 day')
+            ORDER BY date_added
+        ''', (student_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def has_today_grades_for_parent(telegram_id: int) -> bool:
+    """Проверяет, есть ли сегодня хоть одна оценка у детей родителя (по Ташкенту, UTC+5).
+    Сравнение по grade_date с fallback на date(date_added, '+5 hours')."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT COUNT(*) as c FROM grade_history gh
+            JOIN family_links fl ON gh.student_id = fl.student_id
+            JOIN parents p ON fl.parent_id = p.id
+            WHERE p.telegram_id = ?
+              AND COALESCE(gh.grade_date, date(gh.date_added, '+5 hours'))
+                  = date('now', '+5 hours')
+        ''', (telegram_id,))
+        return cursor.fetchone()['c'] > 0
+
+
+# Очередь уведомлений (тихие часы) — в src/db/notifications.py.
+from src.db.notifications import (  # noqa: E402, F401
+    queue_notification,
+    get_and_clear_queued_notifications,
+    get_all_queued_telegram_ids,
+)
 
 
 # Инвайт-ссылки — имплементация в src/db/invites.py.

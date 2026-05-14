@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Админ-панель · GradeSentinel</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px 20px; }
+  .stat .label { font-size: 12px; color: var(--ink-500); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .stat .value { font-size: 28px; font-weight: 800; letter-spacing: -.02em; margin-top: 6px; }
+  .stat .delta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; margin-top: 6px; color: var(--ok); }
+  .stat .delta.down { color: var(--bad); }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .panel-head h3 { font-size: 15px; }
+  .panel-body { padding: 20px; }
+  .panel-body.tight { padding: 0; }
+
+  .grid-2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+
+  /* Table */
+  table.adm { width: 100%; border-collapse: separate; border-spacing: 0; }
+  table.adm th { text-align: left; padding: 12px 20px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-400); background: var(--surface-2); border-bottom: 1px solid var(--line); }
+  table.adm td { padding: 14px 20px; font-size: 14px; border-bottom: 1px solid var(--line-2); }
+  table.adm tr:last-child td { border-bottom: none; }
+  table.adm tr:hover td { background: var(--surface-2); }
+  table.adm .id { font-family: var(--mono); font-size: 12px; color: var(--ink-400); }
+
+  /* Search */
+  .search-input { position: relative; display: flex; align-items: center; }
+  .search-input input { padding-left: 38px; height: 38px; width: 280px; }
+  .search-input svg { position: absolute; left: 12px; color: var(--ink-400); }
+
+  /* Bar chart */
+  .bar-chart { display: flex; align-items: flex-end; gap: 6px; height: 160px; padding: 10px 0; }
+  .bar { flex: 1; background: linear-gradient(180deg, var(--brand), var(--brand-700)); border-radius: 4px 4px 0 0; min-height: 4px; position: relative; transition: height .3s; }
+  .bar:hover { background: linear-gradient(180deg, #6dc7e7, var(--brand)); }
+  .bar-label { font-size: 10px; color: var(--ink-400); text-align: center; margin-top: 6px; }
+
+  /* Activity */
+  .act-item { display: flex; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line-2); align-items: flex-start; }
+  .act-item:last-child { border-bottom: none; }
+  .act-ic { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
+  .act-text { font-size: 13px; line-height: 1.5; flex: 1; }
+  .act-text b { color: var(--ink-900); font-weight: 600; }
+  .act-time { font-size: 11px; color: var(--ink-400); margin-top: 2px; }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(12,31,38,.5);
+    backdrop-filter: blur(4px); z-index: 200;
+    display: grid; place-items: center;
+  }
+  .modal {
+    background: #fff; border-radius: var(--r-xl);
+    width: 520px; max-width: 90vw; max-height: 86vh; overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  .modal-h { padding: 20px 24px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+  .modal-h h3 { font-size: 18px; }
+  .modal-h button { background: transparent; border: none; cursor: pointer; color: var(--ink-400); font-size: 22px; line-height: 1; }
+  .modal-b { padding: 24px; }
+  .modal-f { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; gap: 10px; justify-content: flex-end; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+  .tab { padding: 12px 20px; border: none; background: transparent; font-size: 14px; font-weight: 600; color: var(--ink-500); border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -1px; }
+  .tab:hover { color: var(--ink-900); }
+  .tab.active { color: var(--ink-900); border-bottom-color: var(--ink-900); }
+
+  /* Toolbar */
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar .grow { flex: 1; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--ink-900); color: #fff;
+    padding: 14px 18px; border-radius: 12px;
+    box-shadow: var(--shadow-lg); z-index: 300;
+    display: flex; gap: 10px; align-items: center;
+    font-size: 14px; font-weight: 500;
+    animation: slideIn .3s;
+  }
+  .toast .check { background: var(--ok); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+  @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* Health */
+  .health-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line-2); }
+  .health-row:last-child { border-bottom: none; }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .health-dot.ok { background: var(--ok); box-shadow: 0 0 0 4px rgba(21,128,61,.15); }
+  .health-dot.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(217,119,6,.15); }
+  .health-dot.bad { background: var(--bad); box-shadow: 0 0 0 4px rgba(185,28,28,.15); }
+  .health-name { font-size: 14px; font-weight: 600; flex: 1; }
+  .health-val { font-size: 13px; color: var(--ink-500); font-family: var(--mono); }
+
+  /* Inline action button */
+  .ia-btn { background: transparent; border: 1px solid var(--line); height: 28px; width: 28px; border-radius: 6px; display: inline-grid; place-items: center; cursor: pointer; color: var(--ink-500); transition: all .15s; }
+  .ia-btn:hover { color: var(--ink-900); border-color: var(--ink-300); }
+  .ia-btn.danger:hover { color: var(--bad); border-color: var(--bad); }
+
+  @media (max-width: 1100px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+const Icon = ({ name, size = 18, ...rest }) => {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", ...rest };
+  switch (name) {
+    case "shield": return <svg {...props}><path d="M12 22s8-4 8-12V5l-8-3-8 3v5c0 8 8 12 8 12z"/></svg>;
+    case "home": return <svg {...props}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>;
+    case "users": return <svg {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+    case "family": return <svg {...props}><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>;
+    case "card": return <svg {...props}><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>;
+    case "tag": return <svg {...props}><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.83z"/><circle cx="7" cy="7" r="1.4"/></svg>;
+    case "broadcast": return <svg {...props}><path d="M3 11l18-8v18l-18-8v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>;
+    case "logs": return <svg {...props}><path d="M14 2v6h6M14 2l6 6"/><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M9 13h6M9 17h4"/></svg>;
+    case "stats": return <svg {...props}><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>;
+    case "settings": return <svg {...props}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+    case "search": return <svg {...props}><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>;
+    case "plus": return <svg {...props}><path d="M12 5v14M5 12h14"/></svg>;
+    case "edit": return <svg {...props}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>;
+    case "trash": return <svg {...props}><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+    case "check": return <svg {...props}><path d="M5 13l4 4L19 7"/></svg>;
+    case "send": return <svg {...props}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>;
+    case "trend-up": return <svg {...props}><path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/></svg>;
+    case "external": return <svg {...props}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg>;
+    case "filter": return <svg {...props}><path d="M22 3H2l8 9.46V19l4 2v-8.54z"/></svg>;
+    case "exit": return <svg {...props}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>;
+    default: return null;
+  }
+};
+
+// ----- DEMO DATA -----
+const FAMILIES_DATA = [
+  { id: 1042, name: "Каримовы",   head: "Зарина Каримова",  members: 3, kids: 2, sub: "active", until: "14 авг 2026", plan: "3 мес",  created: "14 фев 2025" },
+  { id: 1041, name: "Юсуповы",    head: "Бекзод Юсупов",    members: 2, kids: 1, sub: "active", until: "02 сен 2026", plan: "12 мес", created: "02 сен 2024" },
+  { id: 1040, name: "Рахимовы",   head: "Дилором Рахимова", members: 4, kids: 3, sub: "active", until: "22 май 2026", plan: "1 мес",  created: "11 ноя 2025" },
+  { id: 1039, name: "Алимовы",    head: "Сардор Алимов",    members: 2, kids: 1, sub: "expired", until: "28 апр 2026", plan: "1 мес",  created: "28 мар 2026" },
+  { id: 1038, name: "Хасановы",   head: "Гулноза Хасанова", members: 3, kids: 2, sub: "active", until: "14 июл 2026", plan: "3 мес",  created: "14 апр 2024" },
+  { id: 1037, name: "Турсуновы",  head: "Анвар Турсунов",   members: 2, kids: 2, sub: "trial",   until: "12 май 2026", plan: "trial",   created: "05 май 2026" },
+  { id: 1036, name: "Назаровы",   head: "Нодира Назарова",  members: 5, kids: 3, sub: "active", until: "30 июн 2026", plan: "3 мес",  created: "30 мар 2026" },
+];
+
+const USERS_DATA = [
+  { id: 100231, fio: "Зарина Каримова",   tg: "@zarina_k",  phone: "+998 90 *** 12 34", role: "head",   lang: "ru", families: 1, last: "Только что" },
+  { id: 100229, fio: "Бекзод Каримов",    tg: "@bek_k",     phone: "+998 91 *** 88 22", role: "parent", lang: "ru", families: 1, last: "12 мин назад" },
+  { id: 100212, fio: "Бекзод Юсупов",     tg: "@b_yusupov", phone: "+998 90 *** 41 90", role: "head",   lang: "uz", families: 1, last: "1 ч назад" },
+  { id: 100201, fio: "Сардор Алимов",     tg: "@sardor_a",  phone: "+998 93 *** 27 11", role: "head",   lang: "ru", families: 1, last: "3 д назад" },
+  { id: 100199, fio: "Гулноза Хасанова",  tg: "@g_khasan",  phone: "+998 90 *** 50 03", role: "head",   lang: "uz", families: 1, last: "2 ч назад" },
+  { id: 100150, fio: "Дилором Рахимова",  tg: "@dr_rakhim", phone: "+998 99 *** 60 41", role: "head",   lang: "ru", families: 2, last: "Сегодня 09:14" },
+];
+
+const PAYMENTS_DATA = [
+  { id: "PMT-78231", date: "8 мая 2026 · 14:23", family: "Каримовы",  amount: 79900,  method: "Click", plan: "3 мес",  status: "ok" },
+  { id: "PMT-78229", date: "8 мая 2026 · 11:08", family: "Турсуновы", amount: 29900,  method: "Payme", plan: "1 мес",  status: "ok" },
+  { id: "PMT-78228", date: "8 мая 2026 · 09:42", family: "Рахимовы",  amount: 79900,  method: "Click", plan: "3 мес",  status: "ok" },
+  { id: "PMT-78225", date: "7 мая 2026 · 18:54", family: "Назаровы",  amount: 249900, method: "Click", plan: "12 мес", status: "ok" },
+  { id: "PMT-78219", date: "7 мая 2026 · 12:30", family: "Алимовы",   amount: 29900,  method: "Payme", plan: "1 мес",  status: "fail" },
+  { id: "PMT-78217", date: "6 мая 2026 · 20:14", family: "Хасановы",  amount: 79900,  method: "Click", plan: "3 мес",  status: "ok" },
+];
+
+const PROMOS = [
+  { code: "WELCOME10",   discount: "10%",  used: 142, limit: 500, expires: "31 дек 2026", active: true },
+  { code: "SCHOOL2026",  discount: "−5 000 UZS", used: 38, limit: 100, expires: "01 сен 2026", active: true },
+  { code: "FRIEND",      discount: "1 мес",  used: 17, limit: "∞", expires: "—", active: true },
+  { code: "LAUNCH",      discount: "20%",  used: 88, limit: 100, expires: "31 янв 2026", active: false },
+];
+
+const ACTIVITY = [
+  { type: "payment", text: <>Семья <b>Каримовы</b> оплатила тариф «3 мес»</>, time: "5 мин назад", color: "var(--ok)" },
+  { type: "user",    text: <>Новый пользователь: <b>Шахрух Махмудов</b></>, time: "12 мин назад", color: "var(--brand)" },
+  { type: "support", text: <>Сообщение в поддержку от <b>Юсуповы</b></>, time: "23 мин назад", color: "var(--warn)" },
+  { type: "ai",      text: <>Сгенерировано <b>14 AI-отчётов</b></>, time: "45 мин назад", color: "#7c3aed" },
+  { type: "warn",    text: <>Sheets API: <b>429</b> ratelimit (×3 ученика)</>, time: "1 ч назад", color: "var(--bad)" },
+  { type: "payment", text: <>Семья <b>Назаровы</b> продлила на 12 мес</>, time: "2 ч назад", color: "var(--ok)" },
+];
+
+// ----- Helpers -----
+const fmt = n => new Intl.NumberFormat("ru-RU").format(n);
+const subStatus = s => s === "active" ? <span className="tag green">Активна</span> : s === "expired" ? <span className="tag red">Истекла</span> : <span className="tag amber">Trial</span>;
+const roleTag = r => r === "head" ? <span className="tag blue">Глава</span> : r === "admin" ? <span className="tag" style={{background:"#fce7f3", color:"#9d174d"}}>Админ</span> : <span className="tag gray">Родитель</span>;
+
+// ----- App -----
+function AdminApp() {
+  const [tab, setTab] = useState("overview");
+  const [search, setSearch] = useState("");
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [bcText, setBcText] = useState("");
+
+  const showToast = msg => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const filtFamilies = useMemo(() =>
+    FAMILIES_DATA.filter(f => f.name.toLowerCase().includes(search.toLowerCase()) || f.head.toLowerCase().includes(search.toLowerCase()) || String(f.id).includes(search)),
+    [search]
+  );
+  const filtUsers = useMemo(() =>
+    USERS_DATA.filter(u => u.fio.toLowerCase().includes(search.toLowerCase()) || u.tg.toLowerCase().includes(search.toLowerCase()) || u.phone.includes(search)),
+    [search]
+  );
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <a href="index.html" className="gs-logo" style={{ marginBottom: 10 }}>
+          <span className="gs-logo-mark"><Icon name="shield" size={18} style={{ color: "#fff" }}/></span>
+          <span className="gs-logo-name">Grade<span>Sentinel</span></span>
+        </a>
+        <div className="tag" style={{ alignSelf: "flex-start", marginLeft: 6, background: "#fce7f3", color: "#9d174d" }}>
+          ADMIN PANEL
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">Аналитика</div>
+          <div className={`nav-item ${tab==="overview"?"active":""}`} onClick={()=>setTab("overview")}><Icon name="home" size={18} className="nav-icon"/> Обзор</div>
+          <div className={`nav-item ${tab==="stats"?"active":""}`} onClick={()=>setTab("stats")}><Icon name="stats" size={18} className="nav-icon"/> Статистика</div>
+          <div className={`nav-item ${tab==="logs"?"active":""}`} onClick={()=>setTab("logs")}><Icon name="logs" size={18} className="nav-icon"/> Логи и здоровье</div>
+        </div>
+        <div className="sidebar-section">
+          <div className="sidebar-label">Управление</div>
+          <div className={`nav-item ${tab==="families"?"active":""}`} onClick={()=>setTab("families")}><Icon name="family" size={18} className="nav-icon"/> Семьи <span className="nav-badge" style={{background:"var(--line-2)",color:"var(--ink-700)"}}>{FAMILIES_DATA.length}</span></div>
+          <div className={`nav-item ${tab==="users"?"active":""}`} onClick={()=>setTab("users")}><Icon name="users" size={18} className="nav-icon"/> Пользователи</div>
+          <div className={`nav-item ${tab==="payments"?"active":""}`} onClick={()=>setTab("payments")}><Icon name="card" size={18} className="nav-icon"/> Платежи</div>
+          <div className={`nav-item ${tab==="promos"?"active":""}`} onClick={()=>setTab("promos")}><Icon name="tag" size={18} className="nav-icon"/> Промокоды</div>
+        </div>
+        <div className="sidebar-section">
+          <div className="sidebar-label">Коммуникации</div>
+          <div className={`nav-item ${tab==="broadcast"?"active":""}`} onClick={()=>setTab("broadcast")}><Icon name="broadcast" size={18} className="nav-icon"/> Рассылка</div>
+          <div className={`nav-item ${tab==="settings"?"active":""}`} onClick={()=>setTab("settings")}><Icon name="settings" size={18} className="nav-icon"/> Настройки</div>
+        </div>
+
+        <div style={{ marginTop: "auto" }}>
+          <a href="dashboard.html" className="nav-item" style={{ background: "var(--surface-2)" }}><Icon name="external" size={18} className="nav-icon"/> Кабинет пользователя</a>
+          <a href="index.html" className="nav-item"><Icon name="exit" size={18} className="nav-icon"/> Выйти</a>
+        </div>
+      </aside>
+
+      <div className="app-main">
+        <header className="app-header">
+          <div>
+            <h2 style={{ fontSize: 20 }}>
+              {tab === "overview" && "Обзор"}
+              {tab === "stats" && "Статистика"}
+              {tab === "logs" && "Логи и здоровье системы"}
+              {tab === "families" && "Семьи"}
+              {tab === "users" && "Пользователи"}
+              {tab === "payments" && "Платежи"}
+              {tab === "promos" && "Промокоды"}
+              {tab === "broadcast" && "Рассылка"}
+              {tab === "settings" && "Настройки"}
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--ink-500)", marginTop: 2 }}>
+              {new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="tag green"><span className="dot"/> Бот онлайн</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowBroadcast(true)}><Icon name="broadcast" size={14}/> Рассылка</button>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 14px 6px 6px", background: "transparent", border: "1px solid var(--line)", borderRadius: 999 }}>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: "#9d174d", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: 13 }}>N</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Nurlan Z.</div>
+            </div>
+          </div>
+        </header>
+
+        <main className="app-content">
+          {/* OVERVIEW */}
+          {tab === "overview" && (
+            <>
+              <div className="stat-grid">
+                <div className="stat"><div className="label">Всего семей</div><div className="value">487</div><div className="delta"><Icon name="trend-up" size={12}/> +24 за неделю</div></div>
+                <div className="stat"><div className="label">Активные подписки</div><div className="value">412</div><div className="delta"><Icon name="trend-up" size={12}/> 84.6%</div></div>
+                <div className="stat"><div className="label">Доход за месяц</div><div className="value">28.4M <span style={{fontSize:14,color:"var(--ink-500)"}}>UZS</span></div><div className="delta"><Icon name="trend-up" size={12}/> +12.4%</div></div>
+                <div className="stat"><div className="label">Уведомлений за день</div><div className="value">3 421</div><div className="delta"><Icon name="trend-up" size={12}/> +18%</div></div>
+              </div>
+
+              <div className="grid-2">
+                <div className="panel">
+                  <div className="panel-head">
+                    <h3>Регистрации за 14 дней</h3>
+                    <select className="field" style={{height:32, width:120, fontSize:13}}>
+                      <option>14 дней</option><option>30 дней</option><option>90 дней</option>
+                    </select>
+                  </div>
+                  <div className="panel-body">
+                    <div className="bar-chart">
+                      {[12,18,15,22,20,28,32,24,30,26,38,35,42,48].map((h,i) => (
+                        <div key={i} style={{flex:1}}>
+                          <div className="bar" style={{height: `${h*2.6}px`}} title={`${h} новых`}/>
+                          <div className="bar-label">{i===0||i===6||i===13?`-${13-i}д`:""}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex", justifyContent:"space-around", marginTop:14, fontSize:13, color:"var(--ink-500)"}}>
+                      <span>Всего: <b style={{color:"var(--ink-900)"}}>388</b></span>
+                      <span>В среднем: <b style={{color:"var(--ink-900)"}}>27.7/день</b></span>
+                      <span>Конверсия в платных: <b style={{color:"var(--ok)"}}>62%</b></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-head"><h3>Лента активности</h3><a style={{fontSize:12,color:"var(--brand)"}} onClick={()=>setTab("logs")}>Все →</a></div>
+                  <div className="panel-body tight" style={{maxHeight: 360, overflowY: "auto"}}>
+                    {ACTIVITY.map((a,i) => (
+                      <div key={i} className="act-item">
+                        <div className="act-ic" style={{background: a.color+"22", color: a.color}}>
+                          <Icon name={a.type==="payment"?"card": a.type==="user"?"users": a.type==="support"?"send": a.type==="ai"?"shield": "logs"} size={14}/>
+                        </div>
+                        <div>
+                          <div className="act-text">{a.text}</div>
+                          <div className="act-time">{a.time}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid-3" style={{marginTop:20}}>
+                <div className="panel">
+                  <div className="panel-head"><h3>Здоровье системы</h3></div>
+                  <div className="panel-body">
+                    <div className="health-row"><span className="health-dot ok"/><span className="health-name">Bot polling</span><span className="health-val">300ms</span></div>
+                    <div className="health-row"><span className="health-dot ok"/><span className="health-name">WebApp</span><span className="health-val">200 OK</span></div>
+                    <div className="health-row"><span className="health-dot ok"/><span className="health-name">SQLite WAL</span><span className="health-val">142 MB</span></div>
+                    <div className="health-row"><span className="health-dot warn"/><span className="health-name">Sheets API</span><span className="health-val">3× 429</span></div>
+                    <div className="health-row"><span className="health-dot ok"/><span className="health-name">Claude API</span><span className="health-val">2.3s avg</span></div>
+                  </div>
+                </div>
+                <div className="panel">
+                  <div className="panel-head"><h3>Распределение по тарифам</h3></div>
+                  <div className="panel-body">
+                    {[
+                      {n:"3 месяца", v:48, c:"#35819B"},
+                      {n:"12 месяцев", v:31, c:"#15803d"},
+                      {n:"1 месяц", v:18, c:"#d97706"},
+                      {n:"Trial", v:3, c:"#94a3b8"}
+                    ].map(p => (
+                      <div key={p.n} style={{padding:"10px 0", borderBottom:"1px solid var(--line-2)"}}>
+                        <div style={{display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:13}}>
+                          <span style={{fontWeight:600}}>{p.n}</span><span>{p.v}%</span>
+                        </div>
+                        <div style={{height:6, background:"var(--line-2)", borderRadius:999}}>
+                          <div style={{width:`${p.v}%`, height:"100%", background:p.c, borderRadius:999}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="panel">
+                  <div className="panel-head"><h3>Языки</h3></div>
+                  <div className="panel-body">
+                    {[{n:"Русский",v:62,c:"#35819B"},{n:"O'zbek",v:34,c:"#d97706"},{n:"English",v:4,c:"#7c3aed"}].map(p => (
+                      <div key={p.n} style={{padding:"10px 0", borderBottom:"1px solid var(--line-2)"}}>
+                        <div style={{display:"flex", justifyContent:"space-between", marginBottom:6, fontSize:13}}>
+                          <span style={{fontWeight:600}}>{p.n}</span><span>{p.v}%</span>
+                        </div>
+                        <div style={{height:6, background:"var(--line-2)", borderRadius:999}}>
+                          <div style={{width:`${p.v}%`, height:"100%", background:p.c, borderRadius:999}}/>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* FAMILIES */}
+          {tab === "families" && (
+            <>
+              <div className="toolbar">
+                <div className="search-input">
+                  <Icon name="search" size={16}/>
+                  <input className="field" placeholder="Поиск по названию, главе, ID..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                </div>
+                <select className="field" style={{width:160, height:38}}><option>Все статусы</option><option>Активные</option><option>Истёкшие</option><option>Trial</option></select>
+                <div className="grow"/>
+                <button className="btn btn-ghost btn-sm"><Icon name="filter" size={14}/> Фильтры</button>
+                <button className="btn btn-brand btn-sm" onClick={() => setShowInvoice(true)}><Icon name="plus" size={14}/> Создать семью</button>
+              </div>
+              <div className="panel">
+                <table className="adm">
+                  <thead><tr>
+                    <th>ID</th><th>Семья</th><th>Глава</th><th>Состав</th><th>Тариф</th><th>Активна до</th><th>Создана</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {filtFamilies.map(f => (
+                      <tr key={f.id}>
+                        <td><span className="id">#{f.id}</span></td>
+                        <td><b>{f.name}</b></td>
+                        <td>{f.head}</td>
+                        <td><span className="muted" style={{fontSize:13}}>{f.members} взрослых · {f.kids} детей</span></td>
+                        <td>{subStatus(f.sub)} <span className="muted" style={{marginLeft:6, fontSize:12}}>{f.plan}</span></td>
+                        <td>{f.until}</td>
+                        <td className="muted" style={{fontSize:13}}>{f.created}</td>
+                        <td style={{textAlign:"right", whiteSpace:"nowrap"}}>
+                          <button className="ia-btn" title="Редактировать" onClick={()=>showToast("Открываем семью #"+f.id)}><Icon name="edit" size={14}/></button>
+                          <button className="ia-btn" title="Выдать подписку" onClick={()=>showToast("Подписка выдана семье #"+f.id+" на 1 мес")} style={{marginLeft:4}}><Icon name="card" size={14}/></button>
+                          <button className="ia-btn danger" title="Удалить" onClick={()=>{ if(confirm(`Удалить семью «${f.name}»?`)) showToast(`Семья «${f.name}» удалена`); }} style={{marginLeft:4}}><Icon name="trash" size={14}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* USERS */}
+          {tab === "users" && (
+            <>
+              <div className="toolbar">
+                <div className="search-input">
+                  <Icon name="search" size={16}/>
+                  <input className="field" placeholder="ФИО, username, телефон..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                </div>
+                <select className="field" style={{width:160, height:38}}><option>Все роли</option><option>Главы</option><option>Родители</option><option>Админы</option></select>
+                <div className="grow"/>
+                <button className="btn btn-ghost btn-sm">Экспорт CSV</button>
+              </div>
+              <div className="panel">
+                <table className="adm">
+                  <thead><tr>
+                    <th>Telegram ID</th><th>ФИО</th><th>Username</th><th>Телефон</th><th>Роль</th><th>Семей</th><th>Язык</th><th>Активность</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {filtUsers.map(u => (
+                      <tr key={u.id}>
+                        <td><span className="id">{u.id}</span></td>
+                        <td><b>{u.fio}</b></td>
+                        <td className="muted" style={{fontSize:13}}>{u.tg}</td>
+                        <td className="muted" style={{fontSize:13}}>{u.phone}</td>
+                        <td>{roleTag(u.role)}</td>
+                        <td>{u.families}</td>
+                        <td><span className="tag gray" style={{textTransform:"uppercase",fontSize:10}}>{u.lang}</span></td>
+                        <td className="muted" style={{fontSize:13}}>{u.last}</td>
+                        <td style={{textAlign:"right", whiteSpace:"nowrap"}}>
+                          <button className="ia-btn" title="Профиль"><Icon name="edit" size={14}/></button>
+                          <button className="ia-btn" title="Сообщение" style={{marginLeft:4}}><Icon name="send" size={14}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* PAYMENTS */}
+          {tab === "payments" && (
+            <>
+              <div className="stat-grid">
+                <div className="stat"><div className="label">Доход сегодня</div><div className="value">498K <span style={{fontSize:14,color:"var(--ink-500)"}}>UZS</span></div></div>
+                <div className="stat"><div className="label">Платежей сегодня</div><div className="value">12</div></div>
+                <div className="stat"><div className="label">Средний чек</div><div className="value">42K</div></div>
+                <div className="stat"><div className="label">Конверсия Click→Pay</div><div className="value">87%</div></div>
+              </div>
+              <div className="panel">
+                <div className="panel-head"><h3>Все транзакции</h3>
+                  <div style={{display:"flex", gap:8}}>
+                    <select className="field" style={{height:32, width:120, fontSize:13}}><option>Все</option><option>Click</option><option>Payme</option></select>
+                    <button className="btn btn-ghost btn-sm">Экспорт</button>
+                  </div>
+                </div>
+                <table className="adm">
+                  <thead><tr><th>ID</th><th>Дата</th><th>Семья</th><th>Тариф</th><th>Метод</th><th>Сумма</th><th>Статус</th></tr></thead>
+                  <tbody>
+                    {PAYMENTS_DATA.map(p => (
+                      <tr key={p.id}>
+                        <td><span className="id">{p.id}</span></td>
+                        <td className="muted" style={{fontSize:13}}>{p.date}</td>
+                        <td><b>{p.family}</b></td>
+                        <td>{p.plan}</td>
+                        <td>{p.method}</td>
+                        <td><b>{fmt(p.amount)} UZS</b></td>
+                        <td>{p.status==="ok"?<span className="tag green">Оплачено</span>:<span className="tag red">Ошибка</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* PROMOS */}
+          {tab === "promos" && (
+            <>
+              <div className="toolbar">
+                <div className="grow"/>
+                <button className="btn btn-brand btn-sm" onClick={() => showToast("Промокод создан")}><Icon name="plus" size={14}/> Создать промокод</button>
+              </div>
+              <div className="panel">
+                <table className="adm">
+                  <thead><tr><th>Код</th><th>Скидка</th><th>Использовано</th><th>Лимит</th><th>Истекает</th><th>Статус</th><th></th></tr></thead>
+                  <tbody>
+                    {PROMOS.map(p => (
+                      <tr key={p.code}>
+                        <td><code style={{background:"var(--ink-900)",color:"#6dc7e7",padding:"4px 10px",borderRadius:6,fontFamily:"var(--mono)",fontSize:13}}>{p.code}</code></td>
+                        <td><b>{p.discount}</b></td>
+                        <td>{p.used}</td>
+                        <td>{p.limit}</td>
+                        <td className="muted" style={{fontSize:13}}>{p.expires}</td>
+                        <td>{p.active?<span className="tag green">Активен</span>:<span className="tag gray">Неактивен</span>}</td>
+                        <td style={{textAlign:"right",whiteSpace:"nowrap"}}>
+                          <button className="ia-btn"><Icon name="edit" size={14}/></button>
+                          <button className="ia-btn danger" style={{marginLeft:4}}><Icon name="trash" size={14}/></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* BROADCAST */}
+          {tab === "broadcast" && (
+            <div className="grid-2">
+              <div className="panel">
+                <div className="panel-head"><h3>Новая рассылка</h3></div>
+                <div className="panel-body">
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                    <div>
+                      <label className="field-label">Аудитория</label>
+                      <select className="field"><option>Все пользователи (1 247)</option><option>Только главы семей (487)</option><option>Активные подписчики (412)</option><option>Истёкшие подписки (52)</option></select>
+                    </div>
+                    <div>
+                      <label className="field-label">Язык</label>
+                      <select className="field"><option>Все языки</option><option>Только русский</option><option>Только O'zbek</option><option>Только English</option></select>
+                    </div>
+                    <div>
+                      <label className="field-label">Текст сообщения (HTML)</label>
+                      <textarea className="field" style={{height:140,padding:"12px 14px",resize:"vertical"}} placeholder="<b>Внимание!</b>..." value={bcText} onChange={e=>setBcText(e.target.value)}/>
+                    </div>
+                    <div style={{display:"flex",gap:10}}>
+                      <button className="btn btn-ghost" onClick={()=>setBcText("")}>Очистить</button>
+                      <button className="btn btn-primary" onClick={()=>{ if(bcText.trim()){ showToast("Рассылка запущена · ~25 msg/sec"); setBcText(""); }}}><Icon name="send" size={14}/> Отправить</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="panel">
+                <div className="panel-head"><h3>Превью в Telegram</h3></div>
+                <div className="panel-body">
+                  <div style={{background:"linear-gradient(180deg,#f3f6f8,#e7eef1)",borderRadius:14,padding:16}}>
+                    <div style={{background:"#fff",borderRadius:"12px 12px 12px 4px",padding:14,maxWidth:340,boxShadow:"0 1px 3px rgba(0,0,0,.06)"}}>
+                      <div style={{fontWeight:700,fontSize:13,color:"var(--brand)",marginBottom:6}}>📢 GradeSentinel</div>
+                      <div style={{fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap"}} dangerouslySetInnerHTML={{__html: bcText || "Текст рассылки появится здесь..."}}/>
+                      <div style={{fontSize:11,color:"var(--ink-400)",marginTop:8}}>сейчас</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="panel-head" style={{borderTop:"1px solid var(--line)"}}><h3>Последние рассылки</h3></div>
+                <div className="panel-body tight">
+                  {[
+                    {date:"5 мая 2026", text:"Новая четверть начинается...", to: 1247, ok: 1241},
+                    {date:"21 апр 2026", text:"Скидка 20% на годовой тариф", to: 412, ok: 410},
+                  ].map((b,i)=>(
+                    <div key={i} style={{padding:"14px 20px",borderBottom:i<1?"1px solid var(--line-2)":"none"}}>
+                      <div style={{fontSize:13,fontWeight:600}}>{b.text}</div>
+                      <div style={{fontSize:12,color:"var(--ink-500)",marginTop:4}}>{b.date} · {b.ok}/{b.to} доставлено</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STATS */}
+          {tab === "stats" && (
+            <>
+              <div className="stat-grid">
+                <div className="stat"><div className="label">Уведомлений отправлено</div><div className="value">142 384</div></div>
+                <div className="stat"><div className="label">AI-отчётов сгенерировано</div><div className="value">3 217</div></div>
+                <div className="stat"><div className="label">Снимков дневников</div><div className="value">~1.2M</div></div>
+                <div className="stat"><div className="label">Среднее время отклика</div><div className="value">3.2s</div></div>
+              </div>
+              <div className="panel">
+                <div className="panel-head"><h3>Доход по месяцам (UZS, млн)</h3></div>
+                <div className="panel-body">
+                  <div className="bar-chart" style={{height:200}}>
+                    {[8.4,9.2,10.8,12.4,11.2,13.6,15.2,16.8,17.4,19.2,22.6,24.8,28.4].map((v,i)=>(
+                      <div key={i} style={{flex:1}}>
+                        <div className="bar" style={{height:`${v*5.5}px`}} title={`${v}M UZS`}/>
+                        <div className="bar-label">{["Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек","Янв","Фев","Мар","Апр","Май"][i]}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* LOGS */}
+          {tab === "logs" && (
+            <>
+              <div className="grid-2">
+                <div className="panel">
+                  <div className="panel-head"><h3>Журнал событий</h3>
+                    <select className="field" style={{height:32,width:120,fontSize:13}}><option>Все</option><option>Errors</option><option>Warnings</option><option>Info</option></select>
+                  </div>
+                  <div className="panel-body tight" style={{maxHeight:480,overflowY:"auto",fontFamily:"var(--mono)",fontSize:12}}>
+                    {[
+                      {t:"INFO", color:"var(--info)", msg:"monitor_engine: cycle complete · 487 sheets · 12 new grades", time:"14:24:18"},
+                      {t:"WARN", color:"var(--warn)", msg:"[GOOGLE_QUOTA] 429 from Sheets API · student_id=204", time:"14:23:55"},
+                      {t:"INFO", color:"var(--info)", msg:"send_with_retry: 1241/1247 delivered · 6 RetryAfter", time:"14:23:11"},
+                      {t:"OK",   color:"var(--ok)",   msg:"successful_payment: family=1042 · plan=3m · 79900 UZS", time:"14:22:48"},
+                      {t:"INFO", color:"var(--info)", msg:"ai_report: family=1041 · 14d · 2.3s", time:"14:21:02"},
+                      {t:"INFO", color:"var(--info)", msg:"history_importer: student=205 · 124 grades imported", time:"14:18:33"},
+                      {t:"WARN", color:"var(--warn)", msg:"_student_failure_counts[204]=2", time:"14:18:01"},
+                      {t:"INFO", color:"var(--info)", msg:"heartbeat: ok · uptime=14d 6h", time:"14:17:00"},
+                      {t:"OK",   color:"var(--ok)",   msg:"backup: sentinel.db → /tmp/backup.db (142MB)", time:"03:00:14"},
+                    ].map((l,i)=>(
+                      <div key={i} style={{padding:"10px 20px",borderBottom:"1px solid var(--line-2)",display:"flex",gap:12}}>
+                        <span style={{color:"var(--ink-400)",flexShrink:0}}>{l.time}</span>
+                        <span style={{color:l.color,fontWeight:700,flexShrink:0,minWidth:48}}>[{l.t}]</span>
+                        <span style={{color:"var(--ink-700)"}}>{l.msg}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="col" style={{gap:20}}>
+                  <div className="panel">
+                    <div className="panel-head"><h3>Сервисы</h3></div>
+                    <div className="panel-body">
+                      <div className="health-row"><span className="health-dot ok"/><span className="health-name">gradesentinel-bot</span><span className="health-val">active 14d</span></div>
+                      <div className="health-row"><span className="health-dot ok"/><span className="health-name">gradesentinel-webapp</span><span className="health-val">active 14d</span></div>
+                      <div className="health-row"><span className="health-dot ok"/><span className="health-name">heartbeat.timer</span><span className="health-val">active</span></div>
+                      <div className="health-row"><span className="health-dot ok"/><span className="health-name">caddy</span><span className="health-val">active</span></div>
+                    </div>
+                  </div>
+                  <div className="panel">
+                    <div className="panel-head"><h3>Ресурсы VPS</h3></div>
+                    <div className="panel-body">
+                      {[{n:"CPU",v:24,c:"var(--ok)"},{n:"RAM",v:62,c:"var(--info)"},{n:"Disk",v:18,c:"var(--ok)"},{n:"Network",v:8,c:"var(--ok)"}].map(r=>(
+                        <div key={r.n} style={{padding:"10px 0",borderBottom:"1px solid var(--line-2)"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}><span style={{fontWeight:600}}>{r.n}</span><span>{r.v}%</span></div>
+                          <div style={{height:6,background:"var(--line-2)",borderRadius:999}}>
+                            <div style={{width:`${r.v}%`,height:"100%",background:r.c,borderRadius:999}}/>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* SETTINGS */}
+          {tab === "settings" && (
+            <div className="grid-2">
+              <div className="panel">
+                <div className="panel-head"><h3>Глобальные настройки</h3></div>
+                <div className="panel-body" style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div><label className="field-label">Интервал опроса дневников (сек)</label><input className="field" defaultValue="300"/></div>
+                  <div><label className="field-label">Тихие часы — начало</label><input className="field" defaultValue="22:00"/></div>
+                  <div><label className="field-label">Тихие часы — конец</label><input className="field" defaultValue="07:00"/></div>
+                  <div><label className="field-label">Архивация оценок (дней)</label><input className="field" defaultValue="180"/></div>
+                  <button className="btn btn-primary" style={{alignSelf:"flex-start"}} onClick={()=>showToast("Настройки сохранены")}>Сохранить</button>
+                </div>
+              </div>
+              <div className="panel">
+                <div className="panel-head"><h3>Цены тарифов (UZS)</h3></div>
+                <div className="panel-body" style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div><label className="field-label">1 месяц</label><input className="field" defaultValue="29900"/></div>
+                  <div><label className="field-label">3 месяца</label><input className="field" defaultValue="79900"/></div>
+                  <div><label className="field-label">12 месяцев</label><input className="field" defaultValue="249900"/></div>
+                  <button className="btn btn-primary" style={{alignSelf:"flex-start"}} onClick={()=>showToast("Цены обновлены — изменения видны в боте сразу")}>Сохранить</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Modal: invoice / new family */}
+      {showInvoice && (
+        <div className="modal-bg" onClick={()=>setShowInvoice(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-h"><h3>Создать семью</h3><button onClick={()=>setShowInvoice(false)}>×</button></div>
+            <div className="modal-b" style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><label className="field-label">Название семьи</label><input className="field" placeholder="Каримовы"/></div>
+              <div><label className="field-label">Telegram ID главы</label><input className="field" placeholder="100231"/></div>
+              <div><label className="field-label">Тариф (опционально)</label>
+                <select className="field"><option value="">Без подписки</option><option>Trial 7 дней</option><option>1 месяц</option><option>3 месяца</option><option>12 месяцев</option></select>
+              </div>
+            </div>
+            <div className="modal-f">
+              <button className="btn btn-ghost" onClick={()=>setShowInvoice(false)}>Отмена</button>
+              <button className="btn btn-primary" onClick={()=>{setShowInvoice(false); showToast("Семья создана");}}>Создать</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: broadcast */}
+      {showBroadcast && (
+        <div className="modal-bg" onClick={()=>setShowBroadcast(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-h"><h3>Быстрая рассылка</h3><button onClick={()=>setShowBroadcast(false)}>×</button></div>
+            <div className="modal-b">
+              <p className="muted" style={{fontSize:14, marginBottom:14}}>Отправит сообщение всем 1 247 пользователям. ~50 секунд.</p>
+              <textarea className="field" style={{height:120,padding:"12px 14px"}} placeholder="Текст сообщения..."/>
+            </div>
+            <div className="modal-f">
+              <button className="btn btn-ghost" onClick={()=>setShowBroadcast(false)}>Отмена</button>
+              <button className="btn btn-primary" onClick={()=>{setTab("broadcast"); setShowBroadcast(false);}}>Полный редактор</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="toast">
+          <div className="check"><Icon name="check" size={14} style={{color:"#fff"}}/></div>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<AdminApp/>);
+</script>
+
+</body>
+</html>

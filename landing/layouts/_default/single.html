@@ -1,0 +1,14 @@
+{{ define "main" }}
+<article class="doc">
+  <div class="container container-narrow">
+    <header class="doc-header">
+      <span class="label"><span class="label-line"></span> {{ i18n "docs_eyebrow" }}</span>
+      <h1>{{ .Title }}</h1>
+      {{ with .Params.summary }}<p class="lead">{{ . }}</p>{{ end }}
+    </header>
+    <div class="doc-body">
+      {{ .Content }}
+    </div>
+  </div>
+</article>
+{{ end }}

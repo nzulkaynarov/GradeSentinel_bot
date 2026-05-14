@@ -1,0 +1,32 @@
+hero_eyebrow:
+  other: "GradeSentinel"
+hero_title:
+  other: "Bola oʻzidan oldin besh haqida biling"
+cta_start_bot:
+  other: "Botni ishga tushirish"
+cta_read_docs:
+  other: "Hujjatlar"
+cta_open_bot:
+  other: "Botni ochish"
+nav_how:
+  other: "Qanday ishlaydi"
+nav_features:
+  other: "Imkoniyatlar"
+nav_pricing:
+  other: "Tariflar"
+nav_docs:
+  other: "Hujjatlar"
+docs_eyebrow:
+  other: "Hujjatlar"
+phase0_notice_title:
+  other: "Phase 0 — zaglushka"
+phase0_notice_body:
+  other: "Bu Hugo loyihasining karkasidir. Phase 1 da bu yerga frontend/index.html va frontend/instructions.html dan tarkib koʻchiriladi."
+footer_tagline:
+  other: "Maktab baholarini monitoring qilish · Oʻzbekiston"
+footer_product:
+  other: "Mahsulot"
+footer_contact:
+  other: "Kontaktlar"
+footer_open_portal:
+  other: "Kabinetni ochish"

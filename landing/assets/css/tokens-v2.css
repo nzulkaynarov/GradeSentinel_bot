@@ -1,0 +1,40 @@
+/* GradeSentinel design tokens — v2 (paper editorial)
+ * Source of truth: frontend/assets/theme-v2.css (HTML mockups)
+ * Используется в Hugo landing/docs и в Next.js (portal route group).
+ */
+
+:root {
+  /* Paper */
+  --paper:    #f0e9dd;
+  --paper-2:  #e6dec9;
+  --paper-3:  #d9cfb6;
+  --card:     #fbf6ec;
+  --line:     #d8cfba;
+  --line-2:   #c5b99e;
+
+  /* Ink */
+  --ink:      #1a1614;
+  --ink-2:    #2a2622;
+  --ink-3:    #5a4f47;
+  --ink-4:    #837567;
+  --ink-5:    #b3a795;
+
+  /* Signals */
+  --signal:    #1f5b6d;       /* deep teal — "watching" */
+  --signal-2:  #2d7d96;
+  --signal-ink:#0d2a32;
+  --energy:    #d24c1d;       /* warm orange — energy */
+  --energy-2:  #ed7142;
+  --note:      #f0c850;       /* highlight yellow */
+
+  /* Grade semantics — flatter, closer to ink */
+  --g5: #1f6a3a;
+  --g4: #1f5b8a;
+  --g3: #a35c0d;
+  --g2: #98201e;
+
+  /* Type */
+  --display: "Bricolage Grotesque", "Manrope", system-ui, sans-serif;
+  --body:    "Manrope", system-ui, sans-serif;
+  --mono:    "JetBrains Mono", ui-monospace, Menlo, monospace;
+}

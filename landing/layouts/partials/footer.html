@@ -1,0 +1,25 @@
+<footer class="foot">
+  <div class="container foot-inner">
+    <div class="foot-col">
+      <a href="/" class="brand-mark">
+        <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
+      </a>
+      <p class="muted">{{ i18n "footer_tagline" }}</p>
+    </div>
+    <div class="foot-col">
+      <h4>{{ i18n "footer_product" }}</h4>
+      <a href="/#features">{{ i18n "nav_features" }}</a>
+      <a href="/#pricing">{{ i18n "nav_pricing" }}</a>
+      <a href="/docs/">{{ i18n "nav_docs" }}</a>
+    </div>
+    <div class="foot-col">
+      <h4>{{ i18n "footer_contact" }}</h4>
+      <a href="{{ .Site.Params.botUrl }}">{{ .Site.Params.botUrl }}</a>
+      <a href="mailto:{{ .Site.Params.supportEmail }}">{{ .Site.Params.supportEmail }}</a>
+    </div>
+    <div class="foot-col legal">
+      <span class="muted">© {{ now.Year }} GradeSentinel</span>
+      <a href="{{ .Site.Params.webappUrl }}">{{ i18n "footer_open_portal" }}</a>
+    </div>
+  </div>
+</footer>

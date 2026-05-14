@@ -1,0 +1,32 @@
+hero_eyebrow:
+  other: "GradeSentinel"
+hero_title:
+  other: "Know about an A before your child does"
+cta_start_bot:
+  other: "Launch bot"
+cta_read_docs:
+  other: "Documentation"
+cta_open_bot:
+  other: "Open bot"
+nav_how:
+  other: "How it works"
+nav_features:
+  other: "Features"
+nav_pricing:
+  other: "Pricing"
+nav_docs:
+  other: "Docs"
+docs_eyebrow:
+  other: "Documentation"
+phase0_notice_title:
+  other: "Phase 0 — placeholder"
+phase0_notice_body:
+  other: "This is the Hugo project scaffold. Phase 1 will port content from frontend/index.html and frontend/instructions.html into here."
+footer_tagline:
+  other: "School grade monitoring · Uzbekistan"
+footer_product:
+  other: "Product"
+footer_contact:
+  other: "Contact"
+footer_open_portal:
+  other: "Open portal"

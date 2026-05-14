@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Инструкция · GradeSentinel</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .doc-shell { display: grid; grid-template-columns: 280px 1fr 240px; gap: 56px; max-width: 1280px; margin: 0 auto; padding: 56px 32px 96px; }
+  .doc-toc { position: sticky; top: 90px; align-self: start; }
+  .doc-toc h4 { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-400); margin: 0 0 14px; padding: 0 12px; }
+  .doc-toc ul { list-style: none; padding: 0; margin: 0; }
+  .doc-toc a {
+    display: block; padding: 8px 12px; font-size: 14px; color: var(--ink-500);
+    border-radius: 8px; border-left: 2px solid transparent; line-height: 1.4;
+  }
+  .doc-toc a:hover { color: var(--ink-900); background: var(--line-2); }
+  .doc-toc a.active { color: var(--brand); border-left-color: var(--brand); background: #eaf3f6; font-weight: 600; }
+
+  .doc-content { min-width: 0; }
+  .doc-hero h1 { font-size: 44px; }
+  .doc-hero .lead { margin-top: 12px; }
+  .doc-meta {
+    display: flex; gap: 12px; margin-top: 24px;
+    padding-bottom: 32px; border-bottom: 1px solid var(--line);
+  }
+
+  .doc-section { padding: 48px 0; border-bottom: 1px solid var(--line); }
+  .doc-section:last-child { border-bottom: none; }
+  .doc-section h2 { font-size: 28px; margin-bottom: 16px; }
+  .doc-section h3 { margin-top: 28px; margin-bottom: 12px; }
+  .doc-section p, .doc-section li { font-size: 16px; line-height: 1.7; color: var(--ink-700); }
+  .doc-section p { margin: 0 0 14px; }
+  .doc-section ul, .doc-section ol { padding-left: 22px; margin: 0 0 16px; }
+  .doc-section li { margin-bottom: 8px; }
+  .doc-section code {
+    font-family: var(--mono); font-size: .9em;
+    background: var(--line-2); padding: 2px 8px; border-radius: 6px;
+    color: var(--brand-900);
+  }
+  .doc-section .kbd {
+    display: inline-block; font-family: var(--mono); font-size: 12px;
+    padding: 2px 8px; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 6px; background: #fff;
+  }
+
+  /* Step block */
+  .step-block {
+    display: grid; grid-template-columns: 56px 1fr; gap: 20px;
+    padding: 24px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    margin: 16px 0;
+  }
+  .step-block .step-n {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: var(--brand); color: #fff;
+    display: grid; place-items: center; font-weight: 800; font-size: 18px;
+  }
+  .step-block h3 { margin: 0 0 8px; font-size: 18px; }
+  .step-block p { margin: 0; }
+
+  /* Telegram screenshot mock */
+  .tg-shot {
+    background: linear-gradient(180deg, #f3f6f8, #e7eef1);
+    border-radius: 14px; padding: 16px;
+    margin: 16px 0;
+  }
+  .tg-shot .tg-msg {
+    background: #fff; border-radius: 12px 12px 12px 4px;
+    padding: 14px; max-width: 380px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    margin-bottom: 8px;
+  }
+  .tg-shot .tg-msg.me {
+    background: #cfeaf7; border-radius: 12px 12px 4px 12px;
+    margin-left: auto;
+  }
+  .tg-shot .tg-msg b { color: var(--brand-900); }
+  .tg-shot .tg-msg .row-grade { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+  .tg-shot .tg-time { font-size: 11px; color: var(--ink-400); display: block; margin-top: 4px; }
+  .tg-shot .tg-btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tg-shot .tg-btn {
+    background: rgba(53,129,155,.1); color: var(--brand);
+    padding: 7px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  }
+
+  /* Note */
+  .note {
+    display: flex; gap: 14px;
+    padding: 18px 20px;
+    border-radius: var(--r-md);
+    background: #fef3c7; border: 1px solid #fcd34d;
+    margin: 16px 0;
+  }
+  .note.info { background: #dbeafe; border-color: #93c5fd; }
+  .note.success { background: #dcfce7; border-color: #86efac; }
+  .note.danger { background: #fee2e2; border-color: #fca5a5; }
+  .note svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 1px; color: #b45309; }
+  .note.info svg { color: #1d4ed8; }
+  .note.success svg { color: #15803d; }
+  .note.danger svg { color: #b91c1c; }
+  .note p { margin: 0; font-size: 15px; line-height: 1.55; }
+  .note p + p { margin-top: 8px; }
+
+  /* Right rail */
+  .doc-rail { position: sticky; top: 90px; align-self: start; }
+  .doc-rail .rail-card {
+    background: linear-gradient(180deg, #0c1f26 0%, #173a48 100%);
+    color: #fff; border-radius: var(--r-xl); padding: 22px;
+  }
+  .doc-rail .rail-card h4 { color: #fff; font-size: 14px; margin: 0 0 6px; }
+  .doc-rail .rail-card p { color: #b0c4ca; font-size: 13px; line-height: 1.5; margin: 0 0 14px; }
+  .doc-rail .rail-card .btn { width: 100%; justify-content: center; }
+
+  /* Roles table */
+  .roles-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    margin: 16px 0; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden;
+  }
+  .roles-table th, .roles-table td {
+    padding: 12px 16px; text-align: left; font-size: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .roles-table th { background: var(--surface-2); font-weight: 700; font-size: 13px; color: var(--ink-500); }
+  .roles-table tr:last-child td { border-bottom: none; }
+  .roles-table td:first-child { font-weight: 600; color: var(--ink-900); }
+  .roles-table .y { color: var(--ok); font-weight: 700; }
+  .roles-table .n { color: var(--ink-300); }
+
+  /* Command list */
+  .cmd-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
+  .cmd-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  }
+  .cmd-item code { background: var(--ink-900); color: #6dc7e7; padding: 4px 10px; }
+  .cmd-item .desc { font-size: 13px; color: var(--ink-500); }
+
+  @media (max-width: 1024px) {
+    .doc-shell { grid-template-columns: 1fr; }
+    .doc-toc, .doc-rail { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="gs-nav">
+  <div class="gs-nav-inner">
+    <a href="index.html" class="gs-logo">
+      <span class="gs-logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-12V5l-8-3-8 3v5c0 8 8 12 8 12z"/></svg>
+      </span>
+      <span class="gs-logo-name">Grade<span>Sentinel</span></span>
+    </a>
+    <div class="gs-nav-links">
+      <a href="index.html#features">Возможности</a>
+      <a href="index.html#how">Как работает</a>
+      <a href="index.html#pricing">Тарифы</a>
+      <a href="instructions.html" style="color: var(--ink-900); font-weight: 600;">Инструкция</a>
+      <a href="index.html#faq">FAQ</a>
+    </div>
+    <div class="gs-nav-actions">
+      <a href="dashboard.html" class="btn btn-ghost btn-sm">Кабинет</a>
+      <a href="https://t.me/GradeSentinel_bot" class="btn btn-primary btn-sm">Открыть бот</a>
+    </div>
+  </div>
+</nav>
+
+<div class="doc-shell">
+
+  <!-- TOC -->
+  <aside class="doc-toc">
+    <h4>Содержание</h4>
+    <ul>
+      <li><a href="#start" class="active">С чего начать</a></li>
+      <li><a href="#roles">Роли в семье</a></li>
+      <li><a href="#first-family">Создание семьи</a></li>
+      <li><a href="#add-child">Добавление ребёнка</a></li>
+      <li><a href="#invite">Пригласить родственников</a></li>
+      <li><a href="#notifications">Уведомления</a></li>
+      <li><a href="#ai">AI-аналитика</a></li>
+      <li><a href="#payment">Подписка и оплата</a></li>
+      <li><a href="#commands">Команды бота</a></li>
+      <li><a href="#troubleshoot">Решение проблем</a></li>
+    </ul>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="doc-content">
+    <div class="doc-hero">
+      <span class="eyebrow">Документация · v2.5</span>
+      <h1 style="margin-top: 12px;">Руководство пользователя</h1>
+      <p class="lead">Всё, что нужно знать, чтобы подключить дневник, пригласить родственников и начать получать оценки в Telegram.</p>
+      <div class="doc-meta">
+        <span class="tag">⏱ Время чтения 6 минут</span>
+        <span class="tag gray">Обновлено 8 мая 2026</span>
+      </div>
+    </div>
+
+    <section id="start" class="doc-section">
+      <h2>1. С чего начать</h2>
+      <p>GradeSentinel — это Telegram-бот. У вас уже есть Telegram, поэтому ничего устанавливать не нужно. Вся работа происходит в чате с ботом.</p>
+
+      <div class="step-block">
+        <div class="step-n">1</div>
+        <div>
+          <h3>Откройте бот в Telegram</h3>
+          <p>Перейдите по ссылке <code>t.me/GradeSentinel_bot</code> или найдите бота в поиске Telegram. Нажмите кнопку <span class="kbd">START</span> внизу экрана.</p>
+        </div>
+      </div>
+
+      <div class="step-block">
+        <div class="step-n">2</div>
+        <div>
+          <h3>Выберите язык</h3>
+          <p>При первом запуске бот спросит язык интерфейса: <b>Русский</b>, <b>O'zbek</b> или <b>English</b>. Язык можно сменить позже в меню → «Язык».</p>
+        </div>
+      </div>
+
+      <div class="step-block">
+        <div class="step-n">3</div>
+        <div>
+          <h3>Авторизация по номеру телефона</h3>
+          <p>Бот попросит поделиться контактом. Это нужно, чтобы привязать аккаунт к семье. Telegram автоматически предложит кнопку — просто нажмите её.</p>
+        </div>
+      </div>
+
+      <div class="note info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <p><b>Что такое «семья»?</b> Это группа родственников и детей, которые получают уведомления об одних и тех же дневниках. Один родитель может состоять в нескольких семьях (например, со супругом и со своими родителями).</p>
+      </div>
+    </section>
+
+    <section id="roles" class="doc-section">
+      <h2>2. Роли в семье</h2>
+      <p>В системе три роли. Сначала вы становитесь главой первой семьи — потом можете добавить родственников любой ролью.</p>
+
+      <table class="roles-table">
+        <thead>
+          <tr>
+            <th>Действие</th>
+            <th>Глава</th>
+            <th>Родственник</th>
+            <th>Админ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Получать уведомления</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td>Смотреть оценки <code>/grades</code></td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td>AI-отчёт</td><td class="y">✓</td><td class="y">✓</td><td class="y">✓</td></tr>
+          <tr><td>Добавлять детей</td><td class="y">✓</td><td class="n">—</td><td class="y">✓</td></tr>
+          <tr><td>Создавать инвайт-ссылки</td><td class="y">✓</td><td class="n">—</td><td class="y">✓</td></tr>
+          <tr><td>Удалять ребёнка из семьи</td><td class="y">✓</td><td class="n">—</td><td class="y">✓</td></tr>
+          <tr><td>Управлять подпиской</td><td class="y">✓</td><td class="n">—</td><td class="y">✓</td></tr>
+          <tr><td>Рассылка всем пользователям</td><td class="n">—</td><td class="n">—</td><td class="y">✓</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="first-family" class="doc-section">
+      <h2>3. Создание первой семьи</h2>
+      <p>В главном меню нажмите кнопку <span class="kbd">👨‍👩‍👧 Создать семью</span>. Бот попросит ввести название — обычно это фамилия. Например: «Каримовы».</p>
+
+      <div class="tg-shot">
+        <div class="tg-msg">
+          <b>Создание семьи</b><br>
+          Введите название семьи (например, «Каримовы»):
+          <span class="tg-time">10:24</span>
+        </div>
+        <div class="tg-msg me">
+          Каримовы
+          <span class="tg-time">10:24 ✓✓</span>
+        </div>
+        <div class="tg-msg">
+          ✅ Семья <b>«Каримовы»</b> создана.<br>
+          Теперь добавьте первого ребёнка.
+          <div class="tg-btn-row">
+            <span class="tg-btn">➕ Добавить ребёнка</span>
+            <span class="tg-btn">🔗 Пригласить родственника</span>
+          </div>
+          <span class="tg-time">10:24</span>
+        </div>
+      </div>
+
+      <p>После создания вы становитесь <b>главой</b> этой семьи и получаете полный контроль: можно добавлять детей, приглашать родственников и управлять подпиской.</p>
+    </section>
+
+    <section id="add-child" class="doc-section">
+      <h2>4. Добавление ребёнка и его дневника</h2>
+      <p>Это самый важный шаг. Бот должен получить <b>ссылку на Google Таблицу</b>, в которой ведётся дневник ребёнка.</p>
+
+      <div class="step-block">
+        <div class="step-n">1</div>
+        <div>
+          <h3>Получите ссылку у школы</h3>
+          <p>Школа выдаёт каждому ученику свой Google-лист с оценками. Обычно его шлёт классный руководитель в родительский чат. Откройте таблицу — она должна открыться у вас в браузере с возможностью просмотра.</p>
+        </div>
+      </div>
+
+      <div class="step-block">
+        <div class="step-n">2</div>
+        <div>
+          <h3>Скопируйте URL</h3>
+          <p>Нажмите на адресную строку браузера и скопируйте весь адрес — он начинается с <code>https://docs.google.com/spreadsheets/...</code></p>
+        </div>
+      </div>
+
+      <div class="step-block">
+        <div class="step-n">3</div>
+        <div>
+          <h3>Отправьте ссылку боту</h3>
+          <p>В меню нажмите <span class="kbd">➕ Добавить ребёнка</span>. Введите ФИО ребёнка, затем вставьте ссылку. Бот проверит доступ и сразу покажет, какие листы он нашёл («Сегодня», «Все оценки», «Четверти»).</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        <p><b>Доступ к таблице.</b> Если бот пишет «нет доступа» — попросите классного руководителя открыть просмотр для адреса <code>gradesentinel@*.iam.gserviceaccount.com</code> (выдаётся при регистрации) или сделать таблицу доступной по ссылке всем «как читателю».</p>
+      </div>
+    </section>
+
+    <section id="invite" class="doc-section">
+      <h2>5. Пригласить второго родителя</h2>
+      <p>Глава семьи может пригласить любое количество родственников: второго родителя, бабушку, старшего брата.</p>
+
+      <div class="step-block">
+        <div class="step-n">1</div>
+        <div>
+          <h3>Сгенерируйте инвайт-ссылку</h3>
+          <p>Меню → <span class="kbd">🔗 Пригласить</span>. Бот пришлёт одноразовую ссылку вида <code>t.me/GradeSentinel_bot?start=inv_AB12CD</code> со сроком жизни 48 часов.</p>
+        </div>
+      </div>
+
+      <div class="step-block">
+        <div class="step-n">2</div>
+        <div>
+          <h3>Отправьте ссылку</h3>
+          <p>Любым способом — в WhatsApp, Telegram, SMS. Получатель кликает по ссылке, попадает в бота, проходит авторизацию по телефону и автоматически добавляется в вашу семью.</p>
+        </div>
+      </div>
+
+      <div class="note success">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>
+        <p>После активации ссылка становится недействительной. Если родственников несколько — генерируйте отдельную ссылку каждому.</p>
+      </div>
+    </section>
+
+    <section id="notifications" class="doc-section">
+      <h2>6. Какие уведомления приходят</h2>
+
+      <h3>Новая оценка</h3>
+      <p>Приходит в течение 5 минут после того, как учитель добавит её в дневник.</p>
+      <div class="tg-shot">
+        <div class="tg-msg">
+          <b>📚 Новая оценка</b><br>
+          У <b>Алишера</b> по математике: <span style="display: inline-block; background: #dcfce7; color: #15803d; padding: 0 8px; border-radius: 6px; font-weight: 700;">5</span><br>
+          Контрольная работа · 2 четверть
+          <span class="tg-time">10:24</span>
+        </div>
+      </div>
+
+      <h3>Изменённая оценка</h3>
+      <p>Если учитель исправил оценку в дневнике — бот сообщит об изменении.</p>
+      <div class="tg-shot">
+        <div class="tg-msg">
+          <b>✏️ Оценка изменена</b><br>
+          У <b>Камилы</b> по истории: было <span style="text-decoration: line-through; opacity: .6;">3</span> → стало <span style="display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 0 8px; border-radius: 6px; font-weight: 700;">4</span>
+          <span class="tg-time">14:02</span>
+        </div>
+      </div>
+
+      <h3>Вечерняя сводка (19:00)</h3>
+      <p>Каждый день в 19:00 по Ташкенту — общий дайджест всех оценок за день по каждому ребёнку. Не приходит, если оценок не было.</p>
+
+      <h3>Тихие часы 22:00–07:00</h3>
+      <div class="note info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <p>С 22:00 до 07:00 (Ташкент, UTC+5) бот не присылает уведомления — они копятся в очереди и приходят утром в 7:00 одним сообщением. Это поведение нельзя отключить.</p>
+      </div>
+    </section>
+
+    <section id="ai" class="doc-section">
+      <h2>7. AI-аналитика</h2>
+      <p>На платных тарифах бот умеет делать аналитический отчёт через Claude AI: какие предметы «проседают», есть ли тренд на улучшение, на что обратить внимание.</p>
+
+      <h3>Отчёт по запросу</h3>
+      <p>Команда <code>/ai_report</code> или кнопка <span class="kbd">🧠 AI-анализ</span> в меню. Бот возьмёт оценки за последние 14 дней и вернёт отчёт за 10–20 секунд.</p>
+
+      <h3>Еженедельный AI-отчёт</h3>
+      <p>Каждое воскресенье в 19:00 — автоматический отчёт за неделю. Приходит главе семьи и всем родственникам с активной подпиской.</p>
+
+      <div class="note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v2m0 4h.01"/><circle cx="12" cy="12" r="10"/></svg>
+        <p>AI работает только при активной подписке. Без подписки кнопка скрывается, мониторинг новых оценок тоже отключается, но история сохраняется.</p>
+      </div>
+    </section>
+
+    <section id="payment" class="doc-section">
+      <h2>8. Подписка и оплата</h2>
+      <p>Меню → <span class="kbd">💳 Подписка</span>. Доступны три тарифа:</p>
+      <ul>
+        <li><b>1 месяц</b> — 29 900 UZS</li>
+        <li><b>3 месяца</b> — 79 900 UZS (экономия 11%)</li>
+        <li><b>12 месяцев</b> — 249 900 UZS (экономия 30%)</li>
+      </ul>
+      <p>Оплата проходит через <b>Click</b> или <b>Payme</b> прямо в окне Telegram. После оплаты подписка активируется автоматически — без перезапуска бота.</p>
+
+      <div class="note success">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 13l4 4L19 7"/></svg>
+        <p><b>Без автопродления.</b> Подписка просто истекает в указанную дату — деньги не списываются повторно. За 3 дня до окончания бот напомнит и предложит продлить.</p>
+      </div>
+    </section>
+
+    <section id="commands" class="doc-section">
+      <h2>9. Команды бота</h2>
+      <div class="cmd-list">
+        <div class="cmd-item"><code>/start</code><span class="desc">Главное меню</span></div>
+        <div class="cmd-item"><code>/help</code><span class="desc">Справка по роли</span></div>
+        <div class="cmd-item"><code>/grades</code><span class="desc">Оценки за сегодня</span></div>
+        <div class="cmd-item"><code>/ai_report</code><span class="desc">AI-анализ за 14 дней</span></div>
+        <div class="cmd-item"><code>/manage_family</code><span class="desc">Управление семьёй</span></div>
+        <div class="cmd-item"><code>/subscription</code><span class="desc">Подписка и тарифы</span></div>
+        <div class="cmd-item"><code>/status</code><span class="desc">Ваша статистика</span></div>
+        <div class="cmd-item"><code>/lang</code><span class="desc">Сменить язык</span></div>
+      </div>
+    </section>
+
+    <section id="troubleshoot" class="doc-section">
+      <h2>10. Если что-то не работает</h2>
+
+      <h3>Бот не присылает оценки</h3>
+      <ul>
+        <li>Проверьте, активна ли подписка: <code>/subscription</code>. Без подписки мониторинг отключён.</li>
+        <li>Убедитесь, что у бота есть доступ к Google Таблице.</li>
+        <li>Проверьте, что сейчас не тихие часы (22:00–07:00) — оценки копятся и придут утром.</li>
+        <li>Учитель действительно выставил оценку? Откройте таблицу вручную и убедитесь.</li>
+      </ul>
+
+      <h3>Не открывается дашборд (Mini App)</h3>
+      <ul>
+        <li>Обновите Telegram до последней версии.</li>
+        <li>Откройте дашборд через кнопку в меню бота, а не по прямой ссылке — без подписи Telegram авторизация не сработает.</li>
+      </ul>
+
+      <h3>Связаться с поддержкой</h3>
+      <p>Меню → <span class="kbd">💬 Поддержка</span>. Сообщение уходит в закрытую группу администраторов, ответ приходит в чат с ботом обычно в течение 1–2 часов в рабочее время.</p>
+
+      <div class="note danger">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        <p>Никогда не отправляйте боту пароли от Google-аккаунта или школьной системы. Боту нужна только <b>ссылка</b> на таблицу с открытым доступом.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Right rail -->
+  <aside class="doc-rail">
+    <div class="rail-card">
+      <h4>Готовы начать?</h4>
+      <p>Откройте бота в Telegram и создайте свою первую семью за 3 минуты.</p>
+      <a href="https://t.me/GradeSentinel_bot" class="btn btn-brand">Открыть бот</a>
+    </div>
+    <div class="card-flat" style="margin-top: 14px;">
+      <div style="font-size: 13px; color: var(--ink-500); margin-bottom: 8px;">Не нашли ответ?</div>
+      <a href="/cdn-cgi/l/email-protection#f29a979e9e9db2958093969781dc80939b9e8697919adc8788" style="font-size: 14px; color: var(--brand); font-weight: 600;"><span class="__cf_email__" data-cfemail="7e161b1212113e190c1f1a1b0d500c1f17120a1b1d16500b04">[email&#160;protected]</span></a>
+    </div>
+  </aside>
+
+</div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+  // TOC scroll spy
+  const links = document.querySelectorAll('.doc-toc a');
+  const sections = document.querySelectorAll('.doc-section');
+  const setActive = () => {
+    let current = '';
+    sections.forEach(sec => {
+      const top = sec.getBoundingClientRect().top;
+      if (top < 120) current = sec.id;
+    });
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  };
+  window.addEventListener('scroll', setActive, { passive: true });
+</script>
+
+</body>
+</html>
