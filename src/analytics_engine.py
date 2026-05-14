@@ -69,7 +69,8 @@ def analyze_student_grades(student_id: int, student_name: str, days: int = 14, l
         return None
 
     grade_text = "\n".join(
-        f"{g['date_added']}: {g['subject']} = {g['raw_text']}"
+        f"{g.get('grade_date') or (g.get('date_added') or '')[:10]}: "
+        f"{g['subject']} = {g['raw_text']}"
         + (f" (балл: {g['grade_value']})" if g['grade_value'] else "")
         for g in grades
     )
