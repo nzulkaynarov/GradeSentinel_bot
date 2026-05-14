@@ -4,24 +4,24 @@
 рестарте бота → пользователь застревает посредине flow) на persistent state
 в таблице user_states.
 
-Текущее покрытие — family creation flow:
-- `awaiting_family_name`: ждём название новой семьи
-  - data='selfserve': self-serve flow (юзер автоматически становится главой)
-  - data='': admin-initiated (после ввода имени → выбор главы)
-- `awaiting_head_choice`: ждём выбор «сам глава» / «назначить другого»
-  - data=family_name
-- `awaiting_head_fio`: ждём ФИО внешнего главы
-  - data=family_name
-- `awaiting_head_phone`: ждём телефон главы
-  - data=json {family_name, head_fio}
+Покрытие — family creation + subscription/promo/price flows:
 
-ВАЖНО про порядок регистрации: эти handler'ы импортируются из main.py
-ПЕРВЫМИ среди handler'ов, чтобы pyTelegramBotAPI обходил их раньше
-generic-обработчиков (text='*' etc). См. main.py:_import_handlers().
+**Family creation:**
+- `awaiting_family_name` (data='selfserve'|''): ждём название новой семьи
+- `awaiting_head_choice` (data=family_name): «сам глава» / «назначить другого»
+- `awaiting_head_fio` (data=family_name): ФИО внешнего главы
+- `awaiting_head_phone` (data=json {family_name, head_fio}): телефон главы
 
-NOT покрыто (пока): subscription.py promo/price flows — 4 callsite'а
-register_next_step_handler. Оставлены до отдельной сессии (платёжный код,
-повышенная осторожность).
+**Subscription / promo / price (admin + user):**
+- `awaiting_promo_code`: юзер вводит промокод (для применения к семье)
+- `awaiting_admin_price` (data=plan_key): админ вводит новую цену тарифа
+- `awaiting_promo_free`: админ вводит «<months> <max_uses> [days_valid]»
+  для создания промокода с бесплатными месяцами
+- `awaiting_promo_discount`: админ вводит «<plan> <percent> <max_uses> [days]»
+
+ВАЖНО про порядок регистрации: этот модуль импортируется из main.py
+ПЕРВЫМ среди handler'ов, чтобы pyTelegramBotAPI обходил эти handler'ы
+раньше generic-обработчиков.
 """
 import json
 import logging
@@ -76,3 +76,34 @@ def _on_head_phone(message):
     family_name = ctx.get('family_name', '')
     head_fio = ctx.get('head_fio', '')
     process_head_phone(message, family_name, head_fio)
+
+
+# ─── Subscription / promo / price flows ─────────────────────────────
+@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_code'))
+def _on_promo_code(message):
+    """Юзер вводит промокод для применения к своей семье."""
+    from src.handlers.subscription import _process_promo_code
+    _process_promo_code(message)
+
+
+@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_admin_price'))
+def _on_admin_price(message):
+    """Админ вводит новую цену для тарифа. data — plan_key."""
+    from src.handlers.subscription import _process_price_input
+    state = get_user_state(message.from_user.id)
+    plan_key = state.get('data') or '' if state else ''
+    _process_price_input(message, plan_key)
+
+
+@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_free'))
+def _on_promo_free(message):
+    """Админ создаёт промокод с бесплатными месяцами."""
+    from src.handlers.subscription import _process_promo_free
+    _process_promo_free(message)
+
+
+@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_discount'))
+def _on_promo_discount(message):
+    """Админ создаёт промокод со скидкой."""
+    from src.handlers.subscription import _process_promo_discount
+    _process_promo_discount(message)

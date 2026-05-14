@@ -788,19 +788,22 @@ def callback_enter_promo(call):
     lang = get_user_lang(user_id)
     bot.answer_callback_query(call.id)
 
-    msg = bot.send_message(
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_promo_code", "")
+    bot.send_message(
         call.message.chat.id,
         t("sub_promo_enter", lang),
         parse_mode='HTML'
     )
-    bot.register_next_step_handler(msg, _process_promo_code)
 
 
 def _process_promo_code(message):
-    """Обрабатывает введённый промокод."""
+    """Обрабатывает введённый промокод. State awaiting_promo_code → clear."""
+    from src.database_manager import clear_user_state
     user_id = message.chat.id
     lang = get_user_lang(user_id)
     code = message.text.strip() if message.text else ""
+    clear_user_state(user_id)
 
     if not code:
         send_content(user_id, t("sub_promo_invalid", lang))
@@ -1052,18 +1055,21 @@ def callback_set_price(call):
     plan_key = call.data.replace('setprice_', '')
     bot.answer_callback_query(call.id)
 
-    msg = bot.send_message(
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_admin_price", plan_key)
+    bot.send_message(
         call.message.chat.id,
         t("admin_prices_enter", lang, plan=plan_key),
         parse_mode='HTML'
     )
-    bot.register_next_step_handler(msg, _process_price_input, plan_key)
 
 
 def _process_price_input(message, plan_key):
-    """Обрабатывает ввод новой цены."""
+    """Обрабатывает ввод новой цены. State awaiting_admin_price → clear."""
+    from src.database_manager import clear_user_state
     user_id = message.chat.id
     lang = get_user_lang(user_id)
+    clear_user_state(user_id)
 
     try:
         raw = message.text.strip().replace(' ', '').replace(',', '')
@@ -1203,20 +1209,22 @@ def callback_promo_new_free(call):
         return
 
     bot.answer_callback_query(call.id)
-    msg = bot.send_message(
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_promo_free", "")
+    bot.send_message(
         call.message.chat.id,
         t("admin_promo_enter_free", lang),
         parse_mode='HTML'
     )
-    bot.register_next_step_handler(msg, _process_promo_free)
 
 
 def _process_promo_free(message):
-    """Обработка: <months> <max_uses> [days_valid]"""
-    from src.database_manager import create_promo_code
+    """Обработка: <months> <max_uses> [days_valid]. State awaiting_promo_free → clear."""
+    from src.database_manager import create_promo_code, clear_user_state
     import secrets
     user_id = message.chat.id
     lang = get_user_lang(user_id)
+    clear_user_state(user_id)
 
     try:
         parts = message.text.strip().split()
@@ -1252,20 +1260,22 @@ def callback_promo_new_discount(call):
         return
 
     bot.answer_callback_query(call.id)
-    msg = bot.send_message(
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_promo_discount", "")
+    bot.send_message(
         call.message.chat.id,
         t("admin_promo_enter_discount", lang),
         parse_mode='HTML'
     )
-    bot.register_next_step_handler(msg, _process_promo_discount)
 
 
 def _process_promo_discount(message):
-    """Обработка: <plan> <percent> <max_uses> [days_valid]"""
-    from src.database_manager import create_promo_code
+    """Обработка: <plan> <percent> <max_uses> [days_valid]. State awaiting_promo_discount → clear."""
+    from src.database_manager import create_promo_code, clear_user_state
     import secrets
     user_id = message.chat.id
     lang = get_user_lang(user_id)
+    clear_user_state(user_id)
 
     try:
         parts = message.text.strip().split()
