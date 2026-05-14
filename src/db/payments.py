@@ -1,0 +1,170 @@
+"""Подписки и платежи.
+
+API:
+- Subscription state: get_family_subscription, is_subscription_active,
+  has_any_active_subscription
+- Mutate: extend_subscription, cancel_subscription, record_payment
+- Expiry tracking (для scheduler'а уведомлений за 7д / 1д / 0д):
+  get_families_expiring_in_days, get_families_expired_today
+
+`record_payment` пишет в payments — это «append-only audit log» для всех
+прошедших Telegram Payments транзакций (charge_id, amount, plan, months).
+`extend_subscription` отдельно от `record_payment` для случаев
+admin /grant_sub (бесплатное продление без транзакции).
+"""
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
+from src.db.connection import get_db_connection
+
+logger = logging.getLogger(__name__)
+
+
+def get_family_subscription(family_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает {'subscription_end': ...} или None если семьи нет."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT subscription_end FROM families WHERE id = ?',
+            (family_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {'subscription_end': row['subscription_end']}
+
+
+def extend_subscription(family_id: int, months: int = 1):
+    """Продлевает подписку на N месяцев. Если текущая ещё активна — от её
+    конца, иначе от now. Если семьи нет — silent no-op."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT subscription_end FROM families WHERE id = ?',
+            (family_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return
+
+        current_end = row['subscription_end']
+        if current_end:
+            cursor.execute('''
+                UPDATE families SET subscription_end =
+                    CASE
+                        WHEN subscription_end > datetime('now')
+                        THEN datetime(subscription_end, ?)
+                        ELSE datetime('now', ?)
+                    END
+                WHERE id = ?
+            ''', (f'+{months} months', f'+{months} months', family_id))
+        else:
+            cursor.execute(
+                "UPDATE families SET subscription_end = datetime('now', ?) WHERE id = ?",
+                (f'+{months} months', family_id),
+            )
+
+
+def record_payment(family_id: int, paid_by_parent_id: int, amount: int,
+                   currency: str, plan: str, months: int,
+                   telegram_charge_id: str = None,
+                   provider_charge_id: str = None):
+    """Записывает платёж в audit-log таблицу payments."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO payments (family_id, paid_by, amount, currency, plan, months,
+                                  telegram_payment_charge_id, provider_payment_charge_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (family_id, paid_by_parent_id, amount, currency, plan, months,
+              telegram_charge_id, provider_charge_id))
+
+
+def is_subscription_active(family_id: int) -> bool:
+    """True если подписка семьи активна (subscription_end > now)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT subscription_end FROM families WHERE id = ?',
+            (family_id,),
+        )
+        row = cursor.fetchone()
+        if not row or not row['subscription_end']:
+            return False
+        cursor.execute(
+            "SELECT ? > datetime('now') as active",
+            (row['subscription_end'],),
+        )
+        return cursor.fetchone()['active'] == 1
+
+
+def has_any_active_subscription(telegram_id: int) -> bool:
+    """Есть ли у пользователя хотя бы одна семья с активной подпиской.
+    Использует get_families_for_user из families-домена."""
+    # Lazy import — get_families_for_user пока в database_manager (families
+    # модуль ещё не вынесен). После вынесения families.py заменить на
+    # `from src.db.families import get_families_for_user`.
+    from src.database_manager import get_families_for_user
+    families = get_families_for_user(telegram_id)
+    return any(is_subscription_active(f['id']) for f in families)
+
+
+def cancel_subscription(family_id: int) -> bool:
+    """Аннулирует подписку: subscription_end = now. True если семья существовала."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE families SET subscription_end = datetime('now') WHERE id = ?",
+            (family_id,),
+        )
+        return cursor.rowcount > 0
+
+
+def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
+    """Семьи, чья подписка истекает ровно через N дней. Для warning'ов 7д/1д."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id as family_id, f.family_name, f.subscription_end
+            FROM families f
+            WHERE f.subscription_end IS NOT NULL
+              AND f.subscription_end > datetime('now')
+              AND f.subscription_end <= datetime('now', ?)
+        ''', (f'+{days + 1} days',))
+        target_date = (datetime.utcnow() + timedelta(days=days)).date()
+        results = []
+        for row in cursor.fetchall():
+            try:
+                end_date = datetime.fromisoformat(row['subscription_end']).date()
+            except (ValueError, TypeError):
+                continue
+            if end_date == target_date:
+                results.append(dict(row))
+        return results
+
+
+def get_families_expired_today() -> List[Dict[str, Any]]:
+    """Семьи, чья подписка истекла сегодня (по Ташкенту, UTC+5)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT f.id as family_id, f.family_name, f.subscription_end
+            FROM families f
+            WHERE f.subscription_end IS NOT NULL
+              AND date(f.subscription_end, '+5 hours') = date('now', '+5 hours')
+              AND f.subscription_end <= datetime('now')
+        ''')
+        return [dict(row) for row in cursor.fetchall()]
+
+
+__all__ = [
+    "get_family_subscription",
+    "extend_subscription",
+    "record_payment",
+    "is_subscription_active",
+    "has_any_active_subscription",
+    "cancel_subscription",
+    "get_families_expiring_in_days",
+    "get_families_expired_today",
+]
