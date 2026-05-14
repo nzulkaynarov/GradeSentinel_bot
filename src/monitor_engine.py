@@ -376,7 +376,9 @@ def _check_for_new_grades_impl():
                 )
                 continue
 
-            # Подтверждено — пишем в БД
+            # Подтверждено — пишем в БД.
+            # grade_date = tashkent_today: дата оценки по факту (это «сегодня»
+            # с точки зрения учебного дня, и она же зашита в cell_reference).
             if existing:
                 update_grade(student_id, cell_reference, new_grade_value, new_clean_text)
                 logger.info(
@@ -384,7 +386,8 @@ def _check_for_new_grades_impl():
                     f"'{old_clean_text}' -> '{new_clean_text}' (added: {[t for _, t in added]})"
                 )
             else:
-                add_grade(student_id, subject, new_grade_value, new_clean_text, cell_reference)
+                add_grade(student_id, subject, new_grade_value, new_clean_text,
+                          cell_reference, grade_date=tashkent_today)
                 logger.info(f"[NEW GRADE] {display_name} got '{new_clean_text}' in {subject}")
 
             # Грейд для эмоционального заголовка — среднее ДОБАВЛЕННЫХ

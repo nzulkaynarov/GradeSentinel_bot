@@ -220,21 +220,21 @@ def _import_from_sheet(
                 skipped += 1
                 continue
 
+            grade_date = rec['date'].date().isoformat() if rec['date'] else None
             date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
             cell_ref = f"{sheet_label}{_col_letter(rec['col_index'])}{rec['row_index']}"
 
             # Дедуп по содержимому: если в БД уже есть та же оценка по
-            # (предмет, ДЕНЬ без времени, значение) — пропускаем.
-            # Сравнение через date() важно: monitor пишет «Сегодня» с реальным
-            # timestamp (HH:MM:SS), а импорт из «Все оценки»/«Неделя» — с 12:00.
-            # Без date() они считались бы разными.
+            # (предмет, ДЕНЬ, значение) — пропускаем. Сравниваем именно
+            # grade_date с fallback на date(date_added, '+5h') для legacy-записей.
             cursor.execute('''
                 SELECT 1 FROM grade_history
                 WHERE student_id = ? AND subject = ?
-                  AND COALESCE(date(date_added), '') = COALESCE(date(?), '')
+                  AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                      = COALESCE(?, '')
                   AND raw_text = ?
                 LIMIT 1
-            ''', (student_id, rec['subject'], date_added, rec['raw_text']))
+            ''', (student_id, rec['subject'], grade_date, rec['raw_text']))
             if cursor.fetchone():
                 skipped += 1
                 continue
@@ -242,14 +242,19 @@ def _import_from_sheet(
             try:
                 if date_added:
                     cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference, date_added)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref, date_added))
+                        INSERT INTO grade_history
+                          (student_id, subject, grade_value, raw_text,
+                           cell_reference, date_added, grade_date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (student_id, rec['subject'], rec['grade_value'],
+                          rec['raw_text'], cell_ref, date_added, grade_date))
                 else:
                     cursor.execute('''
-                        INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
+                        INSERT INTO grade_history
+                          (student_id, subject, grade_value, raw_text, cell_reference)
                         VALUES (?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'], rec['raw_text'], cell_ref))
+                    ''', (student_id, rec['subject'], rec['grade_value'],
+                          rec['raw_text'], cell_ref))
                 imported += 1
             except Exception:
                 # UNIQUE constraint на cell_reference (того же листа) — повторный

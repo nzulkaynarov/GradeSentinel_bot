@@ -382,19 +382,26 @@ def init_db():
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_archive_student_date ON grade_history_archive(student_id, date_added)')
                 
-def add_grade(student_id: int, subject: str, grade_value: Optional[float], raw_text: str, cell_reference: str) -> bool:
+def add_grade(student_id: int, subject: str, grade_value: Optional[float],
+              raw_text: str, cell_reference: str,
+              grade_date: Optional[str] = None) -> bool:
     """
     Добавляет новую оценку в БД, если такой еще нет.
     Возвращает True, если оценка новая (успешно добавлена),
     и False, если дубликат (такая cell_reference уже есть для этого студента).
+
+    grade_date — фактическая дата оценки (YYYY-MM-DD). Должна передаваться
+    явно вызывающим (monitor из cell_ref «Сегодня!subject:date», history_importer
+    из заголовка столбца). nullable пока этап 1C не сделал её NOT NULL.
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute('''
-                INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (student_id, subject, grade_value, raw_text, cell_reference))
+                INSERT INTO grade_history
+                  (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
             return cursor.rowcount > 0
         except sqlite3.IntegrityError:
             # Сработал UNIQUE(student_id, cell_reference)
