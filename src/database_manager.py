@@ -473,275 +473,9 @@ from src.db.grades import (  # noqa: E402, F401
     get_parents_for_student,
 )
 
-def get_active_spreadsheets() -> List[Dict[str, Any]]:
-    """Возвращает список всех словарей {student_id, spreadsheet_id, fio, display_name} для опроса таблиц."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT id as student_id, fio, spreadsheet_id, display_name FROM students WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""')
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
-    """Возвращает студентов только из семей с активной подпиской (или без ограничений если подписка не настроена)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id, s.display_name
-            FROM students s
-            JOIN family_links fl ON s.id = fl.student_id
-            JOIN families f ON fl.family_id = f.id
-            WHERE s.spreadsheet_id IS NOT NULL AND s.spreadsheet_id != ''
-              AND (f.subscription_end IS NULL OR f.subscription_end > datetime('now'))
-        ''')
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-# Auth (lookup родителя, профиль, авторизационные предикаты) — в src/db/auth.py.
-# Re-export перенесён в конец файла из-за обратного импорта внутри auth.py
-# (он re-export'ит get_families_for_student / is_subscription_active которые
-# определены ниже). См. [feedback-codebase-gotchas] пункт 18.
-
-
-def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все семьи, к которым привязан ученик."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT f.id, f.family_name, f.subscription_end
-            FROM families f
-            JOIN family_links fl ON fl.family_id = f.id
-            WHERE fl.student_id = ?
-        ''', (student_id,))
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def is_student_under_active_subscription(student_id: int) -> bool:
-    """True, если хотя бы одна семья ученика имеет активную подписку."""
-    families = get_families_for_student(student_id)
-    return any(is_subscription_active(f['id']) for f in families)
-
-def set_family_head(family_id: int, parent_id: int):
-    """Делает родителя главой семьи.
-
-    Атомарно гарантирует, что глава также присутствует в family_links —
-    иначе get_students_for_parent / get_families_for_user не находили
-    его «своих» детей и семью (исторический bug). Этот invariant
-    защищает от будущих регрессий: даже если кто-то вызовет напрямую
-    set_family_head без предварительного link_parent_to_family,
-    данные останутся консистентны.
-    """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('UPDATE families SET head_id = ? WHERE id = ?', (parent_id, family_id))
-        # WHERE NOT EXISTS — обход того что в SQLite UNIQUE считает NULL разными
-        # значениями, поэтому INSERT OR IGNORE по UNIQUE(family_id,parent_id,student_id)
-        # не дедуплицирует записи где student_id IS NULL. Делаем явный exists-check.
-        cursor.execute('''
-            INSERT INTO family_links (family_id, parent_id)
-            SELECT ?, ?
-            WHERE NOT EXISTS (
-                SELECT 1 FROM family_links
-                WHERE family_id = ? AND parent_id = ? AND student_id IS NULL
-            )
-        ''', (family_id, parent_id, family_id, parent_id))
-
-def add_family(name: str) -> Optional[int]:
-    """Создает новую семью и возвращает её ID."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO families (family_name) VALUES (?)', (name,))
-        return cursor.lastrowid
-
-def add_parent(fio: str, phone: str, role: str = 'senior') -> Optional[int]:
-    """Создает нового родителя и возвращает его ID."""
-    phone = phone.replace("+", "")
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('INSERT OR IGNORE INTO parents (fio, phone, role) VALUES (?, ?, ?)', (fio, phone, role))
-        if cursor.rowcount == 0:
-            cursor.execute('SELECT id FROM parents WHERE phone = ?', (phone,))
-            return cursor.fetchone()['id']
-        return cursor.lastrowid
-
-def add_student(fio: str, spreadsheet_id: str, display_name: str = None) -> Optional[int]:
-    """Создает нового студента и возвращает его ID."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('INSERT INTO students (fio, spreadsheet_id, display_name) VALUES (?, ?, ?)', (fio, spreadsheet_id, display_name))
-        return cursor.lastrowid
-
-def update_student_display_name(student_id: int, display_name: str):
-    """Обновляет кэшированное display_name студента."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('UPDATE students SET display_name = ? WHERE id = ?', (display_name, student_id))
-
-def link_parent_to_family(family_id: int, parent_id: int):
-    """Привязывает родителя к семье."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Привязываем ко всем студентам этой семьи
-        cursor.execute('SELECT DISTINCT student_id FROM family_links WHERE family_id = ? AND student_id IS NOT NULL', (family_id,))
-        students = cursor.fetchall()
-        if students:
-            for s in students:
-                cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
-                               (family_id, parent_id, s['student_id']))
-        else:
-            # Если студентов еще нет, просто создаем запись без студента
-            cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id) VALUES (?, ?)', 
-                           (family_id, parent_id))
-
-def get_child_count(family_id: int) -> int:
-    """Возвращает количество детей в семье."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(DISTINCT student_id) as count FROM family_links WHERE family_id = ? AND student_id IS NOT NULL', (family_id,))
-        return cursor.fetchone()['count']
-    return 0
-
-def link_student_to_family(family_id: int, student_id: int):
-    """Привязывает студента ко всей семье (всем родителям в этой семье)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Получаем всех родителей этой семьи
-        cursor.execute('SELECT DISTINCT parent_id FROM family_links WHERE family_id = ?', (family_id,))
-        parents = cursor.fetchall()
-        if parents:
-            for p in parents:
-                cursor.execute('INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) VALUES (?, ?, ?)', 
-                               (family_id, p['parent_id'], student_id))
-        else:
-            # Если родителей еще нет (странный случай), просто создаем запись без родителя
-            cursor.execute('INSERT OR IGNORE INTO family_links (family_id, student_id) VALUES (?, ?)', 
-                           (family_id, student_id))
-
-def get_all_families() -> List[Dict[str, Any]]:
-    """Возвращает список всех семей с информацией о главе и количестве детей."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT f.id, f.family_name, p.fio as head_fio,
-                   (SELECT COUNT(DISTINCT student_id) FROM family_links fl2 WHERE fl2.family_id = f.id AND fl2.student_id IS NOT NULL) as child_count
-            FROM families f
-            LEFT JOIN parents p ON f.head_id = p.id
-            GROUP BY f.id
-        ''')
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-def get_students_for_parent(telegram_id: int, family_id: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Возвращает список всех студентов {id, fio, spreadsheet_id, display_name},
-    видимых данному пользователю.
-
-    Источников два — UNION:
-    1) Прямая связь через family_links (parent ↔ student).
-    2) Глава семьи (families.head_id) — даже если он не залинкован
-       явно через family_links, студенты его семьи всё равно его. Иначе
-       при создании семьи через `cmd_add_family` (где назначается head_id,
-       но не всегда добавляется family_links для главы) глава не видел
-       детей своей семьи. Это был реальный bug.
-
-    Админ — отдельная история: ему доступны все студенты только в админ-панели,
-    через `/grades` админ видит детей только тех семей где он head/parent.
-    """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        if family_id:
-            cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
-                FROM students s
-                JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON p.telegram_id = ?
-                LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
-                WHERE fl.family_id = ?
-                  AND (fl.parent_id = p.id OR f.head_id = p.id)
-            ''', (telegram_id, family_id))
-        else:
-            cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
-                FROM students s
-                JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON p.telegram_id = ?
-                LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
-                WHERE fl.parent_id = p.id OR f.head_id = p.id
-            ''', (telegram_id,))
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-        
-def has_children_for_grades(telegram_id: int) -> bool:
-    """Проверяет, привязан ли пользователь хотя бы к одному ребенку."""
-    return len(get_students_for_parent(telegram_id)) > 0
-
-def get_family_members(family_id: int) -> List[Dict[str, Any]]:
-    """Возвращает список всех взрослых членов семьи."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT p.id, p.fio, p.role, (p.id = f.head_id) as is_head
-            FROM parents p
-            JOIN family_links fl ON p.id = fl.parent_id
-            JOIN families f ON f.id = fl.family_id
-            WHERE fl.family_id = ?
-        ''', (family_id,))
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-
-def get_family_members_telegram_ids(family_id: int) -> List[int]:
-    """Возвращает telegram_id всех членов семьи (для уведомлений)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT p.telegram_id
-            FROM parents p
-            JOIN family_links fl ON p.id = fl.parent_id
-            WHERE fl.family_id = ? AND p.telegram_id IS NOT NULL
-        ''', (family_id,))
-        return [row['telegram_id'] for row in cursor.fetchall()]
-    return []
-
-def get_family_students(family_id: int) -> List[Dict[str, Any]]:
-    """Возвращает список всех детей в семье."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
-            FROM students s
-            JOIN family_links fl ON s.id = fl.student_id
-            WHERE fl.family_id = ?
-        ''', (family_id,))
-        return [dict(row) for row in cursor.fetchall()]
-    return []
-
-def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
-    """Удаляет родителя из семьи. Главу семьи удалить нельзя."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Check if parent is the head of this family
-        cursor.execute('SELECT head_id FROM families WHERE id = ?', (family_id,))
-        row = cursor.fetchone()
-        if row and row['head_id'] == parent_id:
-            return False
-            
-        cursor.execute('DELETE FROM family_links WHERE family_id = ? AND parent_id = ?', (family_id, parent_id))
-        return True
-    return False
-
-def delete_student_from_family(family_id: int, student_id: int):
-    """Удаляет ребенка из конкретной семьи. Если студент больше ни к кому не
-    привязан — каскадно удаляет его и все связанные данные."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM family_links WHERE family_id = ? AND student_id = ?', (family_id, student_id))
-
-        # Если студент больше ни к кому не привязан, удаляем его совсем со всеми данными
-        cursor.execute('SELECT COUNT(*) as count FROM family_links WHERE student_id = ?', (student_id,))
-        if cursor.fetchone()['count'] == 0:
-            cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
-            cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (student_id,))
-            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+# Families CRUD + active_spreadsheets + scope per-user — в src/db/families.py.
+# Re-export ниже в файле после auth (auth.py делает обратный re-export
+# get_families_for_student из этого модуля).
 
 
 # delete_family_cascade — в src/db/maintenance.py (re-export ниже)
@@ -871,48 +605,10 @@ from src.db.invites import (  # noqa: E402, F401
 )
 
 
-def get_parent_id_by_telegram(telegram_id: int) -> Optional[int]:
-    """Возвращает internal parent ID по telegram_id."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
-        row = cursor.fetchone()
-        return row['id'] if row else None
-
-
-def get_parent_by_telegram(telegram_id: int) -> Optional[Dict[str, Any]]:
-    """Возвращает полную запись родителя по telegram_id."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM parents WHERE telegram_id = ?', (telegram_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-
-# Подписки и платежи — имплементация в src/db/payments.py.
-# Re-export ниже в файле (после get_families_for_user, который ещё в этом
-# файле и нужен has_any_active_subscription как lazy dep).
-
-
-def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
-    """Возвращает все семьи, к которым относится пользователь.
-
-    Источников два — UNION:
-    1) Через family_links (parent ↔ family).
-    2) Через families.head_id (если глава не залинкован явно).
-    Это тот же класс багов, что в get_students_for_parent — глава семьи мог
-    не появиться в family_links и считался «никем».
-    """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT DISTINCT f.id, f.family_name, f.subscription_end, f.head_id
-            FROM families f
-            JOIN parents p ON p.telegram_id = ?
-            LEFT JOIN family_links fl ON fl.family_id = f.id AND fl.parent_id = p.id
-            WHERE fl.parent_id = p.id OR f.head_id = p.id
-        ''', (telegram_id,))
-        return [dict(row) for row in cursor.fetchall()]
+# get_parent_id_by_telegram / get_parent_by_telegram — в src/db/auth.py.
+# Подписки и платежи — в src/db/payments.py.
+# get_families_for_user — в src/db/families.py.
+# Re-export блоки внизу файла (после init_db).
 
 
 # has_any_active_subscription — в src/db/payments.py (re-export ниже в файле)
@@ -972,11 +668,36 @@ from src.db.promo import (  # noqa: E402
 # get_all_parents_with_children — теперь в src/db/stats.py (re-export сверху)
 
 
+# ─── Families re-export ──────────────────────────────────────────────
+# Семьи + ученики + scope per-user. Имплементация в src/db/families.py.
+# Сначала families — потому что auth.py через обратный re-export берёт
+# get_families_for_student / is_student_under_active_subscription отсюда.
+from src.db.families import (  # noqa: E402, F401
+    get_active_spreadsheets,
+    get_active_spreadsheets_with_subscription,
+    get_families_for_student,
+    get_families_for_user,
+    is_student_under_active_subscription,
+    add_family,
+    add_student,
+    update_student_display_name,
+    set_family_head,
+    link_parent_to_family,
+    link_student_to_family,
+    get_child_count,
+    get_all_families,
+    get_students_for_parent,
+    has_children_for_grades,
+    get_family_members,
+    get_family_members_telegram_ids,
+    get_family_students,
+    delete_parent_from_family,
+    delete_student_from_family,
+)
+
 # ─── Payments re-export ──────────────────────────────────────────────
-# Подписки и платежи в src/db/payments.py. Сначала payments — потому что
-# auth.py через обратный re-export берёт is_subscription_active из этого
-# файла, и к моменту его импорта is_subscription_active должна быть
-# доступна как имя в database_manager.
+# После families: has_any_active_subscription(payments) → get_families_for_user
+# (families). При вызове families уже загружен.
 from src.db.payments import (  # noqa: E402, F401
     get_family_subscription,
     extend_subscription,
@@ -991,14 +712,15 @@ from src.db.payments import (  # noqa: E402, F401
 # ─── Auth re-export ──────────────────────────────────────────────────
 # Помещён В САМЫЙ КОНЕЦ файла, потому что auth.py делает обратный re-export
 # `get_families_for_student` / `is_student_under_active_subscription` /
-# `is_subscription_active` — эти функции определены выше в этом файле (или
-# уже re-export'ятся через payments выше), и к моменту выполнения этой
-# строки уже доступны. См. [feedback-codebase-gotchas] пункт 18.
+# `is_subscription_active` — эти функции теперь re-export'ены выше через
+# families/payments, и к моменту выполнения этой строки уже доступны как
+# имена в database_manager. См. [feedback-codebase-gotchas] пункт 18.
 from src.db.auth import (  # noqa: E402, F401
     get_parent_by_phone,
     get_parent_by_telegram,
     get_parent_id_by_telegram,
     update_parent_telegram_id,
+    add_parent,
     get_parent_role,
     get_user_lang,
     set_user_lang,
