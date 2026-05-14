@@ -2,6 +2,7 @@ import sqlite3
 import os
 import logging
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,16 @@ def get_db_connection():
 def _table_exists(cursor, table: str) -> bool:
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
     return cursor.fetchone() is not None
+
+
+def _stage_1c_already_applied(cursor) -> bool:
+    """True если grade_history.grade_date уже NOT NULL — миграция 1C сделана."""
+    cursor.execute("PRAGMA table_info(grade_history)")
+    for row in cursor.fetchall():
+        # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
+        if row[1] == 'grade_date':
+            return bool(row[3])
+    return False
 
 
 def init_db():
@@ -146,9 +157,10 @@ def init_db():
         ''')
 
         # 5. История оценок (для мониторинга)
-        # grade_date — фактическая дата оценки. Пока nullable (см. этап 1A RFC
-        # в Docs/rfc-grades-source-of-truth.md); NOT NULL и UNIQUE по содержимому
-        # придут в этапе 1C после backfill через scripts/backfill_grade_date.py.
+        # grade_date — фактическая дата оценки (NOT NULL после этапа 1C RFC).
+        # UNIQUE по содержимому (student, subject, grade_date, raw_text) —
+        # cell_reference остался как debug-info, но больше не определяет уникальность.
+        # Для legacy-БД миграция в блоке 11b ниже (recreate-table).
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS grade_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,10 +169,10 @@ def init_db():
             grade_value REAL,
             raw_text TEXT NOT NULL,
             cell_reference TEXT NOT NULL,
-            grade_date DATE,
+            grade_date DATE NOT NULL,
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(student_id) REFERENCES students(id),
-            UNIQUE(student_id, cell_reference)
+            UNIQUE(student_id, subject, grade_date, raw_text)
         )
         ''')
         
@@ -244,9 +256,8 @@ def init_db():
 
         # 11a. Миграция: nullable колонка grade_date в grade_history и архиве.
         # Этап 1A RFC (Docs/rfc-grades-source-of-truth.md): отделяем фактическую
-        # дату оценки от технического `date_added`. Пока NULL — backfill отдельным
-        # скриптом scripts/backfill_grade_date.py, NOT NULL и новый UNIQUE придут
-        # позже отдельной миграцией после успешного backfill в проде.
+        # дату оценки от технического `date_added`. На этой стадии — просто
+        # ALTER ADD COLUMN; backfill отдельным скриптом scripts/backfill_grade_date.py.
         for tbl in ('grade_history', 'grade_history_archive'):
             if _table_exists(cursor, tbl):
                 cursor.execute(f"PRAGMA table_info({tbl})")
@@ -255,9 +266,68 @@ def init_db():
                     cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN grade_date DATE")
                     logger.info(f"Database migration: grade_date column added to {tbl}.")
 
+        # 11b. Этап 1C RFC: grade_date NOT NULL + UNIQUE(student, subject,
+        # grade_date, raw_text) вместо UNIQUE(student, cell_reference).
+        # SQLite не умеет ALTER COLUMN SET NOT NULL или DROP UNIQUE — нужен
+        # recreate-table. Идемпотентно: если новая схема уже применена — skip.
+        # Безопасность: если есть строки с grade_date IS NULL — отказываемся
+        # мигрировать и логируем WARNING. Запустить scripts/backfill_grade_date.py
+        # --apply, потом следующий рестарт бота добъёт миграцию.
+        if _table_exists(cursor, 'grade_history') and not _stage_1c_already_applied(cursor):
+            cursor.execute("SELECT COUNT(*) FROM grade_history WHERE grade_date IS NULL")
+            null_count = cursor.fetchone()[0]
+            if null_count > 0:
+                logger.warning(
+                    f"Skip stage 1C migration: {null_count} grade_history rows have "
+                    f"grade_date IS NULL. Run scripts/backfill_grade_date.py --apply first."
+                )
+            else:
+                cursor.execute("SELECT COUNT(*) FROM grade_history")
+                old_count = cursor.fetchone()[0]
+                cursor.executescript('''
+                    CREATE TABLE grade_history_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        student_id INTEGER NOT NULL,
+                        subject TEXT NOT NULL,
+                        grade_value REAL,
+                        raw_text TEXT NOT NULL,
+                        cell_reference TEXT NOT NULL,
+                        grade_date DATE NOT NULL,
+                        date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(student_id) REFERENCES students(id),
+                        UNIQUE(student_id, subject, grade_date, raw_text)
+                    );
+                ''')
+                # ORDER BY id: при коллизии (одинаковое содержимое из разных
+                # листов — Сегодня! и Все оценки!) выигрывает строка с меньшим
+                # id, то есть самая ранняя. Обычно это запись от monitor'а из
+                # «Сегодня» (writer #1), потерянная же сторона — дубль импорта.
+                cursor.execute('''
+                    INSERT OR IGNORE INTO grade_history_new
+                      (id, student_id, subject, grade_value, raw_text,
+                       cell_reference, grade_date, date_added)
+                    SELECT id, student_id, subject, grade_value, raw_text,
+                           cell_reference, grade_date, date_added
+                    FROM grade_history
+                    ORDER BY id
+                ''')
+                cursor.execute("SELECT COUNT(*) FROM grade_history_new")
+                new_count = cursor.fetchone()[0]
+                cursor.executescript('''
+                    DROP TABLE grade_history;
+                    ALTER TABLE grade_history_new RENAME TO grade_history;
+                ''')
+                logger.info(
+                    f"Database migration 1C: grade_history recreated. "
+                    f"NOT NULL grade_date + UNIQUE(student,subject,grade_date,raw_text). "
+                    f"Rows: {old_count} -> {new_count} (dropped {old_count - new_count} content-dupes)."
+                )
+
         # 12. Индексы для производительности
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_date ON grade_history(student_id, date_added)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_cell ON grade_history(student_id, cell_reference)')
+        # Покрывающий индекс под чтения по фактической дате оценки (этап 1C).
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_grade_history_student_grade_date ON grade_history(student_id, grade_date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_parent ON family_links(parent_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_student ON family_links(student_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_family_links_family ON family_links(family_id)')
@@ -388,12 +458,16 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
     """
     Добавляет новую оценку в БД, если такой еще нет.
     Возвращает True, если оценка новая (успешно добавлена),
-    и False, если дубликат (такая cell_reference уже есть для этого студента).
+    и False, если дубликат (по UNIQUE(student, subject, grade_date, raw_text)).
 
     grade_date — фактическая дата оценки (YYYY-MM-DD). Должна передаваться
     явно вызывающим (monitor из cell_ref «Сегодня!subject:date», history_importer
-    из заголовка столбца). nullable пока этап 1C не сделал её NOT NULL.
+    из заголовка столбца). После этапа 1C колонка NOT NULL; если caller не
+    передал — дефолтим на сегодняшний день по Ташкенту (UTC+5), это домен
+    monitor'а и единственный безопасный fallback.
     """
+    if grade_date is None:
+        grade_date = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
@@ -404,7 +478,9 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
             ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
             return cursor.rowcount > 0
         except sqlite3.IntegrityError:
-            # Сработал UNIQUE(student_id, cell_reference)
+            # Дубликат по новому UNIQUE (student, subject, grade_date, raw_text)
+            # ИЛИ (на legacy-БД где этап 1C ещё не применён) по старому
+            # UNIQUE(student, cell_reference).
             return False
     return False
 

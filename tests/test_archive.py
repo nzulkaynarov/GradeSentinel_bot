@@ -7,9 +7,10 @@ def _seed_old_grade(student_id: int, days_ago: int):
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
         c.execute('''
-            INSERT INTO grade_history (student_id, subject, grade_value, raw_text, cell_reference)
-            VALUES (?, 'Math', 5.0, '5', ?)
-        ''', (student_id, f'Сегодня!Math:day-{days_ago}'))
+            INSERT INTO grade_history
+              (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
+            VALUES (?, 'Math', 5.0, '5', ?, date('now', ?))
+        ''', (student_id, f'Сегодня!Math:day-{days_ago}', f'-{days_ago} days'))
         c.execute('''
             UPDATE grade_history
             SET date_added = datetime('now', ?)

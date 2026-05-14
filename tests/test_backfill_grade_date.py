@@ -155,8 +155,8 @@ def _seed_records(temp_db):
     return sid
 
 
-def test_backfill_dry_run_does_not_change(temp_db):
-    sid = _seed_records(temp_db)
+def test_backfill_dry_run_does_not_change(legacy_temp_db):
+    sid = _seed_records(legacy_temp_db)
     # Шапка: для записи IM6 (Все оценки!IM6) проставим «5 мая»
     headers_all = ['Оценки'] + [''] * 264
     headers_all[col_letter_to_index_0based('IM')] = '5 мая'
@@ -186,8 +186,8 @@ def test_backfill_dry_run_does_not_change(temp_db):
     assert null_count == 4
 
 
-def test_backfill_apply_sets_grade_date(temp_db):
-    sid = _seed_records(temp_db)
+def test_backfill_apply_sets_grade_date(legacy_temp_db):
+    sid = _seed_records(legacy_temp_db)
     headers_all = ['Оценки'] + [''] * 264
     headers_all[col_letter_to_index_0based('IM')] = '5 мая'
     headers_all[col_letter_to_index_0based('B')] = '2 сентября'

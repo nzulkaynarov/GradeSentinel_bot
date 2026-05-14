@@ -113,9 +113,12 @@ def test_history_importer_writes_grade_date(temp_db):
     assert row['grade_date'] == yday.isoformat()
 
 
-def test_add_grade_backward_compatible_without_grade_date(temp_db):
-    """add_grade без grade_date (старая сигнатура) пока всё ещё работает —
-    nullable column. После 1C+тщательной чистки этот case можно убрать."""
+def test_add_grade_defaults_to_today_when_grade_date_omitted(temp_db):
+    """После 1C grade_date NOT NULL. add_grade без kwarg должен дефолтить на
+    сегодняшнюю дату по Ташкенту — единственный безопасный fallback для
+    legacy-вызовов (это домен monitor'а)."""
+    from datetime import datetime, timedelta
+    expected = (datetime.utcnow() + timedelta(hours=5)).date().isoformat()
     sid = dbm.add_student("Kid", "ss-compat")
     ok = dbm.add_grade(sid, "X", 5.0, "5", "Сегодня!X:2026-05-14")
     assert ok is True
@@ -123,7 +126,7 @@ def test_add_grade_backward_compatible_without_grade_date(temp_db):
         row = conn.cursor().execute(
             "SELECT grade_date FROM grade_history WHERE student_id=?", (sid,)
         ).fetchone()
-    assert row['grade_date'] is None
+    assert row['grade_date'] == expected
 
 
 def test_add_grade_with_grade_date_explicit(temp_db):

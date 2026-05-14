@@ -55,25 +55,10 @@ def test_get_history_uses_grade_date_for_period(temp_db):
     assert rows[0]['raw_text'] == '5'
 
 
-def test_get_history_fallback_for_null_grade_date(temp_db):
-    """Запись с NULL grade_date (legacy от monitor пока этап 3 не выкачен) —
-    fallback на date(date_added, '+5 hours') в WHERE и SELECT."""
-    sid = dbm.add_student("Kid", "ss-legacy")
-    today = (datetime.utcnow() + timedelta(hours=5)).date()
-    today_iso = today.isoformat()
-    # monitor пишет date_added в UTC; берём момент когда UTC и Tashkent на тот же день
-    _seed_grade(
-        sid, "Алгебра", "4", "Сегодня!Алгебра:" + today_iso,
-        date_added=today_iso + " 06:00:00",  # 06 UTC = 11 Tashkent, тот же день
-        grade_date=None,
-        grade_value=4.0,
-    )
-
-    rows = dbm.get_grade_history_for_student(sid, days=7)
-    assert len(rows) == 1
-    assert rows[0]['grade_date'] is None
-    # date_added должен быть тоже возвращён для fallback в webapp
-    assert rows[0]['date_added'].startswith(today_iso)
+# Удалён test_get_history_fallback_for_null_grade_date: после этапа 1C
+# grade_date NOT NULL, на свежей БД NULL невоспроизводим. COALESCE в SQL
+# оставлен как defense-in-depth для disaster recovery legacy-бэкапов,
+# но регулярного теста-сценария на это больше нет.
 
 
 def test_today_grades_use_grade_date(temp_db):
