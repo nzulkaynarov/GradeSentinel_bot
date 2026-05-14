@@ -1654,72 +1654,18 @@ def save_plans_to_db(plans: Dict[str, Any]):
 
 
 # ====================
-# Промокоды
+# Промокоды — имплементация переехала в src/db/promo.py.
+# Тут оставлен re-export для backward compat: существующие импорты
+# `from src.database_manager import create_promo_code` продолжают работать.
+# Новый код должен импортировать из src.db.promo напрямую.
 # ====================
-def create_promo_code(code: str, plan: str, discount_percent: int = 0,
-                      free_months: int = 0, max_uses: int = 1,
-                      expires_days: Optional[int] = None) -> bool:
-    """Создаёт промокод. Возвращает True если создан."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            if expires_days is not None:
-                modifier = f'+{int(expires_days)} days'
-                cursor.execute('''
-                    INSERT INTO promo_codes
-                        (code, plan, discount_percent, free_months, max_uses, expires_at)
-                    VALUES (?, ?, ?, ?, ?, datetime('now', ?))
-                ''', (code.upper(), plan, discount_percent, free_months, max_uses, modifier))
-            else:
-                cursor.execute('''
-                    INSERT INTO promo_codes
-                        (code, plan, discount_percent, free_months, max_uses, expires_at)
-                    VALUES (?, ?, ?, ?, ?, NULL)
-                ''', (code.upper(), plan, discount_percent, free_months, max_uses))
-            return True
-        except Exception as e:
-            logger.error(f"Failed to create promo code: {e}")
-            return False
-
-
-def get_promo_code(code: str) -> Optional[Dict[str, Any]]:
-    """Возвращает промокод если он валиден (не исчерпан, не истёк)."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM promo_codes
-            WHERE code = ? AND used_count < max_uses
-              AND (expires_at IS NULL OR expires_at > datetime('now'))
-        ''', (code.upper(),))
-        row = cursor.fetchone()
-        return dict(row) if row else None
-
-
-def use_promo_code(code: str) -> bool:
-    """Увеличивает счётчик использований промокода."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE promo_codes SET used_count = used_count + 1
-            WHERE code = ? AND used_count < max_uses
-        ''', (code.upper(),))
-        return cursor.rowcount > 0
-
-
-def list_promo_codes() -> List[Dict[str, Any]]:
-    """Возвращает все промокоды."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM promo_codes ORDER BY created_at DESC')
-        return [dict(row) for row in cursor.fetchall()]
-
-
-def delete_promo_code(code: str) -> bool:
-    """Удаляет промокод."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM promo_codes WHERE code = ?', (code.upper(),))
-        return cursor.rowcount > 0
+from src.db.promo import (  # noqa: E402
+    create_promo_code,
+    get_promo_code,
+    use_promo_code,
+    list_promo_codes,
+    delete_promo_code,
+)
 
 
 # ====================
