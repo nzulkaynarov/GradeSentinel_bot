@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабинет · GradeSentinel</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@10..48,75..100,300..700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/theme-v2.css">
+<style>
+  /* ===== Dark mode ===== */
+  body[data-theme="dark"] {
+    --paper:    #15110d;
+    --paper-2:  #1d1813;
+    --paper-3:  #2a231b;
+    --card:     #1e1812;
+    --line:     #2d251b;
+    --line-2:   #3a3024;
+    --ink:      #f0e9dd;
+    --ink-2:    #d8cfba;
+    --ink-3:    #9b8e7c;
+    --ink-4:    #75695b;
+    --ink-5:    #4a4034;
+    --signal:    #4ba0bd;
+    --signal-2:  #65b4cf;
+  }
+  body[data-theme="dark"] .tg-card { background: #2a231b; color: #f0e9dd; }
+  body[data-theme="dark"] .tg-card .tg-name { color: #65b4cf; }
+  body[data-theme="dark"] .tg-card .tg-time { color: #6f6354; }
+
+  /* ===== App shell ===== */
+  .appbar {
+    position: sticky; top: 0; z-index: 60;
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    background: color-mix(in srgb, var(--paper) 85%, transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .appbar-inner {
+    max-width: 1400px; margin: 0 auto; padding: 14px 28px;
+    display: flex; align-items: center; gap: 24px;
+  }
+  .appbar nav { display: flex; gap: 4px; flex: 1; margin-left: 20px; }
+  .appbar nav a {
+    font-size: 13px; color: var(--ink-3); font-weight: 500;
+    padding: 8px 14px; border-radius: 999px; transition: background .15s, color .15s;
+  }
+  .appbar nav a:hover { color: var(--ink); background: rgba(0,0,0,.04); }
+  .appbar nav a.on { color: var(--ink); background: var(--card); border: 1px solid var(--line); }
+
+  .appbar-actions { display: flex; align-items: center; gap: 12px; }
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--card);
+    display: grid; place-items: center; color: var(--ink-2);
+    cursor: pointer; transition: all .15s;
+  }
+  .icon-btn:hover { color: var(--ink); border-color: var(--line-2); }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  .profile-btn {
+    display: flex; align-items: center; gap: 10px;
+    height: 38px; padding: 0 6px 0 14px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); cursor: pointer; transition: border-color .15s;
+  }
+  .profile-btn:hover { border-color: var(--line-2); }
+  .profile-btn .av { width: 26px; height: 26px; border-radius: 50%; background: var(--signal); color: #fff; display: grid; place-items: center; font-family: var(--display); font-weight: 600; font-size: 12px; }
+  .profile-btn .name { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+  /* ===== Page container ===== */
+  .page { max-width: 1400px; margin: 0 auto; padding: 28px 28px 80px; }
+
+  /* ===== Page head ===== */
+  .page-head {
+    display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end;
+    padding-bottom: 28px; margin-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  .page-head h1 {
+    font-size: clamp(36px, 4vw, 56px); font-weight: 500;
+    font-variation-settings: "wdth" 95, "opsz" 60;
+    margin: 0;
+  }
+  .page-head .sub {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-4); margin-bottom: 10px;
+  }
+
+  /* Child switch — chunky pills */
+  .child-switch {
+    display: inline-flex; gap: 4px; padding: 4px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+  }
+  .child-pill {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 16px 6px 6px; border-radius: 999px;
+    cursor: pointer; transition: background .15s, color .15s;
+    color: var(--ink-3); font-weight: 600; font-size: 14px;
+    border: none; background: transparent; font-family: inherit;
+  }
+  .child-pill:hover { color: var(--ink); }
+  .child-pill.on { background: var(--ink); color: var(--paper); }
+  .child-pill .av {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--display); font-weight: 600; font-size: 12px; color: #fff;
+  }
+  .child-pill.on .av { background: var(--paper) !important; color: var(--ink) !important; }
+
+  /* Period switch — segmented */
+  .period {
+    display: inline-flex; gap: 0;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 3px;
+  }
+  .period button {
+    background: transparent; border: none; cursor: pointer;
+    padding: 7px 14px; border-radius: 9px;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--ink-3); transition: all .15s;
+  }
+  .period button.on { background: var(--ink); color: var(--paper); }
+  .period button:not(.on):hover { color: var(--ink); }
+
+  /* ===== Layout ===== */
+  .grid { display: grid; gap: 20px; }
+  .grid-main { grid-template-columns: 1.7fr 1fr; }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+  /* ===== Tile ===== */
+  .tile {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 24px;
+    position: relative;
+  }
+  .tile-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 18px;
+  }
+  .tile-head .meta {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-4);
+  }
+  .tile-title {
+    font-family: var(--display); font-size: 22px; font-weight: 500;
+    letter-spacing: -.025em; line-height: 1.1;
+    font-variation-settings: "wdth" 95, "opsz" 36;
+  }
+
+  /* ===== Today event feed ===== */
+  .feed { display: flex; flex-direction: column; gap: 14px; }
+  .ev {
+    display: grid; grid-template-columns: 56px 1fr auto; gap: 16px;
+    padding: 14px 0;
+    border-top: 1px solid var(--line);
+    align-items: start;
+  }
+  .ev:first-child { border-top: none; padding-top: 0; }
+  .ev .when {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .08em;
+    color: var(--ink-4); padding-top: 4px;
+  }
+  .ev .body { display: flex; flex-direction: column; gap: 4px; }
+  .ev .body .what { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .ev .body .ctx { font-size: 13px; color: var(--ink-3); }
+  .ev .gr {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 36px; height: 36px; padding: 0 10px;
+    border-radius: 9px; font-weight: 700; font-size: 17px;
+    font-family: var(--display);
+    font-variation-settings: "wdth" 100;
+  }
+  .gr.g5 { background: #d9f0e0; color: var(--g5); }
+  .gr.g4 { background: #d6e4f2; color: var(--g4); }
+  .gr.g3 { background: #fae6c5; color: var(--g3); }
+  .gr.g2 { background: #f5cdcb; color: var(--g2); }
+  body[data-theme="dark"] .gr.g5 { background: #1c3a26; color: #6dd29e; }
+  body[data-theme="dark"] .gr.g4 { background: #1d2e44; color: #7ab2dc; }
+  body[data-theme="dark"] .gr.g3 { background: #3d2c14; color: #d9a05f; }
+  body[data-theme="dark"] .gr.g2 { background: #3d1c1c; color: #d97a7a; }
+
+  .ev.changed .gr.was {
+    background: transparent !important; border: 1px dashed var(--line-2);
+    color: var(--ink-4); text-decoration: line-through; font-weight: 500;
+  }
+  .ev.changed .gr-arrow {
+    display: inline-grid; place-items: center; color: var(--ink-4);
+    width: 20px;
+  }
+  .ev .gr-stack { display: flex; align-items: center; gap: 2px; }
+
+  /* ===== Trend chart ===== */
+  .chart-wrap { padding: 8px 0 0; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px;
+  }
+  .legend .it {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--ink-2);
+    cursor: pointer; user-select: none;
+  }
+  .legend .it .sw { width: 14px; height: 3px; border-radius: 2px; }
+  .legend .it.off { opacity: .35; }
+
+  /* ===== AI digest — editorial flat ===== */
+  .digest {
+    background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink); border-radius: 18px;
+    padding: 28px;
+    position: relative;
+    display: flex; flex-direction: column;
+  }
+  body[data-theme="dark"] .digest { background: var(--card); color: var(--ink); border-color: var(--line); }
+  .digest .meta { color: var(--ink-5); font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+  body[data-theme="dark"] .digest .meta { color: var(--ink-4); }
+  .digest h3 {
+    font-family: var(--display); font-size: 24px; font-weight: 500;
+    letter-spacing: -.02em; margin: 14px 0 12px; line-height: 1.15;
+    font-variation-settings: "wdth" 95, "opsz" 36;
+    max-width: 26ch;
+  }
+  .digest .bullets { display: flex; flex-direction: column; gap: 14px; margin: 12px 0 24px; }
+  .digest .bul {
+    display: grid; grid-template-columns: 24px 1fr; gap: 12px;
+    padding: 12px 0; border-top: 1px solid color-mix(in srgb, var(--paper) 10%, transparent);
+    font-size: 14px; line-height: 1.55; color: var(--ink-5);
+  }
+  body[data-theme="dark"] .digest .bul { color: var(--ink-2); border-top-color: var(--line); }
+  .digest .bul:first-child { border-top: none; }
+  .digest .bul .num {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+    color: var(--energy); padding-top: 2px;
+  }
+  .digest .bul b { color: var(--paper); font-weight: 700; }
+  body[data-theme="dark"] .digest .bul b { color: var(--ink); }
+  .digest .stamp {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-5); margin-top: auto; padding-top: 18px;
+    border-top: 1px solid color-mix(in srgb, var(--paper) 10%, transparent);
+  }
+  body[data-theme="dark"] .digest .stamp { border-top-color: var(--line); color: var(--ink-4); }
+  .digest .regen {
+    background: transparent; border: 1px solid color-mix(in srgb, var(--paper) 20%, transparent);
+    color: var(--paper); padding: 6px 12px; border-radius: 999px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    cursor: pointer; transition: all .15s; margin-left: auto;
+  }
+  body[data-theme="dark"] .digest .regen { border-color: var(--line-2); color: var(--ink); }
+  .digest .regen:hover { background: var(--energy); border-color: var(--energy); color: #fff; }
+  .digest .regen[disabled] { opacity: .5; cursor: wait; }
+
+  /* ===== Subjects list ===== */
+  .subj-list { display: flex; flex-direction: column; }
+  .subj {
+    display: grid; grid-template-columns: 1fr 100px 90px 50px;
+    gap: 20px; align-items: center;
+    padding: 16px 0; border-top: 1px solid var(--line);
+  }
+  .subj:first-child { border-top: none; padding-top: 0; }
+  .subj .name { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .subj .name .sub { font-size: 12px; font-weight: 500; color: var(--ink-4); margin-top: 2px; display: block; }
+  .subj .spark { width: 100%; height: 36px; }
+  .subj .avg {
+    font-family: var(--display); font-size: 26px; font-weight: 500;
+    letter-spacing: -.02em; text-align: right;
+    font-variation-settings: "wdth" 95, "opsz" 36;
+  }
+  .subj .delta {
+    font-size: 12px; font-weight: 700; text-align: right;
+    font-family: var(--mono);
+  }
+  .subj .delta.up { color: var(--g5); }
+  .subj .delta.down { color: var(--g2); }
+  .subj .delta.flat { color: var(--ink-4); }
+
+  /* ===== Family rail ===== */
+  .fam-list { display: flex; flex-direction: column; gap: 4px; }
+  .fam-row {
+    display: grid; grid-template-columns: 36px 1fr auto; gap: 12px;
+    align-items: center; padding: 10px 0;
+    border-top: 1px solid var(--line);
+  }
+  .fam-row:first-child { border-top: none; padding-top: 0; }
+  .fam-row .av {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--display); font-weight: 600; font-size: 14px; color: #fff;
+  }
+  .fam-row .nm { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .fam-row .role { font-size: 11px; color: var(--ink-4); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+  .fam-row .stat { font-size: 11px; color: var(--ink-4); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .fam-row .stat .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--g5); display: inline-block; margin-right: 6px; vertical-align: middle; }
+
+  /* ===== Subscription strip ===== */
+  .sub-strip {
+    display: grid; grid-template-columns: 1fr auto; gap: 24px;
+    padding: 18px 24px; align-items: center;
+    background: var(--paper-2); border: 1px solid var(--line); border-radius: 14px;
+    margin-top: 20px;
+  }
+  .sub-strip .l { display: flex; align-items: center; gap: 16px; }
+  .sub-strip .pct {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: conic-gradient(var(--energy) calc(var(--p) * 1%), var(--line) 0);
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    color: var(--ink);
+  }
+  .sub-strip .pct::after {
+    content: ""; width: 32px; height: 32px; border-radius: 50%;
+    background: var(--paper-2); position: absolute;
+  }
+  .sub-strip .pct span { position: relative; z-index: 1; }
+  .sub-strip .info .h { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .sub-strip .info .s { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(100px);
+    background: var(--ink); color: var(--paper);
+    padding: 12px 20px; border-radius: 999px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 12px 32px -8px rgba(0,0,0,.3);
+    transition: transform .3s cubic-bezier(.2,.8,.2,1);
+    z-index: 100;
+  }
+  .toast.on { transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 1024px) {
+    .grid-main { grid-template-columns: 1fr; }
+    .page-head { grid-template-columns: 1fr; gap: 18px; }
+    .appbar nav { display: none; }
+    .subj { grid-template-columns: 1fr 60px 50px; }
+    .subj .spark { display: none; }
+  }
+</style>
+</head>
+<body data-theme="light">
+
+<!-- ============================ APPBAR ============================ -->
+<header class="appbar">
+  <div class="appbar-inner">
+    <a href="index.html" class="brand-mark">
+      <span class="b-grade">Grade</span><span class="b-sentinel">Sentinel</span><span class="b-dot"></span>
+    </a>
+    <nav>
+      <a href="dashboard.html" class="on">Кабинет</a>
+      <a href="instructions.html">Инструкция</a>
+      <a href="#">Семья</a>
+      <a href="#">Подписка</a>
+    </nav>
+    <div class="appbar-actions">
+      <button class="icon-btn" id="theme-toggle" title="Тёмная тема">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" id="moon-icon">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+      </button>
+      <button class="icon-btn" title="Уведомления">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+      </button>
+      <button class="profile-btn">
+        <span class="name">Мадина</span>
+        <span class="av">М</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============================ PAGE ============================ -->
+<main class="page">
+
+  <!-- HEAD -->
+  <div class="page-head">
+    <div>
+      <div class="sub">
+        <span class="label-line"></span>
+        <span id="head-date">Среда · 8 мая 2026 · 14:32</span>
+      </div>
+      <h1 id="head-title">Сегодня у <span class="fancy" id="head-kid">Алишера</span> — четыре события.</h1>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end;">
+      <div class="child-switch" id="child-switch">
+        <button class="child-pill on" data-kid="alisher">
+          <span class="av" style="background: var(--signal);">А</span>
+          <span>Алишер · 7Б</span>
+        </button>
+        <button class="child-pill" data-kid="dilnoza">
+          <span class="av" style="background: var(--energy);">Д</span>
+          <span>Дильноза · 4А</span>
+        </button>
+      </div>
+      <div class="period" id="period">
+        <button class="on" data-period="today">Сегодня</button>
+        <button data-period="week">Неделя</button>
+        <button data-period="month">Месяц</button>
+        <button data-period="quarter">Четверть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ROW 1: Today feed + Digest ===== -->
+  <div class="grid grid-main">
+
+    <!-- TODAY FEED -->
+    <div class="tile">
+      <div class="tile-head">
+        <div>
+          <div class="meta" style="margin-bottom: 6px;">События дня</div>
+          <div class="tile-title">Что произошло</div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="icon-btn" title="Экспорт"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+        </div>
+      </div>
+
+      <div class="feed" id="feed">
+        <div class="ev">
+          <div class="when">14:32</div>
+          <div class="body">
+            <div class="what">Математика · контрольная</div>
+            <div class="ctx">Учитель: Назарова Г.А. · Тема «Уравнения с двумя переменными»</div>
+          </div>
+          <div class="gr g5">5</div>
+        </div>
+
+        <div class="ev changed">
+          <div class="when">11:08</div>
+          <div class="body">
+            <div class="what">История · оценка изменена</div>
+            <div class="ctx">Доклад «Бухарское ханство» пересмотрен учителем</div>
+          </div>
+          <div class="gr-stack">
+            <div class="gr g3 was">3</div>
+            <span class="gr-arrow">→</span>
+            <div class="gr g4">4</div>
+          </div>
+        </div>
+
+        <div class="ev">
+          <div class="when">10:42</div>
+          <div class="body">
+            <div class="what">Физика · лабораторная</div>
+            <div class="ctx">«Закон Ома для участка цепи»</div>
+          </div>
+          <div class="gr g4">4</div>
+        </div>
+
+        <div class="ev">
+          <div class="when">9:15</div>
+          <div class="body">
+            <div class="what">Биология · домашнее задание</div>
+            <div class="ctx">Конспект параграфа 24</div>
+          </div>
+          <div class="gr g5">5</div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 10px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line);">
+        <span class="label" style="color: var(--ink-4);">
+          <span class="live-dot" style="background: var(--g5); box-shadow: 0 0 0 3px rgba(31,106,58,.18);"></span>
+          Бот в эфире · последняя проверка минуту назад
+        </span>
+        <a href="#" style="margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3);">Архив →</a>
+      </div>
+    </div>
+
+    <!-- AI DIGEST — flat editorial -->
+    <div class="digest">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span class="meta">Воскресный разбор · Claude</span>
+        <button class="regen" id="regen">Перегенерировать</button>
+      </div>
+      <h3 id="digest-title">Алгебра <span class="italic-display" style="color: var(--energy);">укрепилась</span>, история требует внимания.</h3>
+      <div class="bullets" id="digest-bullets">
+        <div class="bul">
+          <span class="num">01</span>
+          <span><b>Математика</b> прибавила 0.7 балла за две недели — после контрольной по уравнениям пошёл устойчивый рост.</span>
+        </div>
+        <div class="bul">
+          <span class="num">02</span>
+          <span>В <b>истории</b> учитель часто исправляет оценки задним числом — стоит спросить ребёнка, почему пересдаёт.</span>
+        </div>
+        <div class="bul">
+          <span class="num">03</span>
+          <span>Среда — слабый день: средний балл 3.8 против 4.4 в остальные дни. Проверьте режим сна.</span>
+        </div>
+        <div class="bul">
+          <span class="num">04</span>
+          <span>До конца четверти 18 учебных дней. Чтобы выйти на итоговую <b>5</b> по физике, нужны <b>две оценки 5</b>.</span>
+        </div>
+      </div>
+      <div class="stamp">
+        <span>Сгенерировано <span id="digest-time">5 минут назад</span></span>
+        <span style="margin-left: auto;">Claude haiku</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ROW 2: Chart ===== -->
+  <div class="tile" style="margin-top: 20px;">
+    <div class="tile-head">
+      <div>
+        <div class="meta" style="margin-bottom: 6px;">Динамика · последние 8 недель</div>
+        <div class="tile-title">Куда движется средний балл</div>
+      </div>
+      <div class="legend" id="legend">
+        <span class="it" data-s="math"><span class="sw" style="background: #d24c1d;"></span>Математика <b style="margin-left: 4px;">4.4</b></span>
+        <span class="it" data-s="phys"><span class="sw" style="background: #1f5b6d;"></span>Физика <b style="margin-left: 4px;">4.1</b></span>
+        <span class="it" data-s="hist"><span class="sw" style="background: #a35c0d;"></span>История <b style="margin-left: 4px;">3.9</b></span>
+        <span class="it" data-s="bio"><span class="sw" style="background: #1f6a3a;"></span>Биология <b style="margin-left: 4px;">4.6</b></span>
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <svg viewBox="0 0 1000 280" id="chart" preserveAspectRatio="none" style="width: 100%; height: 280px;">
+        <!-- Grid + y-axis labels -->
+        <g id="chart-grid"></g>
+        <!-- Lines drawn by JS -->
+        <g id="chart-lines"></g>
+        <!-- Hover crosshair -->
+        <g id="chart-hover" style="display: none;">
+          <line stroke="currentColor" stroke-width="1" stroke-dasharray="2 4" opacity=".4" y1="0" y2="280"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ===== ROW 3: Subjects + Family ===== -->
+  <div class="grid grid-main" style="margin-top: 20px;">
+    <!-- SUBJECTS -->
+    <div class="tile">
+      <div class="tile-head">
+        <div>
+          <div class="meta" style="margin-bottom: 6px;">Предметы · текущая четверть</div>
+          <div class="tile-title">Все 12 предметов</div>
+        </div>
+      </div>
+      <div class="subj-list" id="subjects"></div>
+    </div>
+
+    <!-- FAMILY -->
+    <div class="tile">
+      <div class="tile-head">
+        <div>
+          <div class="meta" style="margin-bottom: 6px;">Семья · 5 человек</div>
+          <div class="tile-title">Кто видит уведомления</div>
+        </div>
+        <button class="icon-btn" title="Пригласить"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M19 8v6M22 11h-6M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg></button>
+      </div>
+
+      <div class="fam-list">
+        <div class="fam-row">
+          <div class="av" style="background: var(--energy);">М</div>
+          <div>
+            <div class="nm">Мадина (вы)</div>
+            <div class="role">Мама · глава семьи</div>
+          </div>
+          <div class="stat"><span class="live-dot"></span>Сейчас в чате</div>
+        </div>
+        <div class="fam-row">
+          <div class="av" style="background: var(--signal);">Б</div>
+          <div>
+            <div class="nm">Бахром</div>
+            <div class="role">Папа</div>
+          </div>
+          <div class="stat" style="color: var(--ink-4);">2 мин назад</div>
+        </div>
+        <div class="fam-row">
+          <div class="av" style="background: var(--ink);">З</div>
+          <div>
+            <div class="nm">Зулайхо</div>
+            <div class="role">Бабушка · oʻzbek tilida</div>
+          </div>
+          <div class="stat" style="color: var(--ink-4);">14 мин назад</div>
+        </div>
+        <div class="fam-row">
+          <div class="av" style="background: var(--note); color: var(--ink);">Д</div>
+          <div>
+            <div class="nm">Дилфуза</div>
+            <div class="role">Тётя</div>
+          </div>
+          <div class="stat" style="color: var(--ink-4);">1 ч назад</div>
+        </div>
+        <div class="fam-row">
+          <div class="av" style="background: var(--ink-3);">У</div>
+          <div>
+            <div class="nm">Улугбек</div>
+            <div class="role">Дедушка · только сводки</div>
+          </div>
+          <div class="stat" style="color: var(--ink-4);">вчера 22:00</div>
+        </div>
+      </div>
+
+      <!-- Subscription strip -->
+      <div class="sub-strip" style="--p: 64;">
+        <div class="l">
+          <div class="pct" style="--p: 64; position: relative;"><span>64%</span></div>
+          <div class="info">
+            <div class="h">Подписка · 3 месяца</div>
+            <div class="s">Активна до 24 июля 2026 · 77 дней</div>
+          </div>
+        </div>
+        <a href="#" class="btn btn-ghost btn-sm">Управлять →</a>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast">Готово</div>
+
+<!-- ============================ SCRIPT ============================ -->
+<script>
+(() => {
+
+  // ===== Theme toggle =====
+  const themeBtn = document.getElementById('theme-toggle');
+  const moonIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+  const sunIcon  = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>`;
+  const stored = localStorage.getItem('gs-theme') || 'light';
+  document.body.dataset.theme = stored;
+  themeBtn.innerHTML = stored === 'dark' ? sunIcon : moonIcon;
+  themeBtn.addEventListener('click', () => {
+    const next = document.body.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.body.dataset.theme = next;
+    themeBtn.innerHTML = next === 'dark' ? sunIcon : moonIcon;
+    localStorage.setItem('gs-theme', next);
+  });
+
+  // ===== Toast =====
+  const toast = document.getElementById('toast');
+  const showToast = (msg) => {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    setTimeout(() => toast.classList.remove('on'), 2400);
+  };
+
+  // ===== Child switcher =====
+  const kids = {
+    alisher: { name: 'Алишера', class: '7Б' },
+    dilnoza: { name: 'Дильнозы', class: '4А' }
+  };
+  document.getElementById('child-switch').addEventListener('click', (e) => {
+    const btn = e.target.closest('.child-pill');
+    if (!btn) return;
+    document.querySelectorAll('#child-switch .child-pill').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const kid = kids[btn.dataset.kid];
+    document.getElementById('head-kid').textContent = kid.name;
+    showToast(`Переключено на ${kid.name.replace(/ы$|и$|а$/, 'а')}`);
+  });
+
+  // ===== Period =====
+  document.getElementById('period').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    document.querySelectorAll('#period button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  });
+
+  // ===== Subjects list with sparklines =====
+  const subjects = [
+    { name: 'Математика',  teacher: 'Назарова Г.А.',     avg: 4.4, d: +0.3, hist: [3,4,4,3,5,4,5,5,4,5] },
+    { name: 'Физика',      teacher: 'Каримов Р.Т.',       avg: 4.1, d: +0.1, hist: [4,3,4,4,5,3,4,4,5,4] },
+    { name: 'История',     teacher: 'Юсупова Н.А.',       avg: 3.9, d: -0.2, hist: [4,4,3,4,3,3,4,4,3,4] },
+    { name: 'Биология',    teacher: 'Хакимова Д.Б.',      avg: 4.6, d: +0.4, hist: [4,4,5,5,4,5,5,4,5,5] },
+    { name: 'Английский',  teacher: 'Олимова З.К.',       avg: 4.2, d:  0.0, hist: [4,4,4,5,3,4,5,4,4,4] },
+    { name: 'Русский язык',teacher: 'Иванова О.С.',       avg: 4.3, d: +0.1, hist: [4,5,4,4,4,5,4,4,5,4] },
+    { name: 'Литература',  teacher: 'Иванова О.С.',       avg: 4.5, d: +0.2, hist: [4,5,5,4,5,4,5,4,5,5] },
+    { name: 'Узбекский',   teacher: 'Рахмонов Б.А.',      avg: 4.7, d:  0.0, hist: [5,5,4,5,5,5,4,5,5,5] },
+    { name: 'География',   teacher: 'Шарипов И.Х.',       avg: 4.0, d: -0.1, hist: [4,4,3,4,4,4,3,5,4,4] },
+    { name: 'Химия',       teacher: 'Каримова Л.М.',      avg: 4.2, d: +0.2, hist: [3,4,4,4,5,4,4,5,4,5] },
+    { name: 'Информатика', teacher: 'Назаров А.Д.',       avg: 4.8, d: +0.3, hist: [4,5,5,5,5,5,4,5,5,5] },
+    { name: 'Физкультура', teacher: 'Эргашев Ж.С.',       avg: 5.0, d:  0.0, hist: [5,5,5,5,5,5,5,5,5,5] }
+  ];
+
+  const subjEl = document.getElementById('subjects');
+  subjEl.innerHTML = subjects.map(s => {
+    const min = 2, max = 5;
+    const W = 100, H = 36, n = s.hist.length;
+    const pts = s.hist.map((v, i) => {
+      const x = (i / (n - 1)) * W;
+      const y = H - ((v - min) / (max - min)) * (H - 4) - 2;
+      return `${x},${y}`;
+    }).join(' ');
+    const last = s.hist[s.hist.length - 1];
+    const lastX = W, lastY = H - ((last - min) / (max - min)) * (H - 4) - 2;
+    const color = s.avg >= 4.5 ? 'var(--g5)' : s.avg >= 4 ? 'var(--g4)' : s.avg >= 3.5 ? 'var(--g3)' : 'var(--g2)';
+    const deltaCls = s.d > 0 ? 'up' : s.d < 0 ? 'down' : 'flat';
+    const deltaTxt = s.d > 0 ? `↑ ${s.d.toFixed(1)}` : s.d < 0 ? `↓ ${Math.abs(s.d).toFixed(1)}` : '—';
+    return `
+      <div class="subj">
+        <div class="name">${s.name}<span class="sub">${s.teacher}</span></div>
+        <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+          <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="${lastX}" cy="${lastY}" r="2.4" fill="${color}"/>
+        </svg>
+        <div class="avg">${s.avg.toFixed(1)}</div>
+        <div class="delta ${deltaCls}">${deltaTxt}</div>
+      </div>
+    `;
+  }).join('');
+
+  // ===== Trend chart =====
+  const series = {
+    math: { name: 'Математика', color: '#d24c1d', pts: [3.8, 3.9, 4.0, 3.9, 4.1, 4.2, 4.3, 4.4] },
+    phys: { name: 'Физика',     color: '#1f5b6d', pts: [4.0, 4.0, 3.9, 4.0, 4.1, 4.1, 4.0, 4.1] },
+    hist: { name: 'История',    color: '#a35c0d', pts: [4.1, 4.0, 4.0, 3.9, 3.8, 3.8, 3.9, 3.9] },
+    bio:  { name: 'Биология',   color: '#1f6a3a', pts: [4.2, 4.3, 4.4, 4.5, 4.5, 4.6, 4.6, 4.6] }
+  };
+  const W = 1000, H = 280, padL = 56, padR = 24, padT = 20, padB = 36;
+  const yMin = 3, yMax = 5;
+  const xFor = i => padL + (i / 7) * (W - padL - padR);
+  const yFor = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+
+  // Grid
+  const gridG = document.getElementById('chart-grid');
+  let gridHTML = '';
+  [3, 3.5, 4, 4.5, 5].forEach(v => {
+    const y = yFor(v);
+    gridHTML += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="currentColor" stroke-width="1" opacity=".08"/>`;
+    gridHTML += `<text x="${padL - 12}" y="${y + 4}" text-anchor="end" font-family="JetBrains Mono" font-size="11" fill="currentColor" opacity=".5">${v.toFixed(1)}</text>`;
+  });
+  // x-axis labels — last 8 weeks
+  const weeks = ['нед.−7','−6','−5','−4','−3','−2','−1','тек.'];
+  weeks.forEach((w, i) => {
+    const x = xFor(i);
+    gridHTML += `<text x="${x}" y="${H - padB + 22}" text-anchor="middle" font-family="JetBrains Mono" font-size="10" letter-spacing="1" fill="currentColor" opacity=".5">${w.toUpperCase()}</text>`;
+  });
+  gridG.innerHTML = gridHTML;
+
+  // Lines
+  const linesG = document.getElementById('chart-lines');
+  const drawLines = () => {
+    let html = '';
+    Object.entries(series).forEach(([k, s]) => {
+      const off = document.querySelector(`.legend .it[data-s="${k}"]`).classList.contains('off');
+      if (off) return;
+      const path = s.pts.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i)} ${yFor(v)}`).join(' ');
+      html += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+      s.pts.forEach((v, i) => {
+        html += `<circle cx="${xFor(i)}" cy="${yFor(v)}" r="${i === s.pts.length - 1 ? 5 : 3}" fill="${s.color}"/>`;
+      });
+      // last point label
+      const lv = s.pts[s.pts.length - 1];
+      html += `<text x="${xFor(7) + 10}" y="${yFor(lv) + 4}" font-family="Bricolage Grotesque" font-size="13" font-weight="600" fill="${s.color}">${lv.toFixed(1)}</text>`;
+    });
+    linesG.innerHTML = html;
+  };
+  drawLines();
+
+  document.getElementById('legend').addEventListener('click', (e) => {
+    const it = e.target.closest('.it');
+    if (!it) return;
+    it.classList.toggle('off');
+    drawLines();
+  });
+
+  // ===== AI digest regen =====
+  const digestVariants = [
+    {
+      title: 'Алгебра <span class="italic-display" style="color: var(--energy);">укрепилась</span>, история требует внимания.',
+      bullets: [
+        '<b>Математика</b> прибавила 0.7 балла за две недели — после контрольной по уравнениям пошёл устойчивый рост.',
+        'В <b>истории</b> учитель часто исправляет оценки задним числом — стоит спросить ребёнка, почему пересдаёт.',
+        'Среда — слабый день: средний балл 3.8 против 4.4 в остальные дни. Проверьте режим сна.',
+        'До конца четверти 18 учебных дней. Чтобы выйти на итоговую <b>5</b> по физике, нужны <b>две оценки 5</b>.'
+      ]
+    },
+    {
+      title: 'Стабильный рост, <span class="italic-display" style="color: var(--energy);">кроме</span> гуманитарных.',
+      bullets: [
+        '<b>Точные предметы</b> (математика, физика, информатика) идут в плюс — средний балл подрос на 0.3.',
+        'История и география просели на 0.1–0.2. Возможно, не хватает времени на чтение учебника.',
+        'За неделю было <b>3 правки</b> оценок задним числом — это в норме, но стоит держать в голове.',
+        'Биология и узбекский — самые крепкие предметы. Их можно использовать как «топливо» для итогов.'
+      ]
+    },
+    {
+      title: 'Хорошая неделя — <span class="italic-display" style="color: var(--energy);">особенно</span> начало.',
+      bullets: [
+        'Понедельник и вторник — почти все «5» и «4». Вторая половина недели слабее.',
+        'Контрольная по математике — это лучший результат за месяц по этому предмету.',
+        'Учитель английского ставит много «4» там, где другие учителя ставят «5». Это норма для класса.',
+        'Рекомендация: обсудить расписание сна на четверг–пятницу.'
+      ]
+    }
+  ];
+  let dIdx = 0;
+  const regenBtn = document.getElementById('regen');
+  const dTitle = document.getElementById('digest-title');
+  const dBullets = document.getElementById('digest-bullets');
+  const dTime = document.getElementById('digest-time');
+
+  regenBtn.addEventListener('click', async () => {
+    regenBtn.disabled = true;
+    regenBtn.textContent = 'Думает…';
+    dTitle.style.opacity = .3;
+    dBullets.style.opacity = .3;
+
+    // Try real Claude call; fall back to canned variants
+    let result = null;
+    try {
+      if (window.claude && window.claude.complete) {
+        const resp = await Promise.race([
+          window.claude.complete({
+            messages: [{
+              role: 'user',
+              content: `Ты — родительский ассистент. На основе данных об успеваемости школьника (математика 4.4, физика 4.1, история 3.9, биология 4.6) дай краткий разбор недели в 4 пунктах. Пиши на русском, по-родительски, конкретно. Верни строго JSON: {"title": "<заголовок до 8 слов>", "bullets": ["<пункт1>", ...]}. Заголовок может содержать одно слово в italic — оберни его в <i>.`
+            }]
+          }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+        ]);
+        const m = resp.match(/\{[\s\S]*\}/);
+        if (m) {
+          const parsed = JSON.parse(m[0]);
+          result = {
+            title: (parsed.title || '').replace(/<i>(.*?)<\/i>/g, '<span class="italic-display" style="color: var(--energy);">$1</span>'),
+            bullets: parsed.bullets || []
+          };
+        }
+      }
+    } catch(e) { /* fall through */ }
+
+    if (!result || !result.bullets.length) {
+      dIdx = (dIdx + 1) % digestVariants.length;
+      result = digestVariants[dIdx];
+    }
+
+    await new Promise(r => setTimeout(r, 320));
+    dTitle.innerHTML = result.title;
+    dBullets.innerHTML = result.bullets.map((b, i) => `
+      <div class="bul">
+        <span class="num">${String(i + 1).padStart(2, '0')}</span>
+        <span>${b}</span>
+      </div>
+    `).join('');
+    dTime.textContent = 'только что';
+    dTitle.style.opacity = 1;
+    dBullets.style.opacity = 1;
+    regenBtn.disabled = false;
+    regenBtn.textContent = 'Перегенерировать';
+    showToast('Разбор обновлён');
+  });
+
+})();
+</script>
+</body>
+</html>

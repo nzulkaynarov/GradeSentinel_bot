@@ -1,0 +1,32 @@
+hero_eyebrow:
+  other: "GradeSentinel"
+hero_title:
+  other: "Узнаёте о пятёрке раньше, чем сам ребёнок"
+cta_start_bot:
+  other: "Запустить бота"
+cta_read_docs:
+  other: "Документация"
+cta_open_bot:
+  other: "Открыть бота"
+nav_how:
+  other: "Как работает"
+nav_features:
+  other: "Возможности"
+nav_pricing:
+  other: "Тарифы"
+nav_docs:
+  other: "Документация"
+docs_eyebrow:
+  other: "Документация"
+phase0_notice_title:
+  other: "Phase 0 — заглушка"
+phase0_notice_body:
+  other: "Это скаффолд Hugo-проекта. В Phase 1 сюда переедет контент из мокапов frontend/index.html и frontend/instructions.html."
+footer_tagline:
+  other: "Мониторинг школьных оценок · Узбекистан"
+footer_product:
+  other: "Продукт"
+footer_contact:
+  other: "Контакты"
+footer_open_portal:
+  other: "Открыть кабинет"

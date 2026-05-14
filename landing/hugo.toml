@@ -1,0 +1,49 @@
+baseURL = "https://grades.railtech.uz/"
+languageCode = "ru"
+defaultContentLanguage = "ru"
+defaultContentLanguageInSubdir = false
+title = "GradeSentinel"
+enableRobotsTXT = true
+enableGitInfo = true
+
+[markup.goldmark.renderer]
+  unsafe = true
+
+[markup.tableOfContents]
+  startLevel = 2
+  endLevel = 4
+
+[languages.ru]
+  languageName = "Русский"
+  weight = 1
+  [languages.ru.params]
+    description = "Узнаёте об оценках раньше, чем сам ребёнок"
+
+[languages.uz]
+  languageName = "Oʻzbekcha"
+  weight = 2
+  contentDir = "content/uz"
+  [languages.uz.params]
+    description = "Bola oʻzidan oldin baholar haqida biling"
+
+[languages.en]
+  languageName = "English"
+  weight = 3
+  contentDir = "content/en"
+  [languages.en.params]
+    description = "Know about grades before your child does"
+
+[params]
+  brand = "GradeSentinel"
+  botUrl = "https://t.me/GradeSentinel_bot"
+  webappUrl = "https://app.grades.railtech.uz"
+  supportEmail = "support@grades.railtech.uz"
+
+[outputs]
+  home = ["HTML", "RSS"]
+  page = ["HTML"]
+  section = ["HTML"]
+
+[minify]
+  disableXML = true
+  minifyOutput = true

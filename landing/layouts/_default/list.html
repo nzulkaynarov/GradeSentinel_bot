@@ -1,0 +1,14 @@
+{{ define "main" }}
+<section class="list">
+  <div class="container container-narrow">
+    <span class="label"><span class="label-line"></span> {{ i18n "docs_eyebrow" }}</span>
+    <h1>{{ .Title }}</h1>
+    {{ with .Content }}<div class="doc-body">{{ . }}</div>{{ end }}
+    <ul class="doc-list">
+      {{ range .Pages }}
+        <li><a href="{{ .RelPermalink }}">{{ .Title }}</a>{{ with .Params.summary }}<span class="muted"> — {{ . }}</span>{{ end }}</li>
+      {{ end }}
+    </ul>
+  </div>
+</section>
+{{ end }}

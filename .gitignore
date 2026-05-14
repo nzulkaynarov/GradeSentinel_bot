@@ -40,3 +40,27 @@ Thumbs.db
 
 # Excel с реальными данными ребёнка — не должны быть в репо
 *.xlsx
+
+# --- Web rewrite (Phase 0+) ---
+# Каждый подпроект имеет свой .gitignore (landing/, web/, api/),
+# дублируем главные паттерны на верхнем уровне для надёжности.
+
+# Hugo
+landing/public/
+landing/resources/_gen/
+landing/.hugo_build.lock
+
+# Next.js
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/.vercel
+web/*.tsbuildinfo
+
+# FastAPI
+api/.venv/
+api/.pytest_cache/
+api/.ruff_cache/
+api/.mypy_cache/
+api/uv.lock

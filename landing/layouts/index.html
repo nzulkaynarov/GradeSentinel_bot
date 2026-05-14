@@ -1,0 +1,20 @@
+{{ define "main" }}
+<section class="hero">
+  <div class="container">
+    <span class="label"><span class="label-line"></span> {{ i18n "hero_eyebrow" }} <span class="live-dot"></span></span>
+    <h1>{{ i18n "hero_title" }}</h1>
+    <p class="lead">{{ .Site.Params.description }}</p>
+    <div class="hero-cta">
+      <a href="{{ .Site.Params.botUrl }}" class="btn btn-ink btn-lg">{{ i18n "cta_start_bot" }}</a>
+      <a href="/docs/" class="btn btn-ghost btn-lg">{{ i18n "cta_read_docs" }}</a>
+    </div>
+  </div>
+</section>
+
+<section class="placeholder">
+  <div class="container">
+    <h2>{{ i18n "phase0_notice_title" }}</h2>
+    <p>{{ i18n "phase0_notice_body" }}</p>
+  </div>
+</section>
+{{ end }}
