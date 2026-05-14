@@ -149,9 +149,11 @@ def callback_ap_new_family(call):
 
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
-    msg = bot.send_message(call.message.chat.id, t("family_create_title", lang),
-                            parse_mode='Markdown', reply_markup=markup)
-    bot.register_next_step_handler(msg, process_family_name)
+    # State в user_states (persistent), маршрут — state_flows._on_family_name.
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_family_name", "")
+    bot.send_message(call.message.chat.id, t("family_create_title", lang),
+                     parse_mode='Markdown', reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'ap_prices')
@@ -279,13 +281,14 @@ def cmd_add_family_start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
 
-    msg = bot.send_message(
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_family_name", "")
+    bot.send_message(
         message.chat.id,
         t("family_create_title", lang),
         parse_mode='Markdown',
         reply_markup=markup
     )
-    bot.register_next_step_handler(msg, process_family_name)
 
 @bot.message_handler(commands=['list_families'])
 def cmd_list_families(message, user_id=None):
@@ -353,43 +356,51 @@ def callback_confirm_delete_family(call):
     cmd_list_families(call.message, user_id=call.from_user.id)
 
 def process_family_name(message):
+    """Шаг 1 family-creation flow. State: awaiting_family_name.
+    data='selfserve' → юзер сразу делается главой (без второго экрана выбора).
+    data='' → admin flow, переходим на awaiting_head_choice.
+    """
     family_name = message.text.strip()
     lang = get_user_lang(message.chat.id)
+    from src.database_manager import get_user_state, clear_user_state, set_user_state
+
     if family_name == t("btn_cancel", lang):
+        clear_user_state(message.chat.id)
         send_menu_safe(message.chat.id, t("family_cancelled", lang))
         return
 
     if not family_name:
+        # state остаётся awaiting_family_name → следующее сообщение придёт сюда
         bot.send_message(message.chat.id, t("family_name_empty", lang))
         return
 
-    # Self-serve flow: юзер уже выбрал «Создать свою семью» — сразу делаем
-    # его главой без второго экрана. Маркер в user_states.
-    from src.database_manager import get_user_state, clear_user_state
+    # Self-serve flow: юзер выбрал «Создать свою семью» — сразу глава.
     state = get_user_state(message.chat.id)
-    if state and state.get('state') == 'selfserve_family_name':
+    if state and state.get('data') == 'selfserve':
         clear_user_state(message.chat.id)
-        # Эмулируем нажатие «Сделать меня главой»
         message.text = t("btn_make_me_head", lang)
         process_head_choice(message, family_name)
         return
 
+    # Admin flow: спрашиваем кто будет главой.
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_make_me_head", lang)))
     markup.add(types.KeyboardButton(t("btn_assign_other", lang)))
 
+    set_user_state(message.chat.id, "awaiting_head_choice", family_name)
     send_menu_safe(
         message.chat.id,
         t("family_choose_head", lang, name=family_name),
         reply_markup=markup
     )
-    bot.register_next_step_handler_by_chat_id(message.chat.id, process_head_choice, family_name)
 
 def process_head_choice(message, family_name):
+    """Шаг 2 admin flow. State: awaiting_head_choice (data=family_name)."""
     lang = get_user_lang(message.chat.id)
+    from src.database_manager import set_user_state, clear_user_state
+
     if message.text == t("btn_make_me_head", lang):
         user_id = message.from_user.id
-
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
@@ -397,6 +408,7 @@ def process_head_choice(message, family_name):
                 row = cursor.fetchone()
 
             if not row:
+                clear_user_state(message.chat.id)
                 bot.send_message(message.chat.id, t("family_account_not_found", lang), reply_markup=types.ReplyKeyboardRemove())
                 return
 
@@ -407,29 +419,41 @@ def process_head_choice(message, family_name):
             from src.database_manager import set_family_head
             set_family_head(f_id, parent_id)
 
+            clear_user_state(message.chat.id)
             send_content(message.chat.id, t("family_created_self", lang, name=family_name))
         except Exception as e:
             logger.error(f"Error creating family with self as head: {e}")
+            clear_user_state(message.chat.id)
             send_content(message.chat.id, t("family_error", lang))
     else:
+        # Переход на ввод ФИО внешнего главы.
+        set_user_state(message.chat.id, "awaiting_head_fio", family_name)
         send_menu_safe(message.chat.id, t("family_enter_head_fio", lang))
-        bot.register_next_step_handler_by_chat_id(message.chat.id, process_head_fio, family_name)
 
 def process_head_fio(message, family_name):
+    """Шаг 3 admin flow. State: awaiting_head_fio (data=family_name)."""
     head_fio = message.text.strip()
     lang = get_user_lang(message.chat.id)
+    from src.database_manager import set_user_state
     if len(head_fio) < 3:
+        # state остаётся, ждём корректный FIO
         bot.send_message(message.chat.id, t("family_fio_too_short", lang))
         return
 
-    msg = bot.send_message(message.chat.id, t("family_enter_phone", lang, fio=head_fio), parse_mode='Markdown')
-    bot.register_next_step_handler(msg, process_head_phone, family_name, head_fio)
+    # Переход на ввод телефона. data — JSON с family_name + head_fio.
+    import json as _json
+    set_user_state(message.chat.id, "awaiting_head_phone",
+                   _json.dumps({"family_name": family_name, "head_fio": head_fio}))
+    bot.send_message(message.chat.id, t("family_enter_phone", lang, fio=head_fio), parse_mode='Markdown')
 
 def process_head_phone(message, family_name, head_fio):
+    """Шаг 4 admin flow. State: awaiting_head_phone (data=json)."""
     head_phone = message.text.strip()
     lang = get_user_lang(message.chat.id)
+    from src.database_manager import clear_user_state
 
     if not validate_phone(head_phone):
+        # state остаётся, ждём корректный телефон
         bot.send_message(message.chat.id, t("family_phone_invalid", lang))
         return
 
@@ -441,10 +465,12 @@ def process_head_phone(message, family_name, head_fio):
         from src.database_manager import set_family_head
         set_family_head(f_id, p_id)
 
+        clear_user_state(message.chat.id)
         send_content(
             message.chat.id,
             t("family_created_other", lang, family=family_name, head=head_fio, phone=head_phone)
         )
     except Exception as e:
         logger.error(f"Error creating family with external head: {e}")
+        clear_user_state(message.chat.id)
         send_content(message.chat.id, t("family_error", lang))

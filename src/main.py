@@ -65,6 +65,10 @@ from src.i18n import load_translations, t, BUTTON_ACTIONS
 from src.monitor_engine import start_polling
 
 # Import handlers to register them
+# state_flows ПЕРВЫЙ — он регистрирует state-machine message_handler'ы которые
+# должны обходиться pyTelegramBotAPI'ом раньше generic-обработчиков из других
+# модулей. Регистрация в порядке import.
+import src.handlers.state_flows  # noqa: F401
 import src.handlers.admin
 import src.handlers.family
 import src.handlers.communication
@@ -405,16 +409,18 @@ def callback_up_create_family_new(call):
     update_parent_telegram_id(phone, user_id)
     clear_user_state(user_id)
 
-    # Дальше тот же flow что у уже зарегистрированного юзера:
-    set_user_state(user_id, "selfserve_family_name", "1")
+    # Дальше тот же flow что у уже зарегистрированного юзера. Состояние
+    # хранится в user_states (persistent — переживёт рестарт бота), маршрут
+    # на следующий шаг — через src/handlers/state_flows.py.
+    # data='selfserve' — маркер для process_family_name чтобы сразу сделать
+    # юзера главой без второго экрана выбора.
+    set_user_state(user_id, "awaiting_family_name", "selfserve")
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
-    msg = bot.send_message(
+    bot.send_message(
         call.message.chat.id, t("family_create_title", lang),
         parse_mode='Markdown', reply_markup=markup,
     )
-    from src.handlers.admin import process_family_name
-    bot.register_next_step_handler(msg, process_family_name)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_create_family')
@@ -434,18 +440,16 @@ def callback_up_create_family(call):
     lang = get_user_lang(user_id)
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(types.KeyboardButton(t("btn_cancel", lang)))
-    msg = bot.send_message(
+    # Состояние в user_states (persistent), маршрут — state_flows._on_family_name.
+    # data='selfserve' → process_family_name автоматически делает юзера главой.
+    from src.database_manager import set_user_state
+    set_user_state(user_id, "awaiting_family_name", "selfserve")
+    bot.send_message(
         call.message.chat.id,
         t("family_create_title", lang),
         parse_mode='Markdown',
         reply_markup=markup
     )
-    # Сохраняем намерение в state, чтобы process_family_name знал что
-    # юзер автоматически становится главой (без второго экрана выбора).
-    from src.database_manager import set_user_state
-    set_user_state(user_id, "selfserve_family_name", "1")
-    from src.handlers.admin import process_family_name
-    bot.register_next_step_handler(msg, process_family_name)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_have_invite')
