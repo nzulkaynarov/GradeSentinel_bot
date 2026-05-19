@@ -402,11 +402,13 @@ def api_dashboard(student_id):
     trend_by_day = compute_trend_by_day(grades_current, days)
     by_subject = compute_by_subject(grades_current)
 
-    # User info — для приветствия и определения языка
+    # User info — для приветствия и определения языка.
+    # telegram_first_name пишется в parents при /start — приоритетнее, чем fio
+    # (которое часто формальное ФИО или admin-заданное).
     user_info = get_user_info_by_tg_id(telegram_id) or {}
     lang = get_user_lang(telegram_id)
-    first_name = ""
-    if user_info.get("fio"):
+    first_name = user_info.get("telegram_first_name") or ""
+    if not first_name and user_info.get("fio"):
         first_name = user_info["fio"].split()[0]
 
     # AI-инсайт (опционально, кэш 6h, безопасно деградирует если Claude недоступен)
@@ -462,7 +464,9 @@ def api_dashboard_init():
         })
 
     user_info = get_user_info_by_tg_id(telegram_id) or {}
-    first_name = user_info.get("fio", "").split()[0] if user_info.get("fio") else ""
+    first_name = user_info.get("telegram_first_name") or ""
+    if not first_name and user_info.get("fio"):
+        first_name = user_info["fio"].split()[0]
 
     return jsonify({
         "students": [

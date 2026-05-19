@@ -76,6 +76,14 @@ def init_db():
                 cursor.execute("ALTER TABLE parents ADD COLUMN notify_mode TEXT DEFAULT 'instant'")
                 logger.info("Database migration: notify_mode column added.")
 
+            # Миграция: telegram_first_name (для приветствий "Здравствуйте, Super!").
+            # Обновляется на каждом /start — Telegram-имя могло поменяться.
+            cursor.execute("PRAGMA table_info(parents)")
+            columns_fresh = [column[1] for column in cursor.fetchall()]
+            if 'telegram_first_name' not in columns_fresh:
+                cursor.execute("ALTER TABLE parents ADD COLUMN telegram_first_name TEXT")
+                logger.info("Database migration: telegram_first_name column added.")
+
         # 1. Семьи
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS families (
@@ -120,7 +128,8 @@ def init_db():
             fio TEXT NOT NULL,
             phone TEXT UNIQUE NOT NULL,
             telegram_id INTEGER UNIQUE,
-            role TEXT DEFAULT 'senior'
+            role TEXT DEFAULT 'senior',
+            telegram_first_name TEXT
         )
         ''')
 
@@ -719,6 +728,8 @@ from src.db.auth import (  # noqa: E402, F401
     get_parent_by_telegram,
     get_parent_id_by_telegram,
     update_parent_telegram_id,
+    update_parent_first_name,
+    get_greeting_name,
     add_parent,
     get_parent_role,
     get_user_lang,

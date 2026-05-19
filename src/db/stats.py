@@ -71,7 +71,7 @@ def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, fio, phone, role FROM parents WHERE telegram_id = ?",
+            "SELECT id, fio, phone, role, telegram_first_name FROM parents WHERE telegram_id = ?",
             (telegram_id,),
         )
         user = cursor.fetchone()
@@ -91,6 +91,7 @@ def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
             'fio': user['fio'],
             'phone': user['phone'],
             'role': user['role'],
+            'telegram_first_name': user['telegram_first_name'] if 'telegram_first_name' in user.keys() else None,
             'families': families,
         }
 

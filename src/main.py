@@ -60,7 +60,7 @@ def _invalidate_panel_cache(chat_id: int):
 
 from src.bot_instance import bot
 from src.ui import send_menu_safe
-from src.database_manager import init_db, get_parent_by_phone, update_parent_telegram_id, get_parent_role, get_user_lang
+from src.database_manager import init_db, get_parent_by_phone, update_parent_telegram_id, update_parent_first_name, get_greeting_name, get_parent_role, get_user_lang
 from src.i18n import load_translations, t, BUTTON_ACTIONS
 from src.monitor_engine import start_polling
 
@@ -128,6 +128,7 @@ def send_welcome(message):
     # Автоматическая авторизация админа
     if admin_id_env and str(user_id) == str(admin_id_env):
         update_parent_telegram_id(f"admin_{user_id}", user_id)
+        update_parent_first_name(user_id, message.from_user.first_name)
         send_menu_safe(user_id, t("auth_admin_welcome", lang))
         return
 
@@ -135,6 +136,7 @@ def send_welcome(message):
     from src.database_manager import is_head_of_any_family, has_children_for_grades
     role = get_parent_role(user_id)
     if role:
+        update_parent_first_name(user_id, message.from_user.first_name)
         if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
             send_menu_safe(user_id, t("auth_not_linked", lang, btn_support=t("btn_support", lang)))
             return
@@ -204,6 +206,9 @@ def contact_handler(message):
 
         if parent:
             update_parent_telegram_id(phone, user_id)
+            update_parent_first_name(user_id, message.from_user.first_name)
+            # Перечитываем после update — приветствие использует свежее имя
+            parent = get_parent_by_phone(phone) or parent
 
             # Сохраняем выбранный язык (если выбран при /start)
             if chosen_lang:
@@ -211,12 +216,13 @@ def contact_handler(message):
             lang = chosen_lang or get_user_lang(user_id)
 
             role = parent.get('role', 'senior')
+            greeting_name = get_greeting_name(parent)
             from src.database_manager import is_head_of_any_family, has_children_for_grades
 
             if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
-                welcome_msg = t("auth_not_linked_contact", lang, name=parent['fio'])
+                welcome_msg = t("auth_not_linked_contact", lang, name=greeting_name)
             else:
-                welcome_msg = t("auth_success", lang, name=parent['fio'])
+                welcome_msg = t("auth_success", lang, name=greeting_name)
                 if role == 'admin':
                     welcome_msg += t("auth_role_admin", lang)
                 elif is_head_of_any_family(user_id):
@@ -235,7 +241,7 @@ def contact_handler(message):
             onb_state = get_user_state(user_id)
             if not (onb_state and onb_state.get('state') == 'onboarding_done'):
                 set_user_state(user_id, 'onboarding_done', '1')
-                _start_onboarding(user_id, parent['fio'].split()[0] if parent['fio'] else 'друг')
+                _start_onboarding(user_id, greeting_name)
         else:
             lang = chosen_lang or 'ru'
             # Self-serve путь вместо тупика: юзер не в БД → две кнопки
@@ -407,6 +413,7 @@ def callback_up_create_family_new(call):
         fio_default = f"{fio_default} {call.from_user.last_name}"
     add_parent(fio_default, phone, role='senior')
     update_parent_telegram_id(phone, user_id)
+    update_parent_first_name(user_id, call.from_user.first_name)
     clear_user_state(user_id)
 
     # Дальше тот же flow что у уже зарегистрированного юзера. Состояние

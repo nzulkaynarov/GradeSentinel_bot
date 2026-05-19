@@ -68,6 +68,35 @@ def update_parent_telegram_id(phone: str, telegram_id: int):
         )
 
 
+def update_parent_first_name(telegram_id: int, first_name: Optional[str]):
+    """Обновляет Telegram first_name. Используется в приветствиях вместо `fio`.
+    Юзер может менять имя в Telegram — поэтому пишем на каждом /start."""
+    if not first_name:
+        return
+    first_name = first_name.strip()[:64]
+    if not first_name:
+        return
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE parents SET telegram_first_name = ? '
+            'WHERE telegram_id = ? AND (telegram_first_name IS NULL OR telegram_first_name != ?)',
+            (first_name, telegram_id, first_name),
+        )
+
+
+def get_greeting_name(parent: Dict[str, Any]) -> str:
+    """Имя для приветствия: Telegram first_name → первое слово ФИО → 'друг'."""
+    if not parent:
+        return 'друг'
+    name = parent.get('telegram_first_name')
+    if name:
+        return name
+    fio = parent.get('fio') or ''
+    first = fio.split()[0] if fio else ''
+    return first or 'друг'
+
+
 # ─── Создание родителя ──────────────────────────────────────────────
 def add_parent(fio: str, phone: str, role: str = 'senior') -> Optional[int]:
     """Создаёт нового родителя и возвращает его ID. INSERT OR IGNORE: при
