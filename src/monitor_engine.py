@@ -312,7 +312,16 @@ def _shadow_compare_with_master(student_id: int, display_name: str,
     try:
         from src.history_importer import read_master_sheet_today_grades
 
-        master_grades = read_master_sheet_today_grades(spreadsheet_id)
+        master_raw = read_master_sheet_today_grades(spreadsheet_id)
+        # Нормализуем master через тот же sanitize_cell что и production path
+        # — иначе «2 / 5» в master vs «2/5» в today дадут false-positive divergence.
+        master_grades: List[Tuple[str, str]] = []
+        for subj, raw in master_raw:
+            parsed = sanitize_cell(raw)
+            if not parsed:
+                continue
+            master_grades.append((subj, _cell_raw_text(parsed)))
+
         today_set = set(today_sheet_grades)
         master_set = set(master_grades)
 
@@ -405,10 +414,6 @@ def _check_for_new_grades_impl():
             if not raw_grade:
                 continue
 
-            # Запоминаем для shadow compare (только реальные оценки, не пробелы)
-            if subject:
-                today_sheet_grades.append((subject, raw_grade))
-
             # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню.
             # cell_reference остался как metadata (origin tag для debug/дашборда),
             # не identity-ключ — identity это content-key (student, subject, date)
@@ -425,6 +430,12 @@ def _check_for_new_grades_impl():
 
             new_clean_text = _cell_raw_text(new_grades)
             new_grade_value = _cell_avg_grade(new_grades)
+
+            # Shadow compare: записываем уже-валидированную оценку
+            # (sanitize_cell отбросил служебные заголовки типа «21 мая чт»).
+            # Используем new_clean_text — нормализованный вид (как в БД), чтобы
+            # сравнение с master sheet было корректным для multi-grade «2/5».
+            today_sheet_grades.append((subject, new_clean_text))
 
             existing = get_existing_grade_by_content(student_id, subject, tashkent_today)
             old_clean_text = existing['raw_text'] if existing else None
