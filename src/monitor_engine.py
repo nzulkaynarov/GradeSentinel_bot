@@ -188,12 +188,6 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
     if not groups:
         return
 
-    if is_quiet_hours():
-        logger.info(
-            f"Group notification suppressed (quiet hours) for student={student_id}"
-        )
-        return
-
     # Выбираем версию сообщения. Если message — dict, берём по первому родителю.
     # Если все варианты совпадают — пофиг чьим языком пользоваться.
     if isinstance(message, dict):
@@ -208,9 +202,26 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
     else:
         kb = inline_markup
 
+    quiet = is_quiet_hours()
+
     for grp in groups:
         chat_id = grp['chat_id']
         thread_id = grp.get('message_thread_id')
+
+        if quiet:
+            # Тихие часы: пишем в group_notification_queue, утренний flush
+            # (07:00) добавит к личной morning-сводке. Без inline_markup —
+            # после ночи callback'и могут устареть.
+            try:
+                from src.database_manager import queue_group_notification
+                queue_group_notification(chat_id, thread_id, msg_text)
+                logger.info(
+                    f"Group notification queued (quiet hours) for chat={chat_id} thread={thread_id} (student={student_id})"
+                )
+            except Exception as e:
+                logger.error(f"Failed to queue group notification to {chat_id} (thread={thread_id}): {e}")
+            continue
+
         try:
             kwargs = {
                 'parse_mode': 'HTML',
