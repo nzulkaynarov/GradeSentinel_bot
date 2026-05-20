@@ -53,8 +53,19 @@ def _reset_pending():
     me._pending_grades.clear()
 
 
+_RU_MONTHS_GENITIVE = {
+    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+    5: "мая", 6: "июня", 7: "июля", 8: "августа",
+    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
+}
+
+
 def _make_sheet(grades):
-    rows = [["Сегодня", "Kid"], ["Оценки", "13 мая"]]
+    """Эмулирует «Все оценки!» с одной колонкой для сегодняшней даты."""
+    from datetime import datetime, timezone, timedelta
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    date_header = f"{today.day} {_RU_MONTHS_GENITIVE[today.month]}"
+    rows = [["Оценки все даты", "Столбец 2"], ["Оценки", date_header]]
     for subj, val in grades.items():
         rows.append([subj, val])
     return rows
