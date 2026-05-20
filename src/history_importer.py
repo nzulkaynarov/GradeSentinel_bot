@@ -417,3 +417,75 @@ def _col_letter(col_index: int) -> str:
         if idx < 0:
             break
     return result
+
+
+# ─── MONOSOURCE_GRADES (этап 4 RFC, shadow run 2026-05-21) ───────────
+# Чтение «сегодняшней колонки» из листа «Все оценки» — для shadow-сравнения
+# с тем что monitor читает из «Сегодня!». После окончания shadow run и
+# GO-решения — заменяет логику «Сегодня!» в monitor_engine полностью.
+MASTER_SHEET_RANGE = "Все оценки!A1:ZZ50"
+
+
+def _parse_master_sheet_for_date(data: List[List[Any]], target_date) -> List[Tuple[str, str]]:
+    """Pure-функция (для тестов): находит колонку с `target_date` в шапке (row 2)
+    и возвращает [(subject, raw_grade)] из этой колонки.
+
+    Возвращает только непустые значения. Пропускает служебные строки
+    («Посещаемость», числовые заголовки).
+    """
+    if not data or len(data) < 3:
+        return []
+
+    # row 2 (index 1) — даты в шапке. Ищем колонку для target_date.
+    date_row = data[1]
+    target_col = None
+    for col_idx, cell in enumerate(date_row):
+        if col_idx == 0:
+            continue  # первый столбец — «Оценки»
+        parsed = _parse_russian_date(str(cell).strip()) if cell else None
+        if parsed and parsed.date() == target_date:
+            target_col = col_idx
+            break
+
+    if target_col is None:
+        return []
+
+    # row 3+ — предметы и их оценки в target_col.
+    grades: List[Tuple[str, str]] = []
+    for row in data[2:]:
+        if not row or len(row) <= target_col:
+            continue
+        subject = str(row[0]).strip() if row[0] is not None else ""
+        if not subject or subject.lower() in SKIP_SUBJECTS:
+            continue
+        # Пропускаем служебные числовые заголовки (0, 1, 2…)
+        try:
+            int(subject)
+            continue
+        except ValueError:
+            pass
+
+        cell_val = row[target_col]
+        raw = str(cell_val).strip() if cell_val is not None else ""
+        if not raw:
+            continue
+        grades.append((subject, raw))
+
+    return grades
+
+
+def read_master_sheet_today_grades(spreadsheet_id: str) -> List[Tuple[str, str]]:
+    """Читает «Все оценки!» и возвращает [(subject, raw_grade)] для сегодняшней
+    даты по Ташкенту. Пустой список — нет такой даты в шапке или нет данных.
+
+    Используется в monitor'е в shadow-режиме (этап 4 RFC). После GO-решения
+    эта функция заменит чтение «Сегодня!» полностью."""
+    try:
+        data = get_sheet_data(spreadsheet_id, MASTER_SHEET_RANGE)
+    except Exception as e:
+        logger.warning(f"[SHADOW] Failed to fetch master sheet for {spreadsheet_id}: {e}")
+        return []
+    if data is None:
+        return []
+    today = _tashkent_today_date()  # уже date, не datetime
+    return _parse_master_sheet_for_date(data, today)

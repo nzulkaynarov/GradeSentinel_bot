@@ -295,6 +295,51 @@ def _fetch_student_sheet(student: dict, range_name: str):
     return student, data, display_name
 
 
+def _shadow_compare_with_master(student_id: int, display_name: str,
+                                spreadsheet_id: str,
+                                today_sheet_grades: List[Tuple[str, str]]):
+    """MONOSOURCE_GRADES shadow run (этап 4 RFC).
+
+    Читает «Все оценки!» за сегодняшнюю дату и сравнивает с тем что monitor
+    нашёл в «Сегодня!». Логирует [SHADOW] для аналитики latency и расхождений
+    перед переключением источника. НЕ блокирует production path при любых
+    ошибках — это observability, не действие.
+
+    После 24ч прогона анализ:
+      grep '\\[SHADOW\\]' | awk ... — оценить долю циклов где master_only/today_only != 0
+      и среднюю latency между обнаружением в «Сегодня!» и в «Все оценки!».
+    """
+    try:
+        from src.history_importer import read_master_sheet_today_grades
+
+        master_grades = read_master_sheet_today_grades(spreadsheet_id)
+        today_set = set(today_sheet_grades)
+        master_set = set(master_grades)
+
+        only_today = today_set - master_set
+        only_master = master_set - today_set
+        in_both = today_set & master_set
+
+        logger.info(
+            f"[SHADOW] student={student_id} ({display_name}) "
+            f"match={len(in_both)} today_only={len(only_today)} "
+            f"master_only={len(only_master)}"
+        )
+        for subj, raw in sorted(only_today):
+            logger.info(
+                f"[SHADOW_DIVERGENCE] today_only student={student_id} "
+                f"subject={subj!r} raw={raw!r}"
+            )
+        for subj, raw in sorted(only_master):
+            logger.info(
+                f"[SHADOW_DIVERGENCE] master_only student={student_id} "
+                f"subject={subj!r} raw={raw!r}"
+            )
+    except Exception as e:
+        # Shadow run — никогда не валит monitor. Лог и едем дальше.
+        logger.warning(f"[SHADOW] compare failed for student {student_id}: {e}")
+
+
 def check_for_new_grades():
     if not _polling_lock.acquire(blocking=False):
         logger.warning("Previous polling cycle still running, skipping this iteration")
@@ -345,6 +390,11 @@ def _check_for_new_grades_impl():
 
         logger.info(f"Processing sheet for student: {display_name} (ID: {student_id})")
 
+        # MONOSOURCE_GRADES shadow run (этап 4 RFC): собираем что нашли в
+        # «Сегодня!» — потом сравним с «Все оценки!» (та же дата). Цель —
+        # измерить latency master sheet vs today sheet перед переключением.
+        today_sheet_grades: List[Tuple[str, str]] = []
+
         for row_idx, row in enumerate(data[1:], start=2):
             if not isinstance(row, list) or len(row) < 2:
                 continue
@@ -354,6 +404,10 @@ def _check_for_new_grades_impl():
 
             if not raw_grade:
                 continue
+
+            # Запоминаем для shadow compare (только реальные оценки, не пробелы)
+            if subject:
+                today_sheet_grades.append((subject, raw_grade))
 
             # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню.
             # cell_reference остался как metadata (origin tag для debug/дашборда),
@@ -446,6 +500,10 @@ def _check_for_new_grades_impl():
                         'change_type': 'new',
                         'old_text': None,
                     })
+
+        # MONOSOURCE_GRADES shadow run (этап 4 RFC). Сравнить today_sheet_grades
+        # с тем же что в «Все оценки!» за сегодняшнюю дату. Не блокирует уведомления.
+        _shadow_compare_with_master(student_id, display_name, spreadsheet_id, today_sheet_grades)
 
     # Отправляем собранные уведомления
     for (tg_id, student_id), grades in batch.items():
