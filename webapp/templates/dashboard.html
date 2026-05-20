@@ -132,6 +132,83 @@
             </div>
         </section>
 
+        <!-- Итоги учебного года (lazy-loaded по клику) -->
+        <section class="card collapsible card-year-report" id="year-section">
+            <header class="card-header">
+                <h2 class="card-title">
+                    🎓 <span data-i18n="section_year_report">Итоги учебного года</span>
+                </h2>
+                <button class="toggle-btn" aria-expanded="false">▾</button>
+            </header>
+            <div class="card-body">
+                <div id="year-loading" class="hidden" data-i18n="year_loading">Загружаю итоги года…</div>
+                <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
+                <div id="year-content" class="hidden">
+                    <div class="year-hero">
+                        <div class="year-avg" id="year-avg">—</div>
+                        <div class="year-meta">
+                            <span data-i18n="year_avg_label">средний за год</span>
+                            <span class="year-period" id="year-period"></span>
+                        </div>
+                    </div>
+                    <div class="year-grid">
+                        <div class="year-stat">
+                            <div class="year-stat-value" id="year-total-grades">—</div>
+                            <div class="year-stat-label" data-i18n="year_total_grades">оценок</div>
+                        </div>
+                        <div class="year-stat">
+                            <div class="year-stat-value" id="year-growth">—</div>
+                            <div class="year-stat-label" data-i18n="year_growth_label">динамика года</div>
+                        </div>
+                        <div class="year-stat">
+                            <div class="year-stat-value" id="year-streak">—</div>
+                            <div class="year-stat-label" data-i18n="year_streak_label">лучшая серия 5</div>
+                        </div>
+                    </div>
+                    <p class="year-insight" id="year-insight"></p>
+                    <div class="year-best-worst">
+                        <div class="year-month-card year-month-best">
+                            <span class="year-month-label" data-i18n="year_best_month">🌟 Лучший месяц</span>
+                            <span class="year-month-name" id="year-best-month">—</span>
+                        </div>
+                        <div class="year-month-card year-month-worst">
+                            <span class="year-month-label" data-i18n="year_worst_month">⚠️ Сложный месяц</span>
+                            <span class="year-month-name" id="year-worst-month">—</span>
+                        </div>
+                    </div>
+                    <div class="year-subjects">
+                        <h3 data-i18n="year_top_subjects">Сильные предметы</h3>
+                        <div id="year-top-subjects" class="subjects-list"></div>
+                    </div>
+                    <div class="year-subjects year-subjects-problem hidden" id="year-problem-wrap">
+                        <h3 data-i18n="year_problem_subjects">Над чем работать летом</h3>
+                        <div id="year-problem-subjects" class="subjects-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI-чат (lazy, открывается по кнопке) -->
+        <section class="card collapsible card-ai-chat" id="chat-section">
+            <header class="card-header">
+                <h2 class="card-title">
+                    💬 <span data-i18n="section_ai_chat">Спросить AI</span>
+                </h2>
+                <button class="toggle-btn" aria-expanded="false">▾</button>
+            </header>
+            <div class="card-body">
+                <p class="chat-hint" data-i18n="chat_hint">Спросите про оценки ребёнка простыми словами</p>
+                <div id="chat-history" class="chat-history"></div>
+                <div class="chat-input-wrap">
+                    <input type="text" id="chat-input" class="chat-input"
+                           data-i18n-placeholder="chat_placeholder"
+                           placeholder="Например: почему упала математика?">
+                    <button id="chat-send" class="btn-primary chat-send" data-i18n="chat_send">Спросить</button>
+                </div>
+                <p id="chat-error" class="chat-error hidden"></p>
+            </div>
+        </section>
+
     </div>
 
     <script src="/static/app.js"></script>

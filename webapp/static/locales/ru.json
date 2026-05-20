@@ -54,5 +54,25 @@
 
   "badge_new": "новое",
   "show_more": "показать ещё",
-  "show_less": "свернуть"
+  "show_less": "свернуть",
+
+  "section_year_report": "Итоги учебного года",
+  "year_loading": "Загружаю итоги года…",
+  "year_empty": "Недостаточно данных за год",
+  "year_avg_label": "средний за год",
+  "year_total_grades": "оценок",
+  "year_growth_label": "динамика года",
+  "year_streak_label": "лучшая серия 5",
+  "year_best_month": "🌟 Лучший месяц",
+  "year_worst_month": "⚠️ Сложный месяц",
+  "year_top_subjects": "Сильные предметы",
+  "year_problem_subjects": "Над чем работать летом",
+
+  "section_ai_chat": "Спросить AI",
+  "chat_hint": "Спросите про оценки ребёнка простыми словами",
+  "chat_placeholder": "Например: почему упала математика?",
+  "chat_send": "Спросить",
+  "chat_thinking": "AI думает…",
+  "chat_error": "Не получилось получить ответ. Попробуйте ещё раз.",
+  "chat_rate_limited": "Слишком много вопросов — подождите минуту"
 }

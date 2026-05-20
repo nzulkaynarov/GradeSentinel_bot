@@ -32,6 +32,8 @@ const state = {
     dashboard: null,            // последний загруженный snapshot
     quarters: null,             // lazy-loaded
     quartersLoading: false,
+    yearReport: null,           // lazy-loaded, end-of-year отчёт
+    yearLoading: false,
     trendChart: null,
 };
 
@@ -164,12 +166,14 @@ function onPeriodChange(btn) {
     btn.classList.add("active");
     state.currentDays = parseInt(btn.dataset.days, 10);
     state.quarters = null;  // период сменился — обнулить четверти
+    // year report не зависит от периода — не обнуляем
     loadDashboard();
 }
 
 function switchStudent(studentId) {
     state.currentStudentId = studentId;
     state.quarters = null;
+    state.yearReport = null;  // сменился ребёнок — перезагрузим отчёт за год
 
     document.querySelectorAll(".student-tab").forEach(tab => {
         tab.classList.toggle("active", parseInt(tab.dataset.id, 10) === studentId);
@@ -223,6 +227,10 @@ function renderDashboard() {
 
     // Quarters: lazy при раскрытии секции
     setupQuartersLazy();
+    // Year report: lazy при раскрытии секции
+    setupYearReportLazy();
+    // AI chat: на клике «Спросить»
+    setupChatUI();
 }
 
 function renderHero(summary) {
@@ -476,6 +484,159 @@ function renderQuartersTable() {
     }
     html += `</div>`;
     container.innerHTML = html;
+}
+
+// ============ YEAR REPORT — LAZY ============
+
+function setupYearReportLazy() {
+    const section = document.getElementById("year-section");
+    if (!section) return;
+    section.addEventListener("toggle:open", async () => {
+        if (state.yearReport !== null || state.yearLoading) return;
+        state.yearLoading = true;
+        document.getElementById("year-loading").classList.remove("hidden");
+        try {
+            state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}`);
+            renderYearReport();
+        } catch (e) {
+            console.warn("Year report load failed", e);
+            document.getElementById("year-loading").classList.add("hidden");
+            document.getElementById("year-empty").classList.remove("hidden");
+        } finally {
+            state.yearLoading = false;
+        }
+    }, { once: true });
+}
+
+function renderYearReport() {
+    const report = state.yearReport;
+    document.getElementById("year-loading").classList.add("hidden");
+
+    if (!report || report.numeric_count < 1) {
+        document.getElementById("year-empty").classList.remove("hidden");
+        return;
+    }
+
+    document.getElementById("year-content").classList.remove("hidden");
+
+    document.getElementById("year-avg").textContent = report.year_avg !== null ? report.year_avg.toFixed(2) : "—";
+    document.getElementById("year-total-grades").textContent = report.numeric_count;
+
+    const growthEl = document.getElementById("year-growth");
+    if (report.growth !== null && report.growth !== undefined) {
+        const sign = report.growth > 0 ? "+" : "";
+        growthEl.textContent = `${sign}${report.growth}`;
+        growthEl.className = "year-stat-value " + (report.growth > 0 ? "grade-good" : (report.growth < 0 ? "grade-warn" : ""));
+    } else {
+        growthEl.textContent = "—";
+    }
+
+    document.getElementById("year-streak").textContent = report.best_streak || 0;
+
+    if (report.best_month) {
+        document.getElementById("year-best-month").textContent =
+            `${report.best_month.label} · ${report.best_month.avg.toFixed(2)}`;
+    }
+    if (report.worst_month) {
+        document.getElementById("year-worst-month").textContent =
+            `${report.worst_month.label} · ${report.worst_month.avg.toFixed(2)}`;
+    }
+
+    // Период учебного года
+    if (report.school_year_start) {
+        const startYear = report.school_year_start.slice(0, 4);
+        document.getElementById("year-period").textContent = ` · ${startYear}—${parseInt(startYear) + 1}`;
+    }
+
+    // Top/problem subjects
+    const topListEl = document.getElementById("year-top-subjects");
+    topListEl.innerHTML = renderSubjectsList(report.top_subjects);
+    if (report.problem_subjects && report.problem_subjects.length) {
+        document.getElementById("year-problem-wrap").classList.remove("hidden");
+        document.getElementById("year-problem-subjects").innerHTML = renderSubjectsList(report.problem_subjects);
+    }
+
+    // AI insight
+    if (report.ai_insight) {
+        document.getElementById("year-insight").textContent = report.ai_insight;
+    }
+}
+
+function renderSubjectsList(subjects) {
+    if (!subjects || subjects.length === 0) return `<p class="empty-hint">—</p>`;
+    return subjects.map(s => `
+        <div class="subject-row">
+            <span class="subject-name">${escapeHtml(s.name)}</span>
+            <span class="${gradeColorClass(s.avg)}">${s.avg.toFixed(2)}</span>
+            <span class="subject-count muted">${s.count}</span>
+        </div>
+    `).join("");
+}
+
+// ============ AI CHAT ============
+
+function setupChatUI() {
+    const input = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("chat-send");
+    if (!input || !sendBtn) return;
+
+    // Чистим historу между переключениями студентов
+    document.getElementById("chat-history").innerHTML = "";
+
+    const send = async () => {
+        const question = input.value.trim();
+        if (!question) return;
+        input.value = "";
+        appendChatMessage("user", question);
+        const thinkingNode = appendChatMessage("ai", t("chat_thinking"));
+        thinkingNode.classList.add("chat-thinking");
+
+        try {
+            const res = await fetch("/api/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...API_HEADERS,
+                },
+                body: JSON.stringify({
+                    student_id: state.currentStudentId,
+                    question: question,
+                }),
+            });
+            if (res.status === 429) {
+                thinkingNode.textContent = t("chat_rate_limited");
+                thinkingNode.classList.remove("chat-thinking");
+                thinkingNode.classList.add("chat-error-msg");
+                return;
+            }
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            thinkingNode.textContent = data.answer || t("chat_error");
+            thinkingNode.classList.remove("chat-thinking");
+        } catch (e) {
+            console.warn("Chat failed", e);
+            thinkingNode.textContent = t("chat_error");
+            thinkingNode.classList.remove("chat-thinking");
+            thinkingNode.classList.add("chat-error-msg");
+        }
+    };
+
+    sendBtn.onclick = send;
+    input.onkeydown = (e) => {
+        if (e.key === "Enter") send();
+    };
+}
+
+function appendChatMessage(role, text) {
+    const container = document.getElementById("chat-history");
+    const div = document.createElement("div");
+    div.className = `chat-msg chat-msg-${role}`;
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
 }
 
 // ============ COLLAPSIBLE ============

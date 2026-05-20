@@ -54,5 +54,25 @@
 
   "badge_new": "new",
   "show_more": "show more",
-  "show_less": "show less"
+  "show_less": "show less",
+
+  "section_year_report": "School year recap",
+  "year_loading": "Loading year recap…",
+  "year_empty": "Not enough data for the year",
+  "year_avg_label": "year average",
+  "year_total_grades": "grades",
+  "year_growth_label": "year-over-year growth",
+  "year_streak_label": "longest A streak",
+  "year_best_month": "🌟 Best month",
+  "year_worst_month": "⚠️ Tough month",
+  "year_top_subjects": "Strong subjects",
+  "year_problem_subjects": "Work on over summer",
+
+  "section_ai_chat": "Ask AI",
+  "chat_hint": "Ask about your child's grades in plain words",
+  "chat_placeholder": "E.g., why did math drop?",
+  "chat_send": "Ask",
+  "chat_thinking": "AI is thinking…",
+  "chat_error": "Couldn't get a response. Try again.",
+  "chat_rate_limited": "Too many questions — wait a minute"
 }
