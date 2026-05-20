@@ -38,9 +38,24 @@ def setup_student(temp_db):
     return {'student_id': student_id, 'tg_id': 999999, 'spreadsheet_id': 'ss-pending'}
 
 
+_RU_MONTHS_GENITIVE = {
+    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+    5: "мая", 6: "июня", 7: "июля", 8: "августа",
+    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
+}
+
+
 def _make_sheet(grade_for_subject: dict) -> list:
-    """Эмулирует ответ Sheets API для листа «Сегодня» (A1:B50)."""
-    rows = [["Сегодня", "Kid Display"], ["Оценки", "13 мая ср"]]
+    """Эмулирует ответ Sheets API для листа «Все оценки!» с одной колонкой
+    для сегодняшней даты (Tashkent TZ). После переключения monitor'а на
+    master sheet в B5 — это та структура которую monitor получает."""
+    from datetime import datetime, timezone, timedelta
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    date_header = f"{today.day} {_RU_MONTHS_GENITIVE[today.month]}"
+    rows = [
+        ["Оценки все даты", "Столбец 2"],
+        ["Оценки", date_header],
+    ]
     for subj, value in grade_for_subject.items():
         rows.append([subj, value])
     return rows

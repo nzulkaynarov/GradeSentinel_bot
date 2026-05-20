@@ -295,60 +295,6 @@ def _fetch_student_sheet(student: dict, range_name: str):
     return student, data, display_name
 
 
-def _shadow_compare_with_master(student_id: int, display_name: str,
-                                spreadsheet_id: str,
-                                today_sheet_grades: List[Tuple[str, str]]):
-    """MONOSOURCE_GRADES shadow run (этап 4 RFC).
-
-    Читает «Все оценки!» за сегодняшнюю дату и сравнивает с тем что monitor
-    нашёл в «Сегодня!». Логирует [SHADOW] для аналитики latency и расхождений
-    перед переключением источника. НЕ блокирует production path при любых
-    ошибках — это observability, не действие.
-
-    После 24ч прогона анализ:
-      grep '\\[SHADOW\\]' | awk ... — оценить долю циклов где master_only/today_only != 0
-      и среднюю latency между обнаружением в «Сегодня!» и в «Все оценки!».
-    """
-    try:
-        from src.history_importer import read_master_sheet_today_grades
-
-        master_raw = read_master_sheet_today_grades(spreadsheet_id)
-        # Нормализуем master через тот же sanitize_cell что и production path
-        # — иначе «2 / 5» в master vs «2/5» в today дадут false-positive divergence.
-        master_grades: List[Tuple[str, str]] = []
-        for subj, raw in master_raw:
-            parsed = sanitize_cell(raw)
-            if not parsed:
-                continue
-            master_grades.append((subj, _cell_raw_text(parsed)))
-
-        today_set = set(today_sheet_grades)
-        master_set = set(master_grades)
-
-        only_today = today_set - master_set
-        only_master = master_set - today_set
-        in_both = today_set & master_set
-
-        logger.info(
-            f"[SHADOW] student={student_id} ({display_name}) "
-            f"match={len(in_both)} today_only={len(only_today)} "
-            f"master_only={len(only_master)}"
-        )
-        for subj, raw in sorted(only_today):
-            logger.info(
-                f"[SHADOW_DIVERGENCE] today_only student={student_id} "
-                f"subject={subj!r} raw={raw!r}"
-            )
-        for subj, raw in sorted(only_master):
-            logger.info(
-                f"[SHADOW_DIVERGENCE] master_only student={student_id} "
-                f"subject={subj!r} raw={raw!r}"
-            )
-    except Exception as e:
-        # Shadow run — никогда не валит monitor. Лог и едем дальше.
-        logger.warning(f"[SHADOW] compare failed for student {student_id}: {e}")
-
-
 def check_for_new_grades():
     if not _polling_lock.acquire(blocking=False):
         logger.warning("Previous polling cycle still running, skipping this iteration")
@@ -367,7 +313,13 @@ def _check_for_new_grades_impl():
 
     logger.info(f"Starting check for {len(students)} students (parallel, workers={_FETCH_WORKERS}).")
 
-    RANGE_NAME = "Сегодня!A1:B50"
+    # MONOSOURCE_GRADES (этап 4 RFC, 2026-05-21): monitor читает «Все оценки!»
+    # как единый source of truth. До этого был «Сегодня!A1:B50», но он давал
+    # ТОЛЬКО последний учебный день, и race с history_importer'ом из-за
+    # разных cell_reference приводил к спаму (инцидент 2026-05-21).
+    # «Все оценки!» содержит ту же информацию + всю историю; берём только
+    # колонку для сегодняшней даты через _parse_master_sheet_for_date.
+    from src.history_importer import MASTER_SHEET_RANGE, _parse_master_sheet_for_date
 
     # Smart Batching: собираем все оценки за цикл, отправляем сгруппированно
     batch = defaultdict(list)
@@ -376,7 +328,7 @@ def _check_for_new_grades_impl():
 
     # Параллельная загрузка данных — одна сломанная таблица не блокирует остальные
     with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as executor:
-        futures = {executor.submit(_fetch_student_sheet, s, RANGE_NAME): s for s in students}
+        futures = {executor.submit(_fetch_student_sheet, s, MASTER_SHEET_RANGE): s for s in students}
         fetched = []
         for future in as_completed(futures):
             try:
@@ -384,6 +336,11 @@ def _check_for_new_grades_impl():
             except Exception as e:
                 s = futures[future]
                 logger.error(f"Worker crashed for student_id={s.get('student_id')}: {e}")
+
+    # tashkent_today — один раз на цикл (date.isoformat() для записи в БД,
+    # date object для парсера master sheet).
+    tashkent_today_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    tashkent_today = tashkent_today_date.isoformat()
 
     # Дальнейшая обработка — последовательная (все DB-операции)
     for student, data, display_name in fetched:
@@ -399,28 +356,20 @@ def _check_for_new_grades_impl():
 
         logger.info(f"Processing sheet for student: {display_name} (ID: {student_id})")
 
-        # MONOSOURCE_GRADES shadow run (этап 4 RFC): собираем что нашли в
-        # «Сегодня!» — потом сравним с «Все оценки!» (та же дата). Цель —
-        # измерить latency master sheet vs today sheet перед переключением.
-        today_sheet_grades: List[Tuple[str, str]] = []
+        # Извлекаем оценки за сегодняшнюю дату из «Все оценки!».
+        # Пустой список — нет колонки для today (учебный год не начался / выходной).
+        today_grades_pairs = _parse_master_sheet_for_date(data, tashkent_today_date)
+        if not today_grades_pairs:
+            continue
 
-        for row_idx, row in enumerate(data[1:], start=2):
-            if not isinstance(row, list) or len(row) < 2:
-                continue
-
-            subject = str(row[0]).strip()
-            raw_grade = str(row[1]).strip()
-
+        for subject, raw_grade in today_grades_pairs:
             if not raw_grade:
                 continue
 
-            # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню.
             # cell_reference остался как metadata (origin tag для debug/дашборда),
             # не identity-ключ — identity это content-key (student, subject, date)
-            # после этапа 1C RFC. См. инцидент 2026-05-21: race condition между
-            # monitor'ом и history_importer'ом из-за identity по cell_reference.
-            tashkent_today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
-            cell_reference = f"Сегодня!{subject}:{tashkent_today}"
+            # после этапа 1C RFC. См. инцидент 2026-05-21.
+            cell_reference = f"Все оценки!{tashkent_today}:{subject}"
 
             # Парсим ячейку как список оценок (поддержка X/Y формата)
             new_grades = sanitize_cell(raw_grade)
@@ -430,12 +379,6 @@ def _check_for_new_grades_impl():
 
             new_clean_text = _cell_raw_text(new_grades)
             new_grade_value = _cell_avg_grade(new_grades)
-
-            # Shadow compare: записываем уже-валидированную оценку
-            # (sanitize_cell отбросил служебные заголовки типа «21 мая чт»).
-            # Используем new_clean_text — нормализованный вид (как в БД), чтобы
-            # сравнение с master sheet было корректным для multi-grade «2/5».
-            today_sheet_grades.append((subject, new_clean_text))
 
             existing = get_existing_grade_by_content(student_id, subject, tashkent_today)
             old_clean_text = existing['raw_text'] if existing else None
@@ -511,10 +454,6 @@ def _check_for_new_grades_impl():
                         'change_type': 'new',
                         'old_text': None,
                     })
-
-        # MONOSOURCE_GRADES shadow run (этап 4 RFC). Сравнить today_sheet_grades
-        # с тем же что в «Все оценки!» за сегодняшнюю дату. Не блокирует уведомления.
-        _shadow_compare_with_master(student_id, display_name, spreadsheet_id, today_sheet_grades)
 
     # Отправляем собранные уведомления
     for (tg_id, student_id), grades in batch.items():
