@@ -211,11 +211,11 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 25. **429 от Sheets API логируется с тегом `[GOOGLE_QUOTA]`** — для отдельного грепа в логах при подозрении на превышение квот.
 
-26. **Лист "Сегодня" — A1:B50**, "Четверти" — A1:G50.
+26. **Лист "Все оценки" — A1:ZZ50 (~265 колонок)**, "Четверти" — A1:G50. Monitor читает «Все оценки!» и извлекает колонку для сегодняшней даты через `_parse_master_sheet_for_date` (history_importer.py). Лист «Сегодня!» больше НЕ используется monitor'ом после этапа 4 RFC MONOSOURCE_GRADES (21.05.2026).
 
-26a. **Два writer'а в `grade_history` с разной семантикой `cell_reference`** — `monitor_engine` пишет `"Сегодня!{subject}:{date}"`, `history_importer` пишет `"Все оценки!{col}{row}"`. Это симптом отложенного RFC `MONOSOURCE_GRADES` (этап 4). Пока два writer'а — НИКОГДА не полагаться на `cell_reference` как identity-ключ. Для дедупа на write-path использовать `add_grade` (UNIQUE по содержимому), для проверки наличия — `grade_exists_by_content(student, subject, grade_date, raw_text)`. Без этого `monitor` шлёт уведомление каждый цикл, если importer успел положить запись первым (инцидент 21.05.2026, 14 ночных уведомлений в групповой чат до фикса в PR #42).
+26a. **`cell_reference` — это metadata, не identity-ключ.** После этапа 1C RFC UNIQUE constraint на `(student, subject, grade_date, raw_text)`. Monitor и history_importer используют разные форматы `cell_reference` («Все оценки!{date}:{subject}» vs «Все оценки!{col}{row}»). Identity-операции в monitor'е идут через content-based функции: `get_existing_grade_by_content(student, subject, date)`, `update_grade_by_content(student, subject, date, ...)`, `_pending_grades` по ключу `(student, subject, grade_date)`. До PR #43 monitor использовал cell_reference как identity → race condition с importer'ом (инцидент 21.05.2026).
 
-26b. **Групповые уведомления уважают тихие часы** — `_send_to_groups_for_student` делает early-return при `is_quiet_hours()`. Сообщения не ставятся в очередь (очередь привязана к `telegram_id`, а у группы `chat_id` отрицательный), просто пропускаются. Если когда-то понадобится сохранять для групп — отдельная таблица.
+26b. **Групповые уведомления уважают тихие часы и кладутся в очередь** — `_send_to_groups_for_student` в `is_quiet_hours()` пишет в `group_notification_queue` (отдельная таблица от `notification_queue`). Утренний flush в 07:00 (`_flush_quiet_hours_queue` в schedulers.py) сливает накопленное вместе с личной morning-сводкой. inline_markup НЕ сохраняется — после ночи callback'ы могут устареть.
 
 ### Мониторинг и полнота данных
 
@@ -323,9 +323,9 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 **Архитектурные:**
 - **`handlers/subscription.py` 1318 строк** — отложено сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Split безопаснее делать когда платежи активны и линии разделения яснее. State-machine flow уже мигрирован на user_states.
 
-**Этапы RFC grade_date — заблокированы на входных от владельца:**
-- **Этап 4 (`MONOSOURCE_GRADES`)** — monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run. См. [Docs/rfc-grades-source-of-truth.md](Docs/rfc-grades-source-of-truth.md).
-- **Этап 5** — удалить `_pending_grades` (двухфазное подтверждение). Только после недели стабильной работы этапа 4.
+**Этапы RFC grade_date — текущий статус:**
+- ~~Этап 4 (`MONOSOURCE_GRADES`)~~ — ✅ closed 21.05.2026 PR #47, см. ниже.
+- **Этап 5** — удалить `_pending_grades` (двухфазное подтверждение). Только после недели стабильной работы этапа 4 — раньше 28.05.2026 не трогать. «Все оценки!» более стабильный лист (учитель редактирует через свою систему, не вручную), pending-механика возможно избыточна. Решать на основе production-наблюдений: если не было [PENDING] событий за неделю → можно удалять.
 
 **Эксплуатация прод-системы:**
 - **SSH-хардненинг VPS** — сейчас root login и password auth открыты (для recovery). После недели стабильной работы — отключить root + только key-auth. ВРУЧНУЮ, не автоматически, чтобы не залочиться.
@@ -336,7 +336,10 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас всегда 200.
 
 **Закрыто (история):**
-- ✅ Cross-domain cell_reference дедуп + тихие часы для групп (PR #42). 21.05.2026 in prod. Инцидент: 14 ночных уведомлений в семейный чат из-за того что `monitor` и `history_importer` пишут одну оценку с разным `cell_reference` (`Сегодня!Алгебра:2026-05-21` vs `Все оценки!JC7`), `get_existing_grade` ищет только по cell_reference → промах → spam каждые 5 минут. Фикс: `grade_exists_by_content()` content-key fallback + `is_quiet_hours()` гейт в групповых уведомлениях.
+- ✅ **Этап 4 RFC MONOSOURCE_GRADES** (PR #47). 21.05.2026 in prod. Monitor переключён с «Сегодня!A1:B50» на «Все оценки!A1:ZZ50» → парсит колонку сегодняшней даты через `_parse_master_sheet_for_date`. Закрывает архитектурный source двух writer'ов с разными форматами cell_reference. Hourly `history_importer` оставлен как backup для листов «Неделя!» и «Четверти!». `_shadow_compare_with_master` удалён.
+- ✅ Очередь для групповых уведомлений (PR #44). 21.05.2026 in prod. Таблица `group_notification_queue` + flush в 07:00 параллельно с личной morning-сводкой. До этого в тихие часы группы молча дропались (defensive после PR #42).
+- ✅ Content-based identity в monitor (PR #43). 21.05.2026 in prod. Заменили `get_existing_grade(cell_ref)` на `get_existing_grade_by_content(student, subject, date)`. `_pending_grades` ключ теперь content-based. Закрыл root cause инцидента 21.05.
+- ✅ Cross-domain cell_reference дедуп + тихие часы для групп (PR #42). 21.05.2026 in prod. Инцидент: 14 ночных уведомлений в семейный чат из-за race condition. Defensive fix: `grade_exists_by_content()` content-key fallback + `is_quiet_hours()` гейт.
 - ✅ telegram_first_name в `parents` + использование в приветствиях/webapp. 19.05.2026 in prod (PR между #41 и #42).
 - ✅ Этап 1A–1C RFC (grade_date NOT NULL + UNIQUE по содержимому). 14.05.2026 in prod.
 - ✅ Multi-grade «2/5» в sanitize_cell + двухфазное pending подтверждение. 13.05.2026 in prod.

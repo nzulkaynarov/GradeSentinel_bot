@@ -4,7 +4,7 @@
 
 При старте сессии: `Claude, прочитай CLAUDE.md и Docs/CONTEXT.md`.
 
-**Последнее обновление:** 2026-05-21.
+**Последнее обновление:** 2026-05-21 (вечер — закрытие RFC этап 4 MONOSOURCE_GRADES).
 
 ---
 
@@ -84,7 +84,13 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 ## Закрытый долг (история — НЕ переделывать)
 
-**21.05.2026:**
+**21.05.2026 — вторая половина сессии:**
+- ✅ **Этап 4 RFC MONOSOURCE_GRADES** (PR #47, `feat/monosource-switch`). Monitor читает «Все оценки!A1:ZZ50» вместо «Сегодня!A1:B50», парсит колонку сегодняшней даты через `_parse_master_sheet_for_date`. Это закрывает архитектурный source race condition'а (два writer'а с разными форматами cell_reference). Hourly `history_importer` оставлен как backup для листов «Неделя!» и «Четверти!». Latency evidence из логов 20.05: 6 мин между [NEW GRADE] в today и +1 в master (включая 1ч интервал importer; реальная master latency меньше). Shadow run (PR #45, ~10 мин) подтвердил `match=N today_only=0 master_only=0`. После переключения первый цикл прода (03:02:51 → 03:02:58) — чисто, без NEW GRADE / PENDING / failures.
+- ✅ **Shadow run MONOSOURCE_GRADES** (PR #45 + PR #46 hotfix). Observability перед переключением: monitor читал оба листа, логировал `[SHADOW] match=N today_only=K master_only=M` + `[SHADOW_DIVERGENCE]` построчно. Hotfix #46: нормализация обеих сторон через `sanitize_cell` (иначе заголовок «21 мая чт» давал false-positive divergence).
+- ✅ **Очередь для групповых уведомлений** (PR #44, `feat/group-notification-queue`). Таблица `group_notification_queue(chat_id, message_thread_id, message, created_at)` + `queue_group_notification` / `get_and_clear_queued_group_notifications` / `get_all_queued_group_targets` хелперы в `src/db/notifications.py`. `_send_to_groups_for_student` в тихие часы пишет в queue, утренний flush в 07:00 (`_flush_quiet_hours_queue` в schedulers.py) сливает накопленное параллельно с личной morning-сводкой. inline_markup НЕ сохраняем — callback'ы устаревают за ночь.
+- ✅ **Content-based identity в monitor** (PR #43, `refactor/monitor-content-based-identity`). Заменили `get_existing_grade(cell_ref)` / `update_grade(cell_ref)` / `_pending_grades[(student, cell_ref)]` на content-based варианты: `get_existing_grade_by_content(student, subject, date)`, `update_grade_by_content(student, subject, date, ...)`, `_pending_grades[(student, subject, grade_date)]`. `cell_reference` стал debug-metadata. Это **правильный фикс** root cause инцидента 21.05 (PR #42 был defensive symptom-fix).
+
+**21.05.2026 — первая половина сессии:**
 - ✅ **Инцидент ночного спама в групповой чат** (PR #42, `fix/monitor-cellref-cross-domain-dedup`).
   Корень: `monitor_engine` и `history_importer` пишут одну логическую оценку с разным `cell_reference`
   (`"Сегодня!Алгебра:2026-05-21"` vs `"Все оценки!JC7"`). `get_existing_grade()` ищет только по
@@ -129,12 +135,9 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 **Архитектурные:**
 - `handlers/subscription.py` 1318 строк — split отложен сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Возвращаться когда платежи активны.
 
-**Этапы RFC grade_date — заблокированы на входных от владельца:**
-- **Этап 4 `MONOSOURCE_GRADES`:** monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run. **Дополнительная мотивация после 21.05.2026:** инцидент с cell_reference cross-domain mismatch — это симптом двух конкурирующих writer'ов. PR #42 закрыл симптом defensively (content-key fallback), но архитектурно правильно — оставить ОДИН writer. Пока два writer'а — не доверяй `cell_reference` как identity-ключу.
-- **Этап 5:** удалить `_pending_grades` (двухфазное подтверждение). Только после недели стабильной работы этапа 4.
-
-**Уведомления:**
-- Очередь для **групповых** уведомлений (сейчас в тихие часы группы просто пропускаются — `_send_to_groups_for_student` early-return). Для четвертных это потенциально нежелательно (большое событие потеряется). Нужна отдельная таблица типа `group_notification_queue` (привязка по `chat_id`, не `telegram_id`) + flush в 07:00.
+**Этапы RFC grade_date:**
+- ~~Этап 4 `MONOSOURCE_GRADES`~~ — ✅ closed 21.05.2026 PR #47.
+- **Этап 5:** удалить `_pending_grades` (двухфазное подтверждение). Не раньше 28.05.2026. «Все оценки!» более стабильный лист (учитель не редактирует напрямую), pending-механика возможно избыточна. Решать на основе production-наблюдений: если не было [PENDING] событий за неделю → можно удалять.
 
 **Эксплуатация:**
 - SSH-хардненинг VPS (отключить root login + password auth). Высокий риск удалённо.
