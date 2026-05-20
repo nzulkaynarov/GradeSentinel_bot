@@ -9,7 +9,7 @@ from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
     update_student_display_name, queue_notification, get_user_lang,
-    get_existing_grade, grade_exists_by_content, update_grade,
+    get_existing_grade_by_content, update_grade_by_content,
     get_active_spreadsheets_with_subscription,
     upsert_quarter_grade, get_db_connection, get_notify_mode
 )
@@ -57,12 +57,15 @@ _last_failure_alert: dict = {}
 # пересоздаётся (грейды попадут в pending заново на след. цикле → 5-10
 # мин задержки после рестарта). TTL чистит stale записи.
 _pending_lock = threading.Lock()
-# (student_id, cell_reference) -> {'raw_text': str, 'first_seen': float}
+# (student_id, subject, grade_date) -> {'raw_text': str, 'first_seen': float}
+# Ключ content-based (как и identity в БД после этапа 1C RFC) — НЕ cell_reference.
+# Это устраняет race condition между monitor'ом и history_importer'ом (инцидент 2026-05-21).
 _pending_grades: dict = {}
 _PENDING_TTL_SECONDS = 1800  # 30 мин: очищаем зависшие pending (теоретически 2-3 цикла)
 
 
-def _check_pending_confirmation(student_id: int, cell_ref: str, new_raw_text: str) -> bool:
+def _check_pending_confirmation(student_id: int, subject: str, grade_date: str,
+                                new_raw_text: str) -> bool:
     """True если значение совпало с прошлым циклом (подтверждено).
     False если первый раз видим или значение изменилось — пометили pending,
     ждём следующий цикл."""
@@ -74,7 +77,7 @@ def _check_pending_confirmation(student_id: int, cell_ref: str, new_raw_text: st
         for k in stale:
             _pending_grades.pop(k, None)
 
-        key = (student_id, cell_ref)
+        key = (student_id, subject, grade_date)
         existing = _pending_grades.get(key)
         if existing and existing['raw_text'] == new_raw_text:
             _pending_grades.pop(key, None)
@@ -341,8 +344,11 @@ def _check_for_new_grades_impl():
             if not raw_grade:
                 continue
 
-            # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню
-            # Ключ: предмет + дата (не row_idx, т.к. строки могут сдвигаться при вставке/удалении)
+            # Используем дату по Ташкенту (UTC+5) для корректной привязки к учебному дню.
+            # cell_reference остался как metadata (origin tag для debug/дашборда),
+            # не identity-ключ — identity это content-key (student, subject, date)
+            # после этапа 1C RFC. См. инцидент 2026-05-21: race condition между
+            # monitor'ом и history_importer'ом из-за identity по cell_reference.
             tashkent_today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
             cell_reference = f"Сегодня!{subject}:{tashkent_today}"
 
@@ -355,27 +361,14 @@ def _check_for_new_grades_impl():
             new_clean_text = _cell_raw_text(new_grades)
             new_grade_value = _cell_avg_grade(new_grades)
 
-            existing = get_existing_grade(student_id, cell_reference)
+            existing = get_existing_grade_by_content(student_id, subject, tashkent_today)
             old_clean_text = existing['raw_text'] if existing else None
             old_grades = sanitize_cell(old_clean_text) if old_clean_text else []
 
-            # Нет изменений по сравнению с БД — следующая ячейка
+            # Нет изменений по сравнению с БД — следующая ячейка.
+            # Здесь же ловится случай когда history_importer успел положить
+            # запись раньше — у него тот же content-key, мы её найдём.
             if old_clean_text == new_clean_text:
-                continue
-
-            # Cross-domain dedup: history_importer пишет cell_reference в формате
-            # "Все оценки!JC7" (real Sheets ID), а monitor — "Сегодня!{subject}:{date}".
-            # Если importer уже положил эту оценку с «чужим» cell_reference,
-            # `get_existing_grade` по monitor-формату её не найдёт и monitor шлёт
-            # уведомление на КАЖДОМ цикле. Защищаемся content-key проверкой
-            # (тем же ключом, что UNIQUE constraint после этапа 1C RFC).
-            if not existing and grade_exists_by_content(
-                student_id, subject, tashkent_today, new_clean_text
-            ):
-                logger.info(
-                    f"[CROSS-DOMAIN DEDUP] {display_name}: {subject} '{new_clean_text}' "
-                    f"уже в БД (от history_importer), skip"
-                )
                 continue
 
             # Что РЕАЛЬНО добавилось (multiset diff)
@@ -386,7 +379,8 @@ def _check_for_new_grades_impl():
             # учитель что-то стёр.
             if not added:
                 if existing:
-                    update_grade(student_id, cell_reference, new_grade_value, new_clean_text)
+                    update_grade_by_content(student_id, subject, tashkent_today,
+                                            new_grade_value, new_clean_text)
                     logger.info(
                         f"[GRADE TRIMMED] {display_name}: {subject} "
                         f"'{old_clean_text}' -> '{new_clean_text}' (no notif)"
@@ -395,7 +389,7 @@ def _check_for_new_grades_impl():
 
             # Двухфазное подтверждение: первый раз видим это изменение → ждём
             # следующего цикла. Это убирает «оценки-призраки» от опечаток учителя.
-            if not _check_pending_confirmation(student_id, cell_reference, new_clean_text):
+            if not _check_pending_confirmation(student_id, subject, tashkent_today, new_clean_text):
                 logger.info(
                     f"[PENDING] {display_name}: {subject} '{new_clean_text}' — "
                     f"ждём подтверждения на следующем цикле"
@@ -403,10 +397,10 @@ def _check_for_new_grades_impl():
                 continue
 
             # Подтверждено — пишем в БД.
-            # grade_date = tashkent_today: дата оценки по факту (это «сегодня»
-            # с точки зрения учебного дня, и она же зашита в cell_reference).
+            # grade_date = tashkent_today: дата оценки по факту.
             if existing:
-                update_grade(student_id, cell_reference, new_grade_value, new_clean_text)
+                update_grade_by_content(student_id, subject, tashkent_today,
+                                        new_grade_value, new_clean_text)
                 logger.info(
                     f"[GRADE CHANGED] {display_name}: {subject} "
                     f"'{old_clean_text}' -> '{new_clean_text}' (added: {[t for _, t in added]})"
