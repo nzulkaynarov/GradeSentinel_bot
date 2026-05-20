@@ -70,10 +70,9 @@ def grade_exists_by_content(student_id: int, subject: str,
     """True если такая оценка уже есть в БД по content-key
     (тот же ключ что и UNIQUE constraint после этапа 1C).
 
-    Нужна когда два writer'а (monitor и history_importer) используют разные
-    форматы cell_reference для одной логической оценки. Без этой проверки
-    monitor шлёт уведомление каждый цикл, пока history_importer держит
-    запись с «чужим» cell_reference."""
+    Используется как defense-in-depth fallback в monitor — основной путь идёт
+    через get_existing_grade_by_content() ниже, который вернёт текущую запись
+    (если есть) для решения update vs notify."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -82,6 +81,42 @@ def grade_exists_by_content(student_id: int, subject: str,
             LIMIT 1
         ''', (student_id, subject, grade_date, raw_text))
         return cursor.fetchone() is not None
+
+
+def get_existing_grade_by_content(student_id: int, subject: str,
+                                  grade_date: str) -> Optional[Dict[str, Any]]:
+    """Возвращает текущую запись (если есть) для пары `(student, subject, date)`.
+    Если несколько записей за один день — берём самую свежую по date_added
+    (после этапа 1C UNIQUE по (student, subject, grade_date, raw_text), так что
+    несколько записей бывают только при пограничном изменении raw_text:
+    «5» появилась → «5/3» → у monitor'а возникает старая «5» в БД, мы выберем
+    свежее значение чтобы корректно посчитать diff)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT grade_value, raw_text, subject, cell_reference
+            FROM grade_history
+            WHERE student_id = ? AND subject = ? AND grade_date = ?
+            ORDER BY date_added DESC
+            LIMIT 1
+        ''', (student_id, subject, grade_date))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_grade_by_content(student_id: int, subject: str, grade_date: str,
+                            grade_value: Optional[float], raw_text: str) -> bool:
+    """Обновляет значение оценки по content-key. True если обновлено.
+    `cell_reference` не трогаем — он остался как metadata «откуда пришло»
+    (debug-only после этапа 1C, не identity-ключ)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE grade_history
+            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
+            WHERE student_id = ? AND subject = ? AND grade_date = ?
+        ''', (grade_value, raw_text, student_id, subject, grade_date))
+        return cursor.rowcount > 0
 
 
 def update_grade(student_id: int, cell_reference: str,
@@ -278,7 +313,9 @@ __all__ = [
     "add_grade",
     "get_existing_grade",
     "grade_exists_by_content",
+    "get_existing_grade_by_content",
     "update_grade",
+    "update_grade_by_content",
     "upsert_quarter_grade",
     "get_quarter_grades",
     "get_grade_history_for_student",

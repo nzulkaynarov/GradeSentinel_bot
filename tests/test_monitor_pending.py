@@ -263,6 +263,48 @@ def test_grade_exists_by_content_basic(temp_db):
     assert not dbm.grade_exists_by_content(student_id, "Алгебра", "2026-05-20", "4")
 
 
+def test_get_existing_grade_by_content_returns_current_value(temp_db):
+    """Основной identity-lookup для monitor: возвращает текущую запись
+    независимо от cell_reference."""
+    student_id = dbm.add_student("Kid", "ss")
+    # Кладём с «чужим» cell_reference (как history_importer)
+    dbm.add_grade(student_id, "Алгебра", 4.0, "4", "Все оценки!JC7",
+                  grade_date="2026-05-21")
+
+    found = dbm.get_existing_grade_by_content(student_id, "Алгебра", "2026-05-21")
+    assert found is not None
+    assert found['raw_text'] == "4"
+    assert found['subject'] == "Алгебра"
+    assert found['cell_reference'] == "Все оценки!JC7"  # origin metadata сохранилось
+
+    # Другая дата — None
+    assert dbm.get_existing_grade_by_content(student_id, "Алгебра", "2026-05-20") is None
+    # Другой предмет — None
+    assert dbm.get_existing_grade_by_content(student_id, "Литература", "2026-05-21") is None
+
+
+def test_update_grade_by_content_does_not_touch_cell_reference(temp_db):
+    """update_grade_by_content обновляет grade_value/raw_text, cell_reference
+    оставляет (он теперь metadata, не identity)."""
+    student_id = dbm.add_student("Kid", "ss")
+    dbm.add_grade(student_id, "Алгебра", 4.0, "4", "Все оценки!JC7",
+                  grade_date="2026-05-21")
+
+    ok = dbm.update_grade_by_content(student_id, "Алгебра", "2026-05-21", 4.5, "4/5")
+    assert ok
+
+    after = dbm.get_existing_grade_by_content(student_id, "Алгебра", "2026-05-21")
+    assert after['raw_text'] == "4/5"
+    assert after['grade_value'] == 4.5
+    assert after['cell_reference'] == "Все оценки!JC7"  # metadata cohabитирует
+
+
+def test_update_grade_by_content_no_match(temp_db):
+    """False если такой записи нет."""
+    student_id = dbm.add_student("Kid", "ss")
+    assert not dbm.update_grade_by_content(student_id, "Алгебра", "2026-05-21", 4.0, "4")
+
+
 def test_monitor_skips_grade_already_written_by_history_importer(setup_student, monkeypatch):
     """Главный регрессионный тест: оценка в БД от history_importer с «чужим»
     cell_reference. Monitor должен НЕ слать уведомление и НЕ заходить в pending.
