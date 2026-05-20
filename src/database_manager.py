@@ -254,6 +254,20 @@ def init_db():
         )
         ''')
 
+        # 10a. Очередь групповых уведомлений (тихие часы для семейных чатов).
+        # Inline-markup НЕ сохраняем — после ночи кнопки могут устареть.
+        # Ключ flush'а: (chat_id, message_thread_id) — в одной супергруппе
+        # может быть несколько тем (по теме на семью).
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS group_notification_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            message_thread_id INTEGER,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+
         # 11. Миграция: колонка lang для мультиязычности
         if _table_exists(cursor, 'parents'):
             cursor.execute("PRAGMA table_info(parents)")
@@ -522,6 +536,9 @@ from src.db.notifications import (  # noqa: E402, F401
     queue_notification,
     get_and_clear_queued_notifications,
     get_all_queued_telegram_ids,
+    queue_group_notification,
+    get_and_clear_queued_group_notifications,
+    get_all_queued_group_targets,
 )
 
 
@@ -605,6 +622,9 @@ from src.db.notifications import (  # noqa: E402, F401
     queue_notification,
     get_and_clear_queued_notifications,
     get_all_queued_telegram_ids,
+    queue_group_notification,
+    get_and_clear_queued_group_notifications,
+    get_all_queued_group_targets,
 )
 
 

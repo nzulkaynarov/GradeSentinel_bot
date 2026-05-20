@@ -258,6 +258,35 @@ def _flush_quiet_hours_queue():
             except Exception as e:
                 logger.error(f"Failed to send fallback morning messages to {tg_id}: {e}")
 
+    # Параллельный flush для групповых чатов. Inline-markup не сохраняли —
+    # шлём plain HTML, и без агрегации по предметам (текст уже отформатирован
+    # monitor'ом при queue). Это «дамп всё что накопилось» — допустимый UX
+    # для семейного чата (там и так шумно), цель — не потерять сообщения.
+    from src.database_manager import (
+        get_all_queued_group_targets, get_and_clear_queued_group_notifications,
+    )
+    group_targets = get_all_queued_group_targets()
+    if group_targets:
+        logger.info(f"Flushing group notification queue for {len(group_targets)} targets.")
+    for tgt in group_targets:
+        chat_id = tgt['chat_id']
+        thread_id = tgt['message_thread_id']
+        messages = get_and_clear_queued_group_notifications(chat_id, thread_id)
+        if not messages:
+            continue
+        for m in messages:
+            try:
+                kwargs = {'parse_mode': 'HTML', 'disable_web_page_preview': True}
+                if thread_id is not None:
+                    kwargs['message_thread_id'] = thread_id
+                _bot.send_message(chat_id, m, **kwargs)
+                time.sleep(0.05)
+            except Exception as e:
+                # Бот мог быть кикнут / тема удалена — не блокируем остальные.
+                logger.warning(
+                    f"Failed to flush group notification to chat={chat_id} thread={thread_id}: {e}"
+                )
+
 
 def _send_daily_evening_summary():
     from src.database_manager import (
