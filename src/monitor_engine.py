@@ -9,7 +9,8 @@ from telebot import types
 from src.database_manager import (
     get_active_spreadsheets, add_grade, get_parents_for_student,
     update_student_display_name, queue_notification, get_user_lang,
-    get_existing_grade, update_grade, get_active_spreadsheets_with_subscription,
+    get_existing_grade, grade_exists_by_content, update_grade,
+    get_active_spreadsheets_with_subscription,
     upsert_quarter_grade, get_db_connection, get_notify_mode
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
@@ -170,7 +171,11 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False):
 def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_tg_ids):
     """Шлёт сообщение в групповые чаты, привязанные к семьям ученика.
     Язык — берём от первого родителя в `parent_tg_ids` (вся семья обычно одного языка).
-    Для супергрупп с темами уважаем `message_thread_id`."""
+    Для супергрупп с темами уважаем `message_thread_id`.
+
+    Уважает тихие часы (22:00–07:00 Ташкент) — иначе любой баг в дедупе
+    мгновенно превращается в спам в семейном чате (см. инцидент 2026-05-21:
+    cell_reference cross-domain mismatch → 14 ночных уведомлений)."""
     from src.db.groups import get_groups_for_student
     try:
         groups = get_groups_for_student(student_id)
@@ -178,6 +183,12 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
         logger.error(f"Failed to fetch groups for student {student_id}: {e}")
         return
     if not groups:
+        return
+
+    if is_quiet_hours():
+        logger.info(
+            f"Group notification suppressed (quiet hours) for student={student_id}"
+        )
         return
 
     # Выбираем версию сообщения. Если message — dict, берём по первому родителю.
@@ -350,6 +361,21 @@ def _check_for_new_grades_impl():
 
             # Нет изменений по сравнению с БД — следующая ячейка
             if old_clean_text == new_clean_text:
+                continue
+
+            # Cross-domain dedup: history_importer пишет cell_reference в формате
+            # "Все оценки!JC7" (real Sheets ID), а monitor — "Сегодня!{subject}:{date}".
+            # Если importer уже положил эту оценку с «чужим» cell_reference,
+            # `get_existing_grade` по monitor-формату её не найдёт и monitor шлёт
+            # уведомление на КАЖДОМ цикле. Защищаемся content-key проверкой
+            # (тем же ключом, что UNIQUE constraint после этапа 1C RFC).
+            if not existing and grade_exists_by_content(
+                student_id, subject, tashkent_today, new_clean_text
+            ):
+                logger.info(
+                    f"[CROSS-DOMAIN DEDUP] {display_name}: {subject} '{new_clean_text}' "
+                    f"уже в БД (от history_importer), skip"
+                )
                 continue
 
             # Что РЕАЛЬНО добавилось (multiset diff)

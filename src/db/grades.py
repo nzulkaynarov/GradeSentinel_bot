@@ -65,6 +65,25 @@ def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[st
         return dict(row) if row else None
 
 
+def grade_exists_by_content(student_id: int, subject: str,
+                            grade_date: str, raw_text: str) -> bool:
+    """True если такая оценка уже есть в БД по content-key
+    (тот же ключ что и UNIQUE constraint после этапа 1C).
+
+    Нужна когда два writer'а (monitor и history_importer) используют разные
+    форматы cell_reference для одной логической оценки. Без этой проверки
+    monitor шлёт уведомление каждый цикл, пока history_importer держит
+    запись с «чужим» cell_reference."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 1 FROM grade_history
+            WHERE student_id = ? AND subject = ? AND grade_date = ? AND raw_text = ?
+            LIMIT 1
+        ''', (student_id, subject, grade_date, raw_text))
+        return cursor.fetchone() is not None
+
+
 def update_grade(student_id: int, cell_reference: str,
                  grade_value: Optional[float], raw_text: str) -> bool:
     """Обновляет значение оценки по cell_reference. True если обновлено.
@@ -258,6 +277,7 @@ def get_parents_for_student(student_id: int) -> List[int]:
 __all__ = [
     "add_grade",
     "get_existing_grade",
+    "grade_exists_by_content",
     "update_grade",
     "upsert_quarter_grade",
     "get_quarter_grades",

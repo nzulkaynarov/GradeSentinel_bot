@@ -240,3 +240,51 @@ def test_compute_added_dupe():
     old = [(2.0, "2")]
     new = [(2.0, "2"), (2.0, "2")]
     assert me._compute_added_grades(old, new) == [(2.0, "2")]
+
+
+# ─── Cross-domain dedup: monitor vs history_importer cell_reference ────
+# Регрессия инцидента 2026-05-21: history_importer пишет cell_reference в
+# формате "Все оценки!JC7", monitor ищет по "Сегодня!{subject}:{date}".
+# Без content-key проверки monitor шлёт уведомление каждый polling-цикл.
+def test_grade_exists_by_content_basic(temp_db):
+    """grade_exists_by_content находит по UNIQUE-ключу, игнорируя cell_reference."""
+    student_id = dbm.add_student("Kid", "ss")
+    # Кладём как history_importer: cell_reference другого формата
+    dbm.add_grade(student_id, "Алгебра", 4.0, "4", "Все оценки!JC7",
+                  grade_date="2026-05-21")
+
+    # Поиск по content-key должен найти
+    assert dbm.grade_exists_by_content(student_id, "Алгебра", "2026-05-21", "4")
+    # А по monitor-формату cell_reference — нет (это и есть баг до фикса)
+    assert dbm.get_existing_grade(student_id, "Сегодня!Алгебра:2026-05-21") is None
+    # Другое значение — не находится
+    assert not dbm.grade_exists_by_content(student_id, "Алгебра", "2026-05-21", "5")
+    # Другая дата — не находится
+    assert not dbm.grade_exists_by_content(student_id, "Алгебра", "2026-05-20", "4")
+
+
+def test_monitor_skips_grade_already_written_by_history_importer(setup_student, monkeypatch):
+    """Главный регрессионный тест: оценка в БД от history_importer с «чужим»
+    cell_reference. Monitor должен НЕ слать уведомление и НЕ заходить в pending.
+    Без фикса — спам каждые 5 минут (инцидент 2026-05-21)."""
+    info = setup_student
+    from datetime import datetime, timedelta, timezone
+    tashkent_today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
+
+    # Эмулируем history_importer: оценка уже в БД с cell_reference из «Все оценки!»
+    dbm.add_grade(info['student_id'], "Алгебра", 4.0, "4", "Все оценки!JC7",
+                  grade_date=tashkent_today)
+
+    # Monitor читает «Сегодня!» и видит ту же оценку
+    sent_1 = _run_cycle(_make_sheet({"Алгебра": "4"}))
+    assert sent_1 == [], "Цикл 1: monitor должен распознать оценку как уже известную"
+
+    # Второй цикл — тоже тишина (без фикса тут было бы [NEW GRADE])
+    sent_2 = _run_cycle(_make_sheet({"Алгебра": "4"}))
+    assert sent_2 == [], "Цикл 2: всё ещё тишина, никакого pending→confirm спама"
+
+    # В БД должна остаться ОДНА запись (UNIQUE по content-key защищает)
+    grades = dbm.get_grade_history_for_student(info['student_id'], days=30)
+    algebra = [g for g in grades if g['subject'] == 'Алгебра']
+    assert len(algebra) == 1
+    assert algebra[0]['raw_text'] == '4'

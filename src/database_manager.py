@@ -468,6 +468,7 @@ def init_db():
 from src.db.grades import (  # noqa: E402, F401
     add_grade,
     get_existing_grade,
+    grade_exists_by_content,
     update_grade,
     upsert_quarter_grade,
     get_quarter_grades,
