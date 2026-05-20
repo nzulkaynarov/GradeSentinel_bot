@@ -4,7 +4,7 @@
 
 При старте сессии: `Claude, прочитай CLAUDE.md и Docs/CONTEXT.md`.
 
-**Последнее обновление:** 2026-05-14.
+**Последнее обновление:** 2026-05-21.
 
 ---
 
@@ -84,6 +84,28 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 ## Закрытый долг (история — НЕ переделывать)
 
+**21.05.2026:**
+- ✅ **Инцидент ночного спама в групповой чат** (PR #42, `fix/monitor-cellref-cross-domain-dedup`).
+  Корень: `monitor_engine` и `history_importer` пишут одну логическую оценку с разным `cell_reference`
+  (`"Сегодня!Алгебра:2026-05-21"` vs `"Все оценки!JC7"`). `get_existing_grade()` ищет только по
+  `cell_reference` → промах → `_check_pending_confirmation` подтверждает → уведомление улетает →
+  `INSERT` падает по `UNIQUE(student, subject, grade_date, raw_text)` → цикл повторяется
+  каждые 5 минут. Группы НЕ уважали тихие часы → весь спам уходил в семейный чат
+  (14 уведомлений за ночь до фикса).
+  Фикс:
+  - `grade_exists_by_content(student, subject, grade_date, raw_text)` в `src/db/grades.py` (тот же
+    ключ, что `UNIQUE` constraint).
+  - `monitor` использует её как fallback после `get_existing_grade()` → лог `[CROSS-DOMAIN DEDUP]`.
+  - `_send_to_groups_for_student` уважает `is_quiet_hours()` (defense in depth).
+  - +2 regression test (`test_grade_exists_by_content_basic`, `test_monitor_skips_grade_already_written_by_history_importer`).
+  Hotfix на проде до мерджа: `UPDATE grade_history SET cell_reference = 'Сегодня!{subject}:{date}'`
+  для 2 сегодняшних записей — остановил спам в течение 1 polling cycle.
+- ✅ **`telegram_first_name` в `parents`** для приветствий «Здравствуйте, {имя}!» (PR между #41 и #42).
+  До этого приветствие использовало `fio` (часто формальное ФИО или admin-заданное «User»).
+  Миграция: idempotent `ALTER TABLE`. Обновление имени — на каждом `/start` (юзер может менять имя
+  в Telegram). Fallback: `telegram_first_name` → `fio.split()[0]` → `'друг'`. Использовано в
+  `auth_success`, `auth_not_linked_contact`, `onboard_step1`, webapp `/api/dashboard*`.
+
 **14.05.2026 (одна сессия):**
 - ✅ Этап 1A–1C RFC grade_date: NOT NULL + UNIQUE по содержимому. 846 рядов мигрированы, 3 коллизии схлопнулись.
 - ✅ `database_manager.py` split (1789 → 655, –63%) на 12 доменных модулей в `src/db/`.
@@ -108,8 +130,11 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 - `handlers/subscription.py` 1318 строк — split отложен сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Возвращаться когда платежи активны.
 
 **Этапы RFC grade_date — заблокированы на входных от владельца:**
-- **Этап 4 `MONOSOURCE_GRADES`:** monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run.
+- **Этап 4 `MONOSOURCE_GRADES`:** monitor читает только «Все оценки», 24h shadow mode. Нужно: read-only Sheets share student=2, замер latency «Сегодня» vs «Все оценки», согласие на shadow run. **Дополнительная мотивация после 21.05.2026:** инцидент с cell_reference cross-domain mismatch — это симптом двух конкурирующих writer'ов. PR #42 закрыл симптом defensively (content-key fallback), но архитектурно правильно — оставить ОДИН writer. Пока два writer'а — не доверяй `cell_reference` как identity-ключу.
 - **Этап 5:** удалить `_pending_grades` (двухфазное подтверждение). Только после недели стабильной работы этапа 4.
+
+**Уведомления:**
+- Очередь для **групповых** уведомлений (сейчас в тихие часы группы просто пропускаются — `_send_to_groups_for_student` early-return). Для четвертных это потенциально нежелательно (большое событие потеряется). Нужна отдельная таблица типа `group_notification_queue` (привязка по `chat_id`, не `telegram_id`) + flush в 07:00.
 
 **Эксплуатация:**
 - SSH-хардненинг VPS (отключить root login + password auth). Высокий риск удалённо.

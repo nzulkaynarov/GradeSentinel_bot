@@ -213,6 +213,10 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 26. **Лист "Сегодня" — A1:B50**, "Четверти" — A1:G50.
 
+26a. **Два writer'а в `grade_history` с разной семантикой `cell_reference`** — `monitor_engine` пишет `"Сегодня!{subject}:{date}"`, `history_importer` пишет `"Все оценки!{col}{row}"`. Это симптом отложенного RFC `MONOSOURCE_GRADES` (этап 4). Пока два writer'а — НИКОГДА не полагаться на `cell_reference` как identity-ключ. Для дедупа на write-path использовать `add_grade` (UNIQUE по содержимому), для проверки наличия — `grade_exists_by_content(student, subject, grade_date, raw_text)`. Без этого `monitor` шлёт уведомление каждый цикл, если importer успел положить запись первым (инцидент 21.05.2026, 14 ночных уведомлений в групповой чат до фикса в PR #42).
+
+26b. **Групповые уведомления уважают тихие часы** — `_send_to_groups_for_student` делает early-return при `is_quiet_hours()`. Сообщения не ставятся в очередь (очередь привязана к `telegram_id`, а у группы `chat_id` отрицательный), просто пропускаются. Если когда-то понадобится сохранять для групп — отдельная таблица.
+
 ### Мониторинг и полнота данных
 
 27. **`_polling_lock`** в monitor_engine — если предыдущий цикл не завершился за 300с, новый не стартует (skip).
@@ -332,6 +336,8 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас всегда 200.
 
 **Закрыто (история):**
+- ✅ Cross-domain cell_reference дедуп + тихие часы для групп (PR #42). 21.05.2026 in prod. Инцидент: 14 ночных уведомлений в семейный чат из-за того что `monitor` и `history_importer` пишут одну оценку с разным `cell_reference` (`Сегодня!Алгебра:2026-05-21` vs `Все оценки!JC7`), `get_existing_grade` ищет только по cell_reference → промах → spam каждые 5 минут. Фикс: `grade_exists_by_content()` content-key fallback + `is_quiet_hours()` гейт в групповых уведомлениях.
+- ✅ telegram_first_name в `parents` + использование в приветствиях/webapp. 19.05.2026 in prod (PR между #41 и #42).
 - ✅ Этап 1A–1C RFC (grade_date NOT NULL + UNIQUE по содержимому). 14.05.2026 in prod.
 - ✅ Multi-grade «2/5» в sanitize_cell + двухфазное pending подтверждение. 13.05.2026 in prod.
 - ✅ CI Python 3.10 → 3.12. 14.05.2026.
