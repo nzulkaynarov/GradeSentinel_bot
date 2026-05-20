@@ -662,3 +662,170 @@ body {
         background: rgba(0, 0, 0, 0.03);
     }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   END-OF-YEAR REPORT
+   ═══════════════════════════════════════════════════════════ */
+
+.card-year-report .card-title {
+    background: linear-gradient(135deg, #FFD700, #FF6B35);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.year-hero {
+    text-align: center;
+    padding: var(--space-4) 0;
+    border-bottom: 1px solid var(--tg-section-separator);
+    margin-bottom: var(--space-4);
+}
+
+.year-avg {
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: var(--space-2);
+}
+
+.year-meta {
+    color: var(--tg-hint);
+    font-size: 14px;
+}
+
+.year-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.year-stat {
+    text-align: center;
+    padding: var(--space-3);
+    background: var(--tg-bg-secondary);
+    border-radius: 12px;
+}
+
+.year-stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.year-stat-label {
+    font-size: 12px;
+    color: var(--tg-hint);
+}
+
+.year-insight {
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.08), rgba(255, 107, 53, 0.08));
+    border-left: 3px solid #FF6B35;
+    padding: var(--space-3);
+    border-radius: 8px;
+    margin: var(--space-4) 0;
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+.year-best-worst {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    margin: var(--space-4) 0;
+}
+
+.year-month-card {
+    padding: var(--space-3);
+    border-radius: 8px;
+    background: var(--tg-bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.year-month-best { background: rgba(46, 204, 113, 0.08); }
+.year-month-worst { background: rgba(231, 76, 60, 0.08); }
+
+.year-month-label {
+    font-size: 12px;
+    color: var(--tg-hint);
+}
+
+.year-month-name {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.year-subjects { margin-top: var(--space-4); }
+.year-subjects h3 {
+    font-size: 14px;
+    color: var(--tg-hint);
+    margin-bottom: var(--space-2);
+    font-weight: 500;
+}
+
+@media (max-width: 480px) {
+    .year-grid { grid-template-columns: 1fr 1fr; }
+    .year-grid .year-stat:nth-child(3) { grid-column: span 2; }
+    .year-best-worst { grid-template-columns: 1fr; }
+    .year-avg { font-size: 40px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AI CHAT
+   ═══════════════════════════════════════════════════════════ */
+
+.chat-hint {
+    color: var(--tg-hint);
+    font-size: 13px;
+    margin-bottom: var(--space-3);
+}
+
+.chat-history {
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.chat-msg {
+    padding: var(--space-2) var(--space-3);
+    border-radius: 12px;
+    max-width: 85%;
+    font-size: 14px;
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.chat-msg-user {
+    align-self: flex-end;
+    background: var(--tg-button);
+    color: var(--tg-button-text);
+}
+
+.chat-msg-ai {
+    align-self: flex-start;
+    background: var(--tg-bg-secondary);
+    color: var(--tg-text);
+}
+
+.chat-thinking { opacity: 0.6; font-style: italic; }
+.chat-error-msg { background: rgba(231, 76, 60, 0.12); color: #c0392b; }
+
+.chat-input-wrap { display: flex; gap: var(--space-2); }
+
+.chat-input {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--tg-section-separator);
+    border-radius: 8px;
+    background: var(--tg-bg);
+    color: var(--tg-text);
+    font-size: 14px;
+}
+
+.chat-send { padding: var(--space-2) var(--space-4); white-space: nowrap; }
+.chat-error { color: #c0392b; font-size: 13px; margin-top: var(--space-2); }

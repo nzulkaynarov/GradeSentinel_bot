@@ -16,7 +16,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from urllib.parse import parse_qs
 from flask import Flask, render_template, jsonify, request, abort
 
@@ -304,6 +304,135 @@ def compute_by_subject(grades):
     )
 
 
+_RU_MONTH_NAMES = {
+    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+    5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь",
+}
+
+
+def _grade_date_str(g) -> str:
+    """grade_date с fallback на date_added для legacy записей."""
+    gd = g.get("grade_date")
+    if gd:
+        return gd
+    return (g.get("date_added") or "")[:10]
+
+
+def compute_year_report(grades):
+    """Итоги учебного года (для end-of-year dashboard view).
+
+    Возвращает агрегаты по всему учебному году: общий avg, помесячный тренд,
+    топ/проблемные предметы, рост/падение, лучшую серию пятёрок.
+
+    Все аргументы — list[dict] с полями subject, grade_value, raw_text, grade_date.
+    Pure-функция, идеально для unit-тестов.
+    """
+    if not grades:
+        return {
+            "total_grades": 0,
+            "numeric_count": 0,
+            "year_avg": None,
+            "months_active": 0,
+            "monthly_trend": [],
+            "best_month": None,
+            "worst_month": None,
+            "top_subjects": [],
+            "problem_subjects": [],
+            "best_streak": 0,
+            "growth": None,
+        }
+
+    numeric_grades = [g for g in grades if g.get("grade_value") is not None]
+    numeric_count = len(numeric_grades)
+    numeric_vals = [g["grade_value"] for g in numeric_grades]
+
+    year_avg = round(sum(numeric_vals) / len(numeric_vals), 2) if numeric_vals else None
+
+    # Помесячный тренд (YYYY-MM)
+    by_month = defaultdict(list)
+    for g in numeric_grades:
+        date_str = _grade_date_str(g)
+        if len(date_str) >= 7:
+            ym = date_str[:7]  # "2025-09"
+            by_month[ym].append(g["grade_value"])
+
+    monthly_trend = []
+    for ym in sorted(by_month):
+        vals = by_month[ym]
+        year = int(ym[:4])
+        month = int(ym[5:7])
+        monthly_trend.append({
+            "month": ym,
+            "label": f"{_RU_MONTH_NAMES[month]} {year}",
+            "avg": round(sum(vals) / len(vals), 2),
+            "count": len(vals),
+        })
+
+    best_month = max(monthly_trend, key=lambda m: m["avg"]) if monthly_trend else None
+    worst_month = min(monthly_trend, key=lambda m: m["avg"]) if monthly_trend else None
+
+    # Per-subject статистика с минимум 3 оценками для top/problem (иначе одна
+    # счастливая 5 попадает в «топ»)
+    by_subj = defaultdict(list)
+    for g in numeric_grades:
+        by_subj[g["subject"]].append(g["grade_value"])
+
+    subject_stats = sorted([
+        {
+            "name": subj,
+            "avg": round(sum(vals) / len(vals), 2),
+            "count": len(vals),
+        }
+        for subj, vals in by_subj.items()
+    ], key=lambda s: -s["avg"])
+
+    significant_subjects = [s for s in subject_stats if s["count"] >= 3]
+    top_subjects = significant_subjects[:5]
+    problem_subjects = sorted(
+        [s for s in significant_subjects if s["avg"] <= GRADE_PROBLEM_THRESHOLD],
+        key=lambda s: s["avg"],
+    )[:5]
+
+    # Лучшая серия пятёрок (грубая: подряд по date_added в хронологии)
+    sorted_by_date = sorted(numeric_grades, key=lambda g: (_grade_date_str(g), g.get("date_added") or ""))
+    best_streak = 0
+    current_streak = 0
+    for g in sorted_by_date:
+        if g["grade_value"] >= 5:
+            current_streak += 1
+            if current_streak > best_streak:
+                best_streak = current_streak
+        else:
+            current_streak = 0
+
+    # Рост Q1→Q4: первая четверть учебного года vs последняя.
+    # Простая эвристика — первая треть года (по количеству numeric_grades)
+    # vs последняя треть. Без quarter_grades — модели работают по grade_date.
+    growth = None
+    if numeric_count >= 6:
+        third = numeric_count // 3
+        first_part = sorted_by_date[:third]
+        last_part = sorted_by_date[-third:]
+        first_avg = sum(g["grade_value"] for g in first_part) / len(first_part)
+        last_avg = sum(g["grade_value"] for g in last_part) / len(last_part)
+        growth = round(last_avg - first_avg, 2)
+
+    return {
+        "total_grades": len(grades),
+        "numeric_count": numeric_count,
+        "year_avg": year_avg,
+        "months_active": len(by_month),
+        "monthly_trend": monthly_trend,
+        "best_month": best_month,
+        "worst_month": worst_month,
+        "top_subjects": top_subjects,
+        "problem_subjects": problem_subjects,
+        "best_streak": best_streak,
+        "growth": growth,
+    }
+
+
 # ════════════════════════════════════════════════════════════
 #  ROUTES — основные
 # ════════════════════════════════════════════════════════════
@@ -483,6 +612,129 @@ def api_dashboard_init():
             "is_admin": user_info.get("role") == "admin",
         },
     })
+
+
+# ════════════════════════════════════════════════════════════
+#  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
+# ════════════════════════════════════════════════════════════
+
+@app.route("/api/dashboard/year/<int:student_id>")
+def api_dashboard_year(student_id):
+    """Итоги учебного года для дашборда. Подгружается lazy при клике на
+    «Итоги года» (не блокирует основной view).
+
+    Берём все оценки за учебный год: с 1 сентября предыдущего года.
+    Используем days=365 — покрывает любой учебный год независимо от того,
+    в каком месяце сейчас просматривают."""
+    telegram_id = _authorize_student_access(student_id)
+
+    # Все оценки за учебный год. days=365 гарантирует что и в августе,
+    # и в мае мы возьмём правильный объём истории.
+    all_grades = get_grade_history_for_student_all(student_id, days=365)
+
+    # Отфильтровать на учебный год (с 1 сентября). Если сейчас сентябрь+ —
+    # учебный год начался в этом году, иначе — в прошлом.
+    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    if today_tashkent.month >= 9:
+        school_year_start = date(today_tashkent.year, 9, 1).isoformat()
+    else:
+        school_year_start = date(today_tashkent.year - 1, 9, 1).isoformat()
+
+    year_grades = [g for g in all_grades if _grade_date_str_for_filter(g) >= school_year_start]
+
+    report = compute_year_report(year_grades)
+    report["school_year_start"] = school_year_start
+
+    # AI годовой инсайт (отдельный prompt, кэш на 6h)
+    lang = get_user_lang(telegram_id)
+    try:
+        from src.analytics_engine import compute_year_insight
+        report["ai_insight"] = compute_year_insight(student_id, report, lang=lang)
+    except Exception as e:
+        logger.warning(f"AI year insight failed for student {student_id}: {e}")
+        report["ai_insight"] = None
+
+    return jsonify(report)
+
+
+def _grade_date_str_for_filter(g) -> str:
+    """Stable string-comparable date для фильтрации по началу учебного года."""
+    return _grade_date_str(g)
+
+
+# ════════════════════════════════════════════════════════════
+#  ROUTES — AI chat
+# ════════════════════════════════════════════════════════════
+
+# Простой in-memory rate limit per telegram_id: 5 запросов в минуту.
+# При рестарте сбрасывается — допустимо для single-instance.
+_chat_rate_limit = defaultdict(list)  # tg_id -> [timestamp, ...]
+_CHAT_RATE_LIMIT_MAX = 5
+_CHAT_RATE_LIMIT_WINDOW_SEC = 60
+_CHAT_MAX_QUESTION_LEN = 500
+
+
+def _check_chat_rate_limit(telegram_id: int) -> bool:
+    """True если можно отправить, False если превышен лимит."""
+    import time
+    now = time.time()
+    history = _chat_rate_limit[telegram_id]
+    # Чистим старые
+    _chat_rate_limit[telegram_id] = [t for t in history if now - t < _CHAT_RATE_LIMIT_WINDOW_SEC]
+    if len(_chat_rate_limit[telegram_id]) >= _CHAT_RATE_LIMIT_MAX:
+        return False
+    _chat_rate_limit[telegram_id].append(now)
+    return True
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """AI-чат с контекстом ученика. Принимает question, возвращает ответ Claude.
+
+    Body: {student_id: int, question: str}
+    Auth: X-Telegram-Init-Data header (как все остальные endpoints).
+    """
+    body = request.get_json(silent=True) or {}
+    student_id = body.get("student_id")
+    question = (body.get("question") or "").strip()
+
+    if not isinstance(student_id, int) or not question:
+        abort(400)
+    if len(question) > _CHAT_MAX_QUESTION_LEN:
+        abort(400)
+
+    telegram_id = _authorize_student_access(student_id)
+
+    if not _check_chat_rate_limit(telegram_id):
+        return ("Rate limit exceeded", 429)
+
+    # Собираем контекст: имя ученика + последние 30 дней оценок
+    students = get_students_for_parent(telegram_id)
+    student = next((s for s in students if s["id"] == student_id), None)
+    if not student:
+        abort(403)
+    display_name = student.get("display_name") or student.get("fio") or "ученик"
+
+    recent_grades = get_grade_history_for_student_all(student_id, days=30)
+    lang = get_user_lang(telegram_id)
+
+    try:
+        from src.analytics_engine import answer_parent_question
+        answer = answer_parent_question(
+            student_id=student_id,
+            student_name=display_name,
+            grades=recent_grades,
+            question=question,
+            lang=lang,
+        )
+    except Exception as e:
+        logger.warning(f"Chat error for tg={telegram_id} student={student_id}: {e}")
+        return jsonify({"answer": None, "error": "internal"}), 500
+
+    if not answer:
+        return jsonify({"answer": None, "error": "no_response"}), 503
+
+    return jsonify({"answer": answer})
 
 
 # ════════════════════════════════════════════════════════════

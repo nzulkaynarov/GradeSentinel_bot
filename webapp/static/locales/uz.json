@@ -54,5 +54,25 @@
 
   "badge_new": "yangi",
   "show_more": "yana koʻrsatish",
-  "show_less": "yigʻish"
+  "show_less": "yigʻish",
+
+  "section_year_report": "Oʻquv yili yakuni",
+  "year_loading": "Yil yakuni yuklanmoqda…",
+  "year_empty": "Yil uchun ma'lumot yetarli emas",
+  "year_avg_label": "yillik oʻrtacha",
+  "year_total_grades": "ta baho",
+  "year_growth_label": "yillik dinamika",
+  "year_streak_label": "eng uzun 5 ketma-ketligi",
+  "year_best_month": "🌟 Eng yaxshi oy",
+  "year_worst_month": "⚠️ Qiyin oy",
+  "year_top_subjects": "Kuchli fanlar",
+  "year_problem_subjects": "Yozda ustida ishlash kerak",
+
+  "section_ai_chat": "AI'dan soʻrash",
+  "chat_hint": "Farzandingiz baholari haqida oddiy soʻzlar bilan soʻrang",
+  "chat_placeholder": "Masalan: matematika nega pasayib ketdi?",
+  "chat_send": "Soʻrash",
+  "chat_thinking": "AI oʻylamoqda…",
+  "chat_error": "Javob olinmadi. Yana urinib koʻring.",
+  "chat_rate_limited": "Juda koʻp savol — bir daqiqa kuting"
 }

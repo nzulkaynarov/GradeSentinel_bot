@@ -262,3 +262,247 @@ def compute_dashboard_insight(
     except Exception as e:
         logger.warning(f"Insight unexpected error for student {student_id}: {e}")
         return None
+
+
+# ════════════════════════════════════════════════════════════
+#  Year insight (итоги учебного года для end-of-year view)
+# ════════════════════════════════════════════════════════════
+
+_YEAR_INSIGHT_MAX_TOKENS = 400  # 3-5 предложений (больше чем weekly insight)
+
+
+def _year_insight_cache_key(student_id: int, lang: str) -> str:
+    return f"year_insight_v1:{student_id}:{lang}"
+
+
+def _read_year_insight_cache(student_id: int, lang: str) -> Optional[str]:
+    raw = get_setting(_year_insight_cache_key(student_id, lang))
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        generated_at = datetime.fromisoformat(data["generated_at"])
+        # Year insight кэшируем дольше — данные за весь год меняются медленно.
+        if datetime.now() - generated_at < timedelta(hours=24):
+            return data["text"]
+    except (json.JSONDecodeError, KeyError, ValueError):
+        pass
+    return None
+
+
+def _write_year_insight_cache(student_id: int, lang: str, text: str):
+    set_setting(_year_insight_cache_key(student_id, lang), json.dumps({
+        "text": text,
+        "generated_at": datetime.now().isoformat(),
+    }))
+
+
+_YEAR_INSIGHT_PROMPTS = {
+    'ru': (
+        "Ты помогаешь родителю осмыслить учебный год ребёнка. На основе данных ниже "
+        "напиши тёплую финальную сводку в 3-5 предложениях (без markdown, без списков, "
+        "обычным текстом). Структура: 1) общая картина года, 2) главное достижение, "
+        "3) что нужно подтянуть летом, 4) тёплая фраза на лето. Тон — поддерживающий, "
+        "уважительный, без морализаторства. Не используй цифры из данных дословно, "
+        "а интерпретируй их.\n\n"
+        "Годовой средний: {year_avg}\n"
+        "Всего оценок за год: {numeric_count}\n"
+        "Месяцев активности: {months_active}\n"
+        "Лучший месяц: {best_month_label} (средний {best_month_avg})\n"
+        "Худший месяц: {worst_month_label} (средний {worst_month_avg})\n"
+        "Топ-предметы: {tops}\n"
+        "Проблемные предметы: {problems}\n"
+        "Динамика за год (рост/падение среднего балла): {growth}\n"
+        "Лучшая серия пятёрок подряд: {best_streak}"
+    ),
+    'uz': (
+        "Ota-onaga farzandining o'quv yili haqida xulosa qilishga yordam berasan. "
+        "Quyidagi ma'lumotlar asosida 3-5 jumlali yakuniy izoh yoz (markdown'siz, "
+        "ro'yxat'siz, oddiy matn). Tuzilishi: 1) yilning umumiy manzarasi, 2) asosiy "
+        "yutuq, 3) yozda nimani tortib qo'yish kerak, 4) yoz uchun iliq so'z. Ohang — "
+        "qo'llab-quvvatlovchi, hurmatli, axloqsiz.\n\n"
+        "Yillik o'rtacha: {year_avg}\n"
+        "Yil davomida baholar soni: {numeric_count}\n"
+        "Faol oylar: {months_active}\n"
+        "Eng yaxshi oy: {best_month_label} (o'rtacha {best_month_avg})\n"
+        "Eng qiyin oy: {worst_month_label} (o'rtacha {worst_month_avg})\n"
+        "Top fanlar: {tops}\n"
+        "Muammoli fanlar: {problems}\n"
+        "Yil davomidagi dinamika: {growth}\n"
+        "Eng uzun a'lo baholar ketma-ketligi: {best_streak}"
+    ),
+    'en': (
+        "You're helping a parent reflect on their child's school year. Based on the "
+        "data below, write a warm closing summary in 3-5 sentences (no markdown, no "
+        "lists, plain text). Structure: 1) overall picture of the year, 2) main "
+        "achievement, 3) what to work on over summer, 4) a warm note for summer. "
+        "Tone — supportive, respectful, no moralizing. Don't quote numbers literally, "
+        "interpret them.\n\n"
+        "Year average: {year_avg}\n"
+        "Total grades: {numeric_count}\n"
+        "Active months: {months_active}\n"
+        "Best month: {best_month_label} (avg {best_month_avg})\n"
+        "Worst month: {worst_month_label} (avg {worst_month_avg})\n"
+        "Top subjects: {tops}\n"
+        "Problem subjects: {problems}\n"
+        "Year-over-year growth: {growth}\n"
+        "Longest A-streak: {best_streak}"
+    ),
+}
+
+
+def compute_year_insight(student_id: int, report: dict, lang: str = 'ru') -> Optional[str]:
+    """3-5 предложений итогов учебного года.
+
+    Кэш 24h (год не меняется быстро). Безопасно деградирует."""
+    if report.get("year_avg") is None or report.get("numeric_count", 0) < 5:
+        return None
+
+    cached = _read_year_insight_cache(student_id, lang)
+    if cached:
+        return cached
+
+    client = _get_client()
+    if not client:
+        return None
+
+    best_month = report.get("best_month") or {}
+    worst_month = report.get("worst_month") or {}
+    top_names = [s["name"] for s in report.get("top_subjects", [])][:3]
+    problem_names = [s["name"] for s in report.get("problem_subjects", [])][:3]
+
+    prompt_template = _YEAR_INSIGHT_PROMPTS.get(lang, _YEAR_INSIGHT_PROMPTS['ru'])
+    prompt = prompt_template.format(
+        year_avg=report["year_avg"],
+        numeric_count=report["numeric_count"],
+        months_active=report["months_active"],
+        best_month_label=best_month.get("label", "—"),
+        best_month_avg=best_month.get("avg", "—"),
+        worst_month_label=worst_month.get("label", "—"),
+        worst_month_avg=worst_month.get("avg", "—"),
+        tops=", ".join(top_names) if top_names else "—",
+        problems=", ".join(problem_names) if problem_names else "—",
+        growth=report.get("growth") if report.get("growth") is not None else 0,
+        best_streak=report.get("best_streak", 0),
+    )
+
+    try:
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=_YEAR_INSIGHT_MAX_TOKENS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = message.content[0].text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        if not _looks_like_real_insight(text):
+            # Для года порог length больше — повторно проверим без 400 cap
+            if len(text) < 10 or any(m.lower() in text.lower() for m in _BAD_INSIGHT_MARKERS):
+                logger.warning(f"Year insight для student {student_id} отбракован")
+                return None
+
+        _write_year_insight_cache(student_id, lang, text)
+        return text
+    except anthropic.APITimeoutError:
+        logger.warning(f"Year insight timeout for student {student_id}")
+        return None
+    except anthropic.APIError as e:
+        logger.warning(f"Year insight API error for student {student_id}: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Year insight unexpected error for student {student_id}: {e}")
+        return None
+
+
+# ════════════════════════════════════════════════════════════
+#  AI chat — родитель спрашивает про оценки ученика
+# ════════════════════════════════════════════════════════════
+
+_CHAT_MAX_TOKENS = 600
+_CHAT_MAX_GRADES_IN_CONTEXT = 60
+
+
+def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CONTEXT) -> str:
+    """Компактное представление оценок для prompt'а. По убыванию даты."""
+    if not grades:
+        return "(пусто — оценок за последние 30 дней нет)"
+    lines = []
+    for g in grades[:max_count]:
+        date_str = g.get("grade_date") or (g.get("date_added") or "")[:10]
+        subj = g.get("subject", "?")
+        raw = g.get("raw_text", "?")
+        lines.append(f"  {date_str}  {subj}: {raw}")
+    return "\n".join(lines)
+
+
+_CHAT_SYSTEM_PROMPTS = {
+    'ru': (
+        "Ты помогаешь родителю разобраться в оценках его/её ребёнка. Отвечай коротко "
+        "(2-4 предложения), на русском, обычным текстом без markdown. Опирайся "
+        "ТОЛЬКО на данные ниже — если их недостаточно, скажи об этом прямо. Тон — "
+        "поддерживающий и конкретный, без морализаторства и общих фраз. Не выдумывай "
+        "оценки или предметы которых нет в данных. Если родитель спросил что-то не "
+        "по теме оценок — мягко напомни что ты помощник по дневнику."
+    ),
+    'uz': (
+        "Ota-onaga farzandining baholarini tushunishga yordam berasan. Qisqa javob "
+        "ber (2-4 jumla), o'zbekcha, oddiy matn, markdown'siz. FAQAT quyidagi "
+        "ma'lumotlardan foydalan — agar yetarli bo'lmasa, ochiqcha ayt. Ohang — "
+        "qo'llab-quvvatlovchi va aniq, axloqsiz. Ma'lumotlarda bo'lmagan baho yoki "
+        "fanlarni o'ylab topma. Agar savol baholar mavzusiga oid bo'lmasa — yumshoq "
+        "eslatib qo'y."
+    ),
+    'en': (
+        "You're helping a parent make sense of their child's grades. Be brief "
+        "(2-4 sentences), plain text, no markdown. Use ONLY the data below — if "
+        "it's insufficient, say so. Tone: supportive and specific, no moralizing "
+        "or generic platitudes. Don't invent grades or subjects not in the data. "
+        "If the parent asks something off-topic, gently steer back to grades."
+    ),
+}
+
+
+def answer_parent_question(
+    student_id: int,
+    student_name: str,
+    grades: list,
+    question: str,
+    lang: str = 'ru',
+) -> Optional[str]:
+    """Отвечает на вопрос родителя про оценки ученика с контекстом из БД.
+
+    Не кэширует (каждый вопрос уникальный). Без conversation history — каждый
+    запрос самостоятельный. Безопасно деградирует."""
+    client = _get_client()
+    if not client:
+        logger.warning("answer_parent_question: no anthropic client (missing ANTHROPIC_API_KEY)")
+        return None
+
+    system_prompt = _CHAT_SYSTEM_PROMPTS.get(lang, _CHAT_SYSTEM_PROMPTS['ru'])
+    context = _format_grades_context(grades)
+    user_message = (
+        f"Ученик: {student_name}\n"
+        f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
+        f"Вопрос родителя: {question}"
+    )
+
+    try:
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=_CHAT_MAX_TOKENS,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        text = message.content[0].text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        return text or None
+    except anthropic.APITimeoutError:
+        logger.warning(f"Chat timeout for student {student_id}")
+        return None
+    except anthropic.APIError as e:
+        logger.warning(f"Chat API error for student {student_id}: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Chat unexpected error for student {student_id}: {e}")
+        return None
