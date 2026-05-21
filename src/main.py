@@ -69,6 +69,9 @@ from src.monitor_engine import start_polling
 # должны обходиться pyTelegramBotAPI'ом раньше generic-обработчиков из других
 # модулей. Регистрация в порядке import.
 import src.handlers.state_flows  # noqa: F401
+# ai_chat РЯДОМ со state_flows — он тоже использует state-based message_handler
+# (`ai_chat_mode`), который должен срабатывать раньше generic catch-all.
+import src.handlers.ai_chat  # noqa: F401
 import src.handlers.admin
 import src.handlers.family
 import src.handlers.communication
@@ -340,9 +343,16 @@ def _show_user_panel(chat_id: int, message_id: int = None):
 
         markup = types.InlineKeyboardMarkup(row_width=2)
 
-        # WebApp дашборд — promin'но, отдельной строкой когда у юзера есть дети.
-        # Это primary entry point в Mini App — раньше кнопка была доступна
-        # только после /grades, но дискаваримость была плохая.
+        # AI-first navigation (PR_A 21.05.2026). «Спросить AI» — primary entry
+        # point: открывает chat-mode прямо в Telegram, родитель пишет вопрос,
+        # AI отвечает с контекстом 30 дней оценок. Раньше AI был похоронен в
+        # WebApp в самом конце — никто не находил.
+        if has_kids:
+            markup.add(types.InlineKeyboardButton(
+                t("user_panel_ai_chat", lang), callback_data="up_ai_chat"
+            ))
+
+        # WebApp дашборд — secondary, тоже отдельной строкой.
         if has_kids:
             webapp_url = os.environ.get("WEBAPP_URL")
             if webapp_url:
@@ -562,6 +572,19 @@ def callback_up_ai(call):
         logger.debug(f"Could not delete panel message for AI: {e}")
     cmd_ai_report(call.message)
     _show_user_panel(call.message.chat.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_ai_chat')
+def callback_up_ai_chat(call):
+    """Запуск AI-чата прямо в Telegram. Открывает state ai_chat_mode,
+    далее ai_chat.py handler ловит все text-сообщения от юзера."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete panel message for AI chat: {e}")
+    from src.handlers.ai_chat import start_ai_chat
+    start_ai_chat(call.from_user.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_family')

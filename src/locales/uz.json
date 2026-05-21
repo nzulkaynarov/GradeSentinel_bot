@@ -77,8 +77,9 @@
   "admin_panel_stats": "📊 Statistika",
 
   "user_panel_title": "📱 <b>Bosh menyu</b>\n\n{families_info}\n\n➖➖➖➖➖➖➖➖➖➖\nAmalni tanlang:",
+  "user_panel_ai_chat": "💬 AI'dan soʻrash",
   "user_panel_grades": "📈 Baholar",
-  "user_panel_ai": "🤖 AI-tahlil",
+  "user_panel_ai": "📊 AI-hisobot",
   "user_panel_family": "🏠 Mening oilam",
   "user_panel_subscription": "💳 Obuna",
   "user_panel_support": "💬 Yordam",
@@ -340,5 +341,18 @@
 
   "help_parent": "📖 <b>GradeSentinel — qanday foydalanish</b>\n\n<b>Bot nima qiladi</b>\nFarzandingizning Google-jadvaldagi kundaligini kuzataman. Yangi baho — darhol xabar.\n\n<b>Sizga nima qilish kerak</b>\n• Hech narsa :) Xabarlar avtomatik keladi\n• O'zingiz qaramoqchi — 📈 <b>Baholar</b> tugmasi\n• 📊 <b>Baholar paneli</b> — /grades dan keyin chiqadigan tugmani bosing. Vizual sarhisob ochiladi: o'rtacha baho, kunlik dinamika, muammoli fanlar, choraklik\n• Tahlil kerak — 🤖 <b>AI-tahlil</b> (obuna)\n• Xabarlar bezovta qilsa — 🔔 <b>Bildirishnomalar</b>\n\n<b>Men o'zim qilaman</b>\n🌙 22:00–07:00 — bezovta qilmayman, ertalab sarhisob\n🌆 19:00 — kunlik daydjest\n📊 Yakshanba 19:00 — haftalik AI-hisobot\n\n<b>Buyruqlar</b>\n/start — bosh menyu\n/grades — bugungi baholar\n/help — bu yordam\n\n💬 Tushunarsiz? Yordam tugmasini bosing.",
   "help_head": "\n\n👑 <b>Siz — oila boshlig'isiz</b>\n\n🏠 <b>Mening oilam</b> → mumkin:\n• 🧒 Bola qo'shish (Google jadval havolasi)\n• 🔗 Qarindosh taklif qilish — bir martalik havola\n• 📋 Birovni o'chirish\n\n💡 <b>Oilaviy chatda bot</b>\nMeni guruhga qo'shing → oilani tanlang → baholar shu yerga ham keladi. Mavzuli supergruhda — kerakli mavzuga havolani yuboring yoki /set_thread &lt;havola&gt; buyrug'ini ishlating.",
-  "help_admin": "\n\n<b>Boshqaruv:</b>\n🛠 <b>Boshqaruv</b> — administrator paneli:\n  • 🏠 Oilalar — ko'rish va boshqarish\n  • ➕ Yangi oila — yaratish\n  • 💰 Tariflar — narxlarni o'zgartirish\n  • 🎁 Promokodlar — yaratish va boshqarish\n  • 👑 Obuna berish / ❌ Bekor qilish\n  • 📢 Tarqatma — barchaga xabar\n  • 📊 Tizim statistikasi"
+  "help_admin": "\n\n<b>Boshqaruv:</b>\n🛠 <b>Boshqaruv</b> — administrator paneli:\n  • 🏠 Oilalar — ko'rish va boshqarish\n  • ➕ Yangi oila — yaratish\n  • 💰 Tariflar — narxlarni o'zgartirish\n  • 🎁 Promokodlar — yaratish va boshqarish\n  • 👑 Obuna berish / ❌ Bekor qilish\n  • 📢 Tarqatma — barchaga xabar\n  • 📊 Tizim statistikasi",
+
+  "ai_chat_welcome": "💬 <b>{name} haqida javob berishga tayyorman</b>\n\nOddiy so'zlar bilan savol bering — men so'nggi 30 kun baholarini bilaman. Masalan:\n• Yozda nimani tortib qo'yish kerak?\n• Matematika nega pasayib ketdi?\n• Oldingi oy bilan solishtir\n\nYoki quyidagi taklifga teging.",
+  "ai_chat_pick_student": "👨‍👩‍👧 Qaysi farzandingiz haqida so'ramoqchisiz?",
+  "ai_chat_no_students": "ℹ️ Sizda hali aktiv obunali o'quvchi yo'q.",
+  "ai_chat_bye": "Ko'rishguncha! Yana so'rash uchun menyudagi «💬 AI'dan soʻrash» tugmasini bosing.",
+  "ai_chat_error": "Hozir javob olinmadi. Birozdan keyin urinib ko'ring.",
+  "ai_chat_too_long": "Savol juda uzun. 500 belgigacha qisqartiring.",
+  "ai_chat_session_lost": "Chat sessiyasi tugadi, menyudagi «💬 AI'dan soʻrash»ni bosing.",
+  "ai_chat_exit": "❌ Chatdan chiqish",
+  "ai_suggested_summer": "🌞 Yozda nimani tortib qo'yish kerak?",
+  "ai_suggested_compare": "📊 Oldingi oy bilan solishtir",
+  "ai_suggested_concern": "⚠️ Qayerda muammo bor?",
+  "subscription_inactive": "💳 Obuna aktiv emas. AI-chatdan foydalanish uchun obuna rasmiylashtiring."
 }
