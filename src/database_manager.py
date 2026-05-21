@@ -290,14 +290,62 @@ def init_db():
             'ON ai_chat_messages(telegram_id, student_id, created_at)'
         )
 
-        # NAV-001 миграция: добавляем family_id колонку для существующих БД
-        # (CREATE TABLE IF NOT EXISTS не пересоздаёт). Backfill через JOIN
-        # students→family_links: каждой строке ставим family_id первой семьи
-        # этого ученика. После backfill старые строки доступны через новые
-        # family-scoped функции.
+        # NAV-001 миграция: добавляем family_id колонку для существующих БД.
+        # CREATE TABLE IF NOT EXISTS не пересоздаёт + не модифицирует
+        # constraint, поэтому в proд-БД student_id остаётся NOT NULL после
+        # ALTER ADD COLUMN — INSERT с student_id=NULL fail'ится.
+        #
+        # Hotfix: если student_id всё ещё NOT NULL — пересоздаём таблицу
+        # с правильной схемой (student_id nullable). Делается в одной
+        # транзакции init_db (atomic). FK от ai_chat_feedback к id
+        # сохраняется (INSERT SELECT не меняет id).
         cursor.execute("PRAGMA table_info(ai_chat_messages)")
-        ai_chat_cols = [col[1] for col in cursor.fetchall()]
-        if 'family_id' not in ai_chat_cols:
+        cols = cursor.fetchall()
+        col_names = [c[1] for c in cols]
+        student_id_notnull = any(c[1] == 'student_id' and bool(c[3]) for c in cols)
+        has_family_id = 'family_id' in col_names
+
+        if student_id_notnull:
+            # Pre-NAV-001 schema или после первого ALTER без rebuild.
+            # Пересоздаём таблицу с student_id nullable + family_id present.
+            logger.info("Database migration: rebuilding ai_chat_messages "
+                        "(student_id nullable + family_id) ...")
+            cursor.execute('''
+                CREATE TABLE ai_chat_messages_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    telegram_id INTEGER NOT NULL,
+                    student_id INTEGER,
+                    family_id INTEGER,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            # Копируем существующие строки. Backfill family_id если ещё не было.
+            if has_family_id:
+                cursor.execute('''
+                    INSERT INTO ai_chat_messages_new
+                        (id, telegram_id, student_id, family_id, role, content, created_at)
+                    SELECT id, telegram_id, student_id, family_id, role, content, created_at
+                    FROM ai_chat_messages
+                ''')
+            else:
+                cursor.execute('''
+                    INSERT INTO ai_chat_messages_new
+                        (id, telegram_id, student_id, family_id, role, content, created_at)
+                    SELECT m.id, m.telegram_id, m.student_id,
+                           (SELECT fl.family_id FROM family_links fl
+                            WHERE fl.student_id = m.student_id LIMIT 1),
+                           m.role, m.content, m.created_at
+                    FROM ai_chat_messages m
+                ''')
+            cursor.execute('DROP TABLE ai_chat_messages')
+            cursor.execute('ALTER TABLE ai_chat_messages_new RENAME TO ai_chat_messages')
+            logger.info("Database migration: ai_chat_messages rebuilt with nullable student_id.")
+        elif not has_family_id:
+            # Свежая БД без family_id (теоретически невозможно если init_db
+            # сначала запустился — CREATE TABLE уже создаёт с family_id —
+            # но защищаемся для legacy путей).
             cursor.execute("ALTER TABLE ai_chat_messages ADD COLUMN family_id INTEGER")
             cursor.execute('''
                 UPDATE ai_chat_messages
@@ -309,6 +357,11 @@ def init_db():
                 WHERE family_id IS NULL AND student_id IS NOT NULL
             ''')
             logger.info("Database migration: ai_chat_messages.family_id added + backfilled.")
+
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ai_chat_tg_student '
+            'ON ai_chat_messages(telegram_id, student_id, created_at)'
+        )
         cursor.execute(
             'CREATE INDEX IF NOT EXISTS idx_ai_chat_tg_family '
             'ON ai_chat_messages(telegram_id, family_id, created_at)'
