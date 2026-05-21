@@ -287,6 +287,22 @@ def init_db():
             'ON ai_chat_messages(telegram_id, student_id, created_at)'
         )
 
+        # 10c. Proactive AI alerts (PR_H5). Dedup log — чтобы не отправлять
+        # один и тот же тип alert'а по одному ребёнку чаще раза в 48 часов.
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS proactive_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            alert_type TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+        )
+        ''')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_proactive_alerts_lookup '
+            'ON proactive_alerts(student_id, alert_type, sent_at DESC)'
+        )
+
         # 11. Миграция: колонка lang для мультиязычности
         if _table_exists(cursor, 'parents'):
             cursor.execute("PRAGMA table_info(parents)")
@@ -566,6 +582,14 @@ from src.db.ai_chat import (  # noqa: E402, F401
     get_recent_chat_history,
     clear_chat_history,
     MAX_HISTORY_FOR_AI,
+)
+
+
+from src.db.alerts import (  # noqa: E402, F401
+    save_alert,
+    was_alerted_recently,
+    get_last_alert_at,
+    ALERT_COOLDOWN_HOURS,
 )
 
 
