@@ -450,17 +450,32 @@ def compute_quarters_with_forecast(quarter_grades):
     return sorted(result, key=sort_key)
 
 
+KPI_MIN_SAMPLE = 3
+
+
 def compute_dashboard_kpis(summary, by_subject, total_grades_count):
     """4 KPI cards для верха дашборда. Простой derive из summary +
-    by_subject (которые уже есть). Один экран — все главные числа."""
-    top = (by_subject[0] if by_subject else None)
-    worst = (by_subject[-1] if by_subject else None)
+    by_subject (которые уже есть).
+
+    Honesty fix: top/worst игнорируют предметы с count < KPI_MIN_SAMPLE,
+    чтобы не показывать «Лучший: Анатомия 5.0» по 1 случайной пятёрке.
+    Count возвращается во фронт чтобы UI мог показать «(N оценок)»."""
+    eligible = [s for s in by_subject if s.get("count", 0) >= KPI_MIN_SAMPLE]
+    top = max(eligible, key=lambda s: s["avg"], default=None) if eligible else None
+    worst = min(eligible, key=lambda s: s["avg"], default=None) if eligible else None
+
+    def _shape(s):
+        if not s:
+            return None
+        return {"name": s["name"], "avg": s["avg"], "count": s.get("count", 0)}
+
     return {
         "current_avg": summary.get("current_avg"),
         "delta": summary.get("delta"),
         "total_grades": total_grades_count,
-        "top_subject": {"name": top["name"], "avg": top["avg"]} if top else None,
-        "worst_subject": {"name": worst["name"], "avg": worst["avg"]} if worst else None,
+        "period_days": summary.get("period_days"),
+        "top_subject": _shape(top),
+        "worst_subject": _shape(worst),
     }
 
 

@@ -309,8 +309,18 @@ function renderKpis(kpis, summary) {
     const countEl = document.getElementById("kpi-count");
     const topNameEl = document.getElementById("kpi-top-name");
     const topAvgEl = document.getElementById("kpi-top-avg");
+    const topCountEl = document.getElementById("kpi-top-count");
     const worstNameEl = document.getElementById("kpi-worst-name");
     const worstAvgEl = document.getElementById("kpi-worst-avg");
+    const worstCountEl = document.getElementById("kpi-worst-count");
+    const periodHintEl = document.getElementById("kpi-period-hint");
+
+    // Period hint — заменяем «30 дней» на реальный days из payload
+    const days = kpis.period_days || summary.period_days || 30;
+    if (periodHintEl) {
+        const tpl = t("kpi_period_hint_tpl") || "Данные за последние {days} дн.";
+        periodHintEl.textContent = tpl.replace("{days}", String(days));
+    }
 
     // Avg
     const avg = kpis.current_avg ?? summary.current_avg;
@@ -335,13 +345,20 @@ function renderKpis(kpis, summary) {
     // Count
     countEl.textContent = kpis.total_grades ?? "—";
 
-    // Top
+    const fmtCount = (n) => {
+        const tpl = t("kpi_subject_count_tpl") || "{n} оц.";
+        return tpl.replace("{n}", String(n));
+    };
+
+    // Top — теперь с count badge, только если >=3 оценок (filter в compute_dashboard_kpis)
     if (kpis.top_subject) {
         topNameEl.textContent = kpis.top_subject.name;
         topAvgEl.textContent = kpis.top_subject.avg.toFixed(2);
+        if (topCountEl) topCountEl.textContent = fmtCount(kpis.top_subject.count || 0);
     } else {
         topNameEl.textContent = "—";
         topAvgEl.textContent = "";
+        if (topCountEl) topCountEl.textContent = t("kpi_no_data") || "недостаточно данных";
     }
 
     // Worst
@@ -349,9 +366,11 @@ function renderKpis(kpis, summary) {
         worstNameEl.textContent = kpis.worst_subject.name;
         worstAvgEl.textContent = kpis.worst_subject.avg.toFixed(2);
         worstAvgEl.className = "kpi-value-secondary " + gradeColorClass(kpis.worst_subject.avg);
+        if (worstCountEl) worstCountEl.textContent = fmtCount(kpis.worst_subject.count || 0);
     } else {
         worstNameEl.textContent = "—";
         worstAvgEl.textContent = "";
+        if (worstCountEl) worstCountEl.textContent = t("kpi_no_data") || "недостаточно данных";
     }
 }
 
@@ -409,7 +428,14 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
         const sparkPoints = trendMap.get(q.subject);
         const trendSym = q.trend === 'up' ? '↑' : q.trend === 'down' ? '↓' : '→';
         const trendCls = q.trend === 'up' ? 'trend-up' : q.trend === 'down' ? 'trend-down' : 'trend-flat';
-        const yearVal = q.year || '—';
+        // Honesty: для прогноза показываем число + явный badge «прогноз»,
+        // не маскируем под точное значение «~3.2».
+        let yearVal = q.year || '—';
+        let yearBadge = '';
+        if (q.year_is_forecast && q.year_value != null) {
+            yearVal = q.year_value.toFixed(1);
+            yearBadge = `<span class="qc-forecast-badge" data-i18n="quarters_forecast_badge">прогноз</span>`;
+        }
         const yearCls = q.year_is_forecast ? 'qc-year-value forecast' : 'qc-year-value';
         const yearColorCls = q.year_value != null ? gradeColorClass(q.year_value) : '';
 
@@ -429,6 +455,7 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
         const yearHtml = q._no_quarters ? '' : `<div class="qc-year">
             <span class="qc-year-label">${escapeHtml(t("col_year") || "Год")}</span>
             <span class="${yearCls} ${yearColorCls}">${escapeHtml(yearVal)}</span>
+            ${yearBadge}
         </div>`;
 
         // Footer: current-period stats + sparkline
