@@ -4,7 +4,7 @@
 
 При старте сессии: `Claude, прочитай CLAUDE.md и Docs/CONTEXT.md`.
 
-**Последнее обновление:** 2026-05-21 (вечер — закрытие RFC этап 4 MONOSOURCE_GRADES).
+**Последнее обновление:** 2026-05-21 (ночь — финальный role-toggle PR #60 после серии 6 PR навигации).
 
 ---
 
@@ -97,6 +97,20 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 4. **Morning flush без дедупа** (PR #49). Очередь могла содержать дубли из-за бага в writer, но flush этого не учитывал. **Урок:** при любом «накопить и потом раздать» — дедуп на стороне consumer'а как defense in depth, даже если producer вроде бы не должен дублировать.
 
 Общий паттерн ошибок: **необоснованный optimism про правильность собственного кода + leakage внутренних чисел/деталей в UX**. В будущем — проверять синхронность ключей, не вшивать произвольные лимиты в UI-тексты, добавлять defensive checks параллельно с архитектурными планами.
+
+**Дополнительный урок (PR навигации, ночь 21.05):** При изменении handler'ов / auth / keyboards — холодный mental run по всем ролям × состояниям ПЕРЕД commit. За день сделал 6 PR навигации (#50, #56-60), каждый закрывал жалобу но ломал другой path. Юзер написал «полная каша». Финальный role-toggle PR #60 свёл всё в один coherent flow. Урок зафиксирован в memory `feedback_holistic_check_before_pr.md`. Telegram API quirks тоже всплыли: `KeyboardButton.web_app` НЕ передаёт signed initData (только `InlineKeyboardButton.web_app`) — это нюанс легко наступить, поймал на дашборде 401.
+
+**21.05.2026 — третья (ночная) сессия — навигация для родителей и админа:**
+- ✅ **PR_F (#50): conversation-first для родителей.** Reply-keyboard `{💬 Чат, ⚙️ Меню}` + AI-чат default для авторизованного с детьми. Inline user_panel остался для empty state / head без детей. Suggested prompts только в welcome (не повторяются в ответах AI). Onboarding 3 экрана → 1. Эмодзи срезаны в suggested.
+- ✅ **PR_G (#58): admin UI cleanup.** Admin panel 8 → 5 кнопок. «📊 Статистика» удалена (дубль title). «💰 Тарифы / 🎁 Промокоды / 📢 Рассылка» → submenu `ap_settings`. Tier 2: admin-as-parent toggle.
+- ✅ **PR #57 admin-stuck hotfix.** /start для admin → admin welcome (не AI). Чистит ai_chat_mode state как escape.
+- ✅ **PR #59 dashboard 401 hotfix.** `KeyboardButton.web_app` → `InlineKeyboardButton.web_app` (Telegram API quirk). Дашборд переехал в Меню. Admin-блокировщик в AI handler удалён (Tier 2 теперь работает).
+- ✅ **PR #60 role-toggle (финальный cleanup).** Видимый toggle через reply-keyboard:
+  - Admin-mode: `{🛠 Управление, 👨 Я родитель}`
+  - Parent-mode (не-admin): `{💬 Чат, ⚙️ Меню}`
+  - Parent-mode (admin): `{💬 Чат, ⚙️ Меню}` + `{🛠 Управление}` (вторая строка)
+  - Не-admin никогда не видит admin-кнопок. Все навигационные handler'ы в `src/handlers/navigation.py` с role check.
+  - `_build_reply_keyboard(lang, mode, is_admin)` — единая фабрика keyboard'ов.
 
 **21.05.2026 — вторая половина сессии:**
 - ✅ **Этап 4 RFC MONOSOURCE_GRADES** (PR #47, `feat/monosource-switch`). Monitor читает «Все оценки!A1:ZZ50» вместо «Сегодня!A1:B50», парсит колонку сегодняшней даты через `_parse_master_sheet_for_date`. Это закрывает архитектурный source race condition'а (два writer'а с разными форматами cell_reference). Hourly `history_importer` оставлен как backup для листов «Неделя!» и «Четверти!». Latency evidence из логов 20.05: 6 мин между [NEW GRADE] в today и +1 в master (включая 1ч интервал importer; реальная master latency меньше). Shadow run (PR #45, ~10 мин) подтвердил `match=N today_only=0 master_only=0`. После переключения первый цикл прода (03:02:51 → 03:02:58) — чисто, без NEW GRADE / PENDING / failures.

@@ -217,6 +217,10 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 26b. **Групповые уведомления уважают тихие часы и кладутся в очередь** — `_send_to_groups_for_student` в `is_quiet_hours()` пишет в `group_notification_queue` (отдельная таблица от `notification_queue`). Утренний flush в 07:00 (`_flush_quiet_hours_queue` в schedulers.py) сливает накопленное вместе с личной morning-сводкой. inline_markup НЕ сохраняется — после ночи callback'ы могут устареть.
 
+26c. **Reply-keyboard навигация (PR #60 role-toggle).** Постоянная reply-keyboard внизу — `src/main.py:_build_reply_keyboard(lang, mode, is_admin)`. Три варианта: `parent` (`{Чат, Меню}` + опц. строка `{Управление}` для admin'а в parent-mode), `admin` (`{Управление, Я родитель}`). **Telegram API quirk:** `InlineKeyboardButton.web_app` передаёт signed initData (для WebApp с auth), `KeyboardButton.web_app` — НЕ передаёт (для отправки данных боту). Дашборд = ТОЛЬКО inline. Reply-handler'ы в `src/handlers/navigation.py` ловят label'ы по точному совпадению (ai_chat handler регистрируется ПОСЛЕ, чтобы label не уходил в AI как вопрос). Admin-specific label'ы внутри handler'а делают role check.
+
+26d. **/start для admin'а ВСЕГДА идёт в admin welcome**, не в AI-чат. Admin переключается в parent-режим явным тапом «👨 Я родитель» (label в reply-keyboard). Возврат — тап «🛠 Управление». ai_chat handler НЕ блокирует admin'ов (PR #59 убрал блокировщик), потому что admin может legitimately быть в parent-mode через toggle.
+
 ### Мониторинг и полнота данных
 
 27. **`_polling_lock`** в monitor_engine — если предыдущий цикл не завершился за 300с, новый не стартует (skip).
@@ -336,6 +340,7 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/b
 - **`/api/dashboard` ETag** — для повторных открытий дашборда отдавать 304 при неизменённых данных. Сейчас всегда 200.
 
 **Закрыто (история):**
+- ✅ **Серия PR навигации (#50, #56-60).** 21.05.2026 in prod. Conversation-first UX для родителей, admin UI cleanup (8 → 5 кнопок), видимый role-toggle admin↔parent через reply-keyboard. End-of-year dashboard + AI-чат с conversation history. Подробнее: memory `project_navigation_architecture_2026-05-21.md`, Docs/CONTEXT.md «21.05.2026 — третья сессия».
 - ✅ **Этап 4 RFC MONOSOURCE_GRADES** (PR #47). 21.05.2026 in prod. Monitor переключён с «Сегодня!A1:B50» на «Все оценки!A1:ZZ50» → парсит колонку сегодняшней даты через `_parse_master_sheet_for_date`. Закрывает архитектурный source двух writer'ов с разными форматами cell_reference. Hourly `history_importer` оставлен как backup для листов «Неделя!» и «Четверти!». `_shadow_compare_with_master` удалён.
 - ✅ Очередь для групповых уведомлений (PR #44). 21.05.2026 in prod. Таблица `group_notification_queue` + flush в 07:00 параллельно с личной morning-сводкой. До этого в тихие часы группы молча дропались (defensive после PR #42).
 - ✅ Content-based identity в monitor (PR #43). 21.05.2026 in prod. Заменили `get_existing_grade(cell_ref)` на `get_existing_grade_by_content(student, subject, date)`. `_pending_grades` ключ теперь content-based. Закрыл root cause инцидента 21.05.
