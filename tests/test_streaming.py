@@ -18,7 +18,10 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-os.environ.setdefault("BOT_TOKEN", "12345:test")
+# Force-set BOT_TOKEN с ':' — bot_instance валидирует формат и exit(1) на
+# невалидном. CI задаёт BOT_TOKEN другим значением, setdefault не overrid'ит.
+if ":" not in os.environ.get("BOT_TOKEN", ""):
+    os.environ["BOT_TOKEN"] = "12345:test"
 os.environ.setdefault("ADMIN_ID", "0")
 os.environ.setdefault("ADMIN_GROUP_ID", "0")
 

@@ -26,7 +26,11 @@ jobs:
 
       - name: Run pytest
         env:
-          BOT_TOKEN: test-token
+          # BOT_TOKEN формата с ':' — bot_instance.py exit(1) при невалидном.
+          # Старые тесты (без импорта handlers/) этого не требовали, но новые
+          # тесты handler'ов (test_ai_chat_handler_history, test_streaming)
+          # импортируют src.handlers.ai_chat → bot_instance.
+          BOT_TOKEN: '12345:ci-test-token'
           ADMIN_ID: '0'
           ADMIN_GROUP_ID: '0'
         run: pytest tests/ -v
