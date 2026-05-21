@@ -84,6 +84,20 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 ## Закрытый долг (история — НЕ переделывать)
 
+### Уроки сессии 21.05.2026 (для будущего меня)
+
+Серия мелких UX-багов которые попали в прод — стоит учиться:
+
+1. **`btn_back` несуществующий ключ** (PR_A → fix). Я использовал `t("btn_back", lang)` в `src/handlers/ai_chat.py`, ключа в локалях нет — пользователь увидел «btn_back» вместо текста. **Урок:** перед использованием i18n-ключа — grep что он есть в `src/locales/*.json`. Если ключа нет — добавить ВО ВСЕ три (ru/uz/en), потом использовать. Лучше: добавить в i18n.py runtime warning при miss.
+
+2. **«30 дней оценок» — необоснованное и ложное ограничение** (PR_A → fix). Я по умолчанию поставил `days=30` в `get_grade_history_for_student_all` без оценки ёмкости. Claude Haiku 4.5 = 200K context, год оценок = ~3K токенов, не было причин ограничивать. И главное — текст welcome обещал юзеру именно это, то есть бот **врал**. **Урок:** не указывать конкретные числа в UX-текстах если они не следуют из жёсткого ограничения. Лучше «знаю всю историю» чем «знаю последние N дней» с искусственным N.
+
+3. **`cell_reference` race condition** (инцидент с спамом ночью). Два writer'а с разной семантикой cell_reference — это не «забыл», это архитектурный долг известный по RFC. Но защиты от него (content-based identity) не было — PR #43 закрыл правильно. **Урок:** если RFC говорит «когда-нибудь сделаем», но текущий код может иметь race — добавить **defensive check** сразу, не ждать full refactor.
+
+4. **Morning flush без дедупа** (PR #49). Очередь могла содержать дубли из-за бага в writer, но flush этого не учитывал. **Урок:** при любом «накопить и потом раздать» — дедуп на стороне consumer'а как defense in depth, даже если producer вроде бы не должен дублировать.
+
+Общий паттерн ошибок: **необоснованный optimism про правильность собственного кода + leakage внутренних чисел/деталей в UX**. В будущем — проверять синхронность ключей, не вшивать произвольные лимиты в UI-тексты, добавлять defensive checks параллельно с архитектурными планами.
+
 **21.05.2026 — вторая половина сессии:**
 - ✅ **Этап 4 RFC MONOSOURCE_GRADES** (PR #47, `feat/monosource-switch`). Monitor читает «Все оценки!A1:ZZ50» вместо «Сегодня!A1:B50», парсит колонку сегодняшней даты через `_parse_master_sheet_for_date`. Это закрывает архитектурный source race condition'а (два writer'а с разными форматами cell_reference). Hourly `history_importer` оставлен как backup для листов «Неделя!» и «Четверти!». Latency evidence из логов 20.05: 6 мин между [NEW GRADE] в today и +1 в master (включая 1ч интервал importer; реальная master latency меньше). Shadow run (PR #45, ~10 мин) подтвердил `match=N today_only=0 master_only=0`. После переключения первый цикл прода (03:02:51 → 03:02:58) — чисто, без NEW GRADE / PENDING / failures.
 - ✅ **Shadow run MONOSOURCE_GRADES** (PR #45 + PR #46 hotfix). Observability перед переключением: monitor читал оба листа, логировал `[SHADOW] match=N today_only=K master_only=M` + `[SHADOW_DIVERGENCE]` построчно. Hotfix #46: нормализация обеих сторон через `sanitize_cell` (иначе заголовок «21 мая чт» давал false-positive divergence).
@@ -131,6 +145,29 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 ---
 
 ## Открытый долг
+
+### AI roadmap (после AI-first redesign 21.05.2026)
+
+**Tier 1 — knowledge expansion (текущий приоритет, лето 2026):**
+- **PR_E1 (~2ч): FAQ в system prompt.** Расширить `_CHAT_SYSTEM_PROMPTS` со статичными знаниями — тарифы, тихие часы, как добавить ребёнка, инвайт-ссылки, мониторинг. Чтобы AI отвечал на «сколько стоит?», «как пользоваться?» без extra инфры. ~5K tokens system prompt — приемлемо для Haiku 200K context.
+- **PR_E2 (~3-4ч): Tool use для динамики.** Anthropic SDK поддерживает tools — AI сам решает когда нужны актуальные данные:
+  - `get_subscription_status(family_id)` — активна ли, когда заканчивается
+  - `get_family_members(family_id)` — кто в семье
+  - `get_family_pricing()` — текущие тарифы из `settings` (когда станут динамическими)
+  - Loop через Anthropic tool_use → tool_result паттерн.
+- Решение НЕ RAG: документация компактная (~15-20K токенов), Claude Haiku 4.5 = 200K context, инфра vector DB/embeddings не оправдана. RAG имеет смысл когда документация >100K токенов или per-school knowledge base — то есть после расширения для контракта.
+
+**Tier 2 — UX и автоматизация (через 1-2 недели после Tier 1):**
+- **Streaming responses** — SSE для WebApp (Anthropic API supports), batched для Telegram (отправлять частичные сообщения раз в N токенов).
+- **Proactive AI alerts** — anomaly detection раз в день: «У X серия троек, обратите внимание» → push в Telegram. Это **B2B killer feature** для презентации школе.
+- **👍/👎 feedback на ответы** — таблица `ai_chat_feedback`, кнопки под каждым ответом. Данные для будущего prompt tuning.
+- **UI history rendering в WebApp** — endpoint `GET /api/chat/history/<id>` уже есть (PR #52), dashboard.html не рендерит. Подгружать при открытии chat-section, рендерить prev messages.
+- **Bot ai_chat использует conversation history** — в handlers/ai_chat.py подключить `get_recent_chat_history` к `answer_parent_question(prev_messages=...)`. Сейчас таблица есть, но bot контекст не помнит.
+
+**Tier 3 — после школьного контракта (август-сентябрь 2026):**
+- **Voice input** — Telegram voice message → Whisper API → текст → AI → ответ голосом. UZ-родители выиграют.
+- **School-side dashboard + multi-tenancy** — `schools` table, RBAC (admin → teacher → parent), teacher view (класс/поток overview), white-label опционально.
+- **RAG для per-school knowledge** — если школа даст «свой учебный план / FAQ» — здесь уже vector DB оправдана.
 
 **Архитектурные:**
 - `handlers/subscription.py` 1318 строк — split отложен сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Возвращаться когда платежи активны.
