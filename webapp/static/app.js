@@ -680,6 +680,11 @@ function setupChatUI() {
             const data = await res.json();
             thinkingNode.textContent = data.answer || t("chat_error");
             thinkingNode.classList.remove("chat-thinking");
+            // PR_H3: цепляем 👍/👎 row на свежий AI ответ. msg_id пришёл
+            // от /api/chat после save_chat_message на бэке.
+            if (data.message_id) {
+                attachFeedbackToNode(thinkingNode, data.message_id);
+            }
             // После первого успешного turn'а — показываем «Начать заново»,
             // прячем suggested-prompts (родитель уже в беседе).
             _markChatHasHistory();
@@ -722,7 +727,9 @@ async function loadChatHistory() {
 
         messages.forEach(m => {
             const role = m.role === "user" ? "user" : "ai";
-            appendChatMessage(role, m.content);
+            // PR_H3: для assistant передаём message_id чтобы прицепить
+            // 👍/👎 feedback кнопки на каждый старый ответ.
+            appendChatMessage(role, m.content, role === "ai" ? m.id : null);
         });
         _markChatHasHistory();
     } catch (e) {
@@ -758,14 +765,78 @@ async function clearChatHistory() {
     if (suggested) suggested.classList.remove("hidden");
 }
 
-function appendChatMessage(role, text) {
+function appendChatMessage(role, text, messageId) {
     const container = document.getElementById("chat-history");
     const div = document.createElement("div");
     div.className = `chat-msg chat-msg-${role}`;
     div.textContent = text;
     container.appendChild(div);
+
+    // PR_H3: для ai сообщений добавляем 👍/👎 feedback row сразу под bubble.
+    // messageId передаётся для history-bubbles (известен заранее) и обновляется
+    // позже через attachFeedbackToNode для live new turns (id приходит с
+    // /api/chat ответом, после того как bubble уже создан).
+    if (role === "ai" && messageId != null) {
+        attachFeedbackToNode(div, messageId);
+    }
+
     container.scrollTop = container.scrollHeight;
     return div;
+}
+
+function attachFeedbackToNode(bubbleNode, messageId) {
+    // Идемпотентно — если уже есть row, не дублируем (например при rerender)
+    if (bubbleNode.nextSibling && bubbleNode.nextSibling.classList &&
+        bubbleNode.nextSibling.classList.contains("chat-feedback-row")) {
+        return;
+    }
+    const row = document.createElement("div");
+    row.className = "chat-feedback-row";
+    row.dataset.messageId = String(messageId);
+    row.innerHTML = `
+        <button class="chat-fb-btn" data-rating="1"
+                aria-label="${escapeHtml(t("chat_feedback_up_label"))}">👍</button>
+        <button class="chat-fb-btn" data-rating="-1"
+                aria-label="${escapeHtml(t("chat_feedback_down_label"))}">👎</button>
+    `;
+    row.querySelectorAll(".chat-fb-btn").forEach(btn => {
+        btn.addEventListener("click", () => sendFeedback(row, messageId,
+                                                          parseInt(btn.dataset.rating, 10)));
+    });
+    bubbleNode.parentNode.insertBefore(row, bubbleNode.nextSibling);
+}
+
+async function sendFeedback(rowNode, messageId, rating) {
+    try {
+        const res = await fetch("/api/chat/feedback", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...API_HEADERS,
+            },
+            body: JSON.stringify({ message_id: messageId, rating }),
+        });
+        if (!res.ok) {
+            console.warn("Feedback POST failed", res.status);
+            return;
+        }
+    } catch (e) {
+        console.warn("Feedback network failed", e);
+        return;
+    }
+    // UI: помечаем выбранную кнопку, кратко показываем «спасибо»
+    rowNode.querySelectorAll(".chat-fb-btn").forEach(btn => {
+        btn.classList.toggle("selected", parseInt(btn.dataset.rating, 10) === rating);
+    });
+    const thanks = document.createElement("span");
+    thanks.className = "chat-fb-thanks";
+    thanks.textContent = t("chat_feedback_thanks");
+    // Удаляем старый thanks если был (toggle сценарий)
+    const old = rowNode.querySelector(".chat-fb-thanks");
+    if (old) old.remove();
+    rowNode.appendChild(thanks);
+    setTimeout(() => thanks.classList.add("fade-out"), 1500);
+    setTimeout(() => { if (thanks.parentNode) thanks.remove(); }, 2500);
 }
 
 // ============ COLLAPSIBLE ============

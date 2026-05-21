@@ -74,8 +74,12 @@ def test_clear_does_not_affect_other_students(temp_db):
 
     dbm.clear_chat_history(123, 5)
     assert dbm.get_recent_chat_history(123, 5) == []
-    assert dbm.get_recent_chat_history(123, 7) == [{'role': 'user', 'content': 'Умарбек',
-                                                     'created_at': dbm.get_recent_chat_history(123, 7)[0]['created_at']}]
+    h7 = dbm.get_recent_chat_history(123, 7)
+    # PR_H3: response теперь содержит id (для привязки feedback). Проверяем
+    # содержимое а не exact dict.
+    assert len(h7) == 1
+    assert h7[0]['role'] == 'user'
+    assert h7[0]['content'] == 'Умарбек'
 
 
 def test_invalid_role_raises(temp_db):
