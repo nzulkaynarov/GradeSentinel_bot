@@ -268,6 +268,25 @@ def init_db():
         )
         ''')
 
+        # 10b. AI conversation history (PR_D R6). Сообщения родитель↔AI для
+        # multi-turn чата с памятью контекста. Ключ — (telegram_id, student_id):
+        # каждый ребёнок имеет отдельную ветку разговора. role: 'user'|'assistant'.
+        # Limit логикой держим N последних, чтобы не палить токены.
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ai_chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER NOT NULL,
+            student_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ai_chat_tg_student '
+            'ON ai_chat_messages(telegram_id, student_id, created_at)'
+        )
+
         # 11. Миграция: колонка lang для мультиязычности
         if _table_exists(cursor, 'parents'):
             cursor.execute("PRAGMA table_info(parents)")
@@ -539,6 +558,14 @@ from src.db.notifications import (  # noqa: E402, F401
     queue_group_notification,
     get_and_clear_queued_group_notifications,
     get_all_queued_group_targets,
+)
+
+
+from src.db.ai_chat import (  # noqa: E402, F401
+    save_chat_message,
+    get_recent_chat_history,
+    clear_chat_history,
+    MAX_HISTORY_FOR_AI,
 )
 
 
