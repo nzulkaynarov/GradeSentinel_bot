@@ -116,5 +116,7 @@
   "quarters_forecast_note": "~ belgisi bilan — joriy chorak baholaridan yillik prognoz.",
   "dd_history": "Fan bo'yicha baholar tarixi",
   "badge_new": "yangi",
+  "ai_popup_general": "Botni ochaman. Pastdagi «💬 Chat»ni bosing va baholar haqida savol bering — AI butun tarixni biladi.",
+  "ai_popup_with_subject": "Botni ochaman. «💬 Chat»ni bosing va shu fan haqida so'rang — AI faqat shu fanni filtrlaydi.",
   "dashboard_ai_hint": "💬 Savollar qoldimi? Bot chatidagi AI'ga so'rang."
 }

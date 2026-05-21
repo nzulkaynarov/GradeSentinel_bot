@@ -1037,7 +1037,7 @@ body {
     .kpi-row { grid-template-columns: repeat(4, 1fr); }
 }
 .kpi-card {
-    background: var(--tg-secondary-bg, #f8fafc);
+    background: var(--tg-bg-secondary, #f8fafc);
     border: 1px solid rgba(127,127,127,0.10);
     border-radius: 14px;
     padding: 14px 12px;
@@ -1050,24 +1050,26 @@ body {
 .kpi-good { border-color: rgba(16,185,129,0.30); }
 .kpi-bad { border-color: rgba(239,68,68,0.30); }
 .kpi-value {
-    font-size: 28px; font-weight: 700; line-height: 1;
+    font-size: 30px; font-weight: 700; line-height: 1.1;
     color: var(--tg-text);
 }
 .kpi-value.muted { color: var(--tg-hint); }
 .kpi-value-small {
-    font-size: 16px; font-weight: 600;
-    color: var(--tg-text); margin-bottom: 2px;
+    font-size: 15px; font-weight: 600;
+    color: var(--tg-text); margin-bottom: 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.2;
 }
 .kpi-value-secondary {
-    font-size: 18px; font-weight: 600;
-    color: var(--tg-text);
+    font-size: 20px; font-weight: 700;
+    color: var(--tg-text); line-height: 1;
 }
 .kpi-label {
     font-size: 11px; color: var(--tg-hint);
     margin-top: 6px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    line-height: 1.3;
 }
 .kpi-delta {
     margin-top: 4px;
@@ -1087,14 +1089,23 @@ body {
 .status-line.status-declining { color: #EF4444; font-weight: 500; }
 .status-line.status-improving { color: #10B981; font-weight: 500; }
 
+/* Quarters/Subjects tables — wrap в scrollable container для mobile */
+#quarters-table-wrap,
+#subjects-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -8px;  /* extend до краёв card-body */
+}
+
 /* Quarters table — primary block */
 .qr-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    min-width: 460px;  /* mobile: горизонтальный скролл если уже */
 }
 .qr-table th {
-    background: var(--tg-secondary-bg, #f1f5f9);
+    background: var(--tg-bg-secondary, #f1f5f9);
     color: var(--tg-hint);
     font-weight: 600;
     text-align: center;
@@ -1162,9 +1173,10 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
+    min-width: 440px;  /* mobile: scroll если уже */
 }
 .subj-table th {
-    background: var(--tg-secondary-bg, #f1f5f9);
+    background: var(--tg-bg-secondary, #f1f5f9);
     color: var(--tg-hint);
     font-weight: 600;
     text-align: left;

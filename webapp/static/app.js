@@ -124,7 +124,11 @@ async function fetchJSON(url) {
 
 async function loadTranslations(lang) {
     try {
-        const res = await fetch(`/static/locales/${lang}.json`, { cache: "force-cache" });
+        // cache: 'no-cache' — браузер делает revalidate (304 если не изменилось),
+        // но НЕ хранит вечно как force-cache. После deploy новые i18n ключи
+        // подтягиваются. Стоимость: 1 HEAD-equivalent request per visit.
+        // Раньше force-cache → новые ключи рендерились как "kpi_avg" буквально.
+        const res = await fetch(`/static/locales/${lang}.json`, { cache: "no-cache" });
         if (!res.ok) throw new Error(`locale ${lang} not found`);
         return await res.json();
     } catch (e) {
@@ -243,19 +247,10 @@ function renderDashboard() {
     // Mark студента как просмотренного — для подсветки "новое" в следующий заход
     localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
 
-    // Year report: lazy + auto-expand в конце учебного года (апрель-июнь)
+    // Year report: lazy при раскрытии collapsible. Auto-expand убрал —
+    // user feedback: «нужна вкладка?» — отдельная фича в будущем (TBD),
+    // сейчас просто collapsible default-closed без сезонных правил.
     setupYearReportLazy();
-    _maybeAutoExpandYearReport();
-}
-
-function _maybeAutoExpandYearReport() {
-    const month = new Date().getMonth() + 1;  // 1-12
-    if (month >= 4 && month <= 6) {
-        const section = document.getElementById("year-section");
-        if (section && !section.classList.contains("open")) {
-            toggleSection(section);
-        }
-    }
 }
 
 // ═════════ KPI ROW (4 cards) ═════════
@@ -681,14 +676,27 @@ function _handleHashChange() {
 }
 
 function _openBotChatWithQuestion(question) {
-    // Открыть бот-чат с pre-filled вопросом. Telegram WebApp:
-    // tg.close() + bot отправит сообщение с suggestion?
-    // Простейший вариант: t.me/<bot_username>?start=ask_<encoded_question>
-    // Но bot_username нам не передан в frontend.
-    // MVP: просто tg.close() — юзер увидит бота, может задать вопрос сам.
+    // UX: показываем нативный popup с инструкцией, потом закрываем WebApp.
+    // Раньше просто tg.close() без объяснения — юзер не знал что делать.
+    // Полноценный deep-link через t.me/<bot>?start=... требует bot_username
+    // в frontend env (TBD).
     const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg) {
-        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    if (!tg) return;
+
+    if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+
+    const hint = question
+        ? (t("ai_popup_with_subject") || "Открываю бот. Нажмите 💬 Чат и спросите про этот предмет.")
+        : (t("ai_popup_general") || "Открываю бот. Нажмите 💬 Чат и задайте вопрос про оценки.");
+
+    if (typeof tg.showPopup === "function") {
+        tg.showPopup({ message: hint, buttons: [{ type: "ok" }] }, () => {
+            if (tg.close) tg.close();
+        });
+    } else if (typeof tg.showAlert === "function") {
+        tg.showAlert(hint, () => { if (tg.close) tg.close(); });
+    } else {
+        alert(hint);
         if (tg.close) tg.close();
     }
 }
