@@ -60,7 +60,8 @@
         <!-- ════════ VIEW: DASHBOARD ════════ -->
         <div id="view-dashboard">
 
-        <!-- KPI row — 4 numerical cards, all visible at a glance (best practice) -->
+        <!-- KPI row — все 4 числа подписаны периодом, без лукавства -->
+        <p class="kpi-period-hint" id="kpi-period-hint" data-i18n="kpi_period_hint">Данные за последние 30 дней</p>
         <section class="kpi-row" id="kpi-row">
             <div class="kpi-card kpi-primary">
                 <div class="kpi-value" id="kpi-avg">—</div>
@@ -74,11 +75,13 @@
             <div class="kpi-card kpi-good">
                 <div class="kpi-value-small" id="kpi-top-name">—</div>
                 <div class="kpi-value-secondary" id="kpi-top-avg"></div>
+                <div class="kpi-sub" id="kpi-top-count"></div>
                 <div class="kpi-label" data-i18n="kpi_top">Лучший предмет</div>
             </div>
             <div class="kpi-card kpi-bad">
                 <div class="kpi-value-small" id="kpi-worst-name">—</div>
                 <div class="kpi-value-secondary" id="kpi-worst-avg"></div>
+                <div class="kpi-sub" id="kpi-worst-count"></div>
                 <div class="kpi-label" data-i18n="kpi_worst">Слабее всего</div>
             </div>
         </section>
