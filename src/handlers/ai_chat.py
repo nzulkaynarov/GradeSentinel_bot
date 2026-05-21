@@ -29,32 +29,12 @@ _AI_CHAT_STATE = 'ai_chat_mode'
 # было необоснованное ограничение, и welcome-текст врал юзеру.
 _RECENT_DAYS = 365
 
-# Suggested prompts по умолчанию — снижают порог входа (большинство юзеров
-# не знает что спрашивать). Текст кнопок локализуется через t().
-_SUGGESTED_PROMPT_KEYS = [
-    "ai_suggested_summer",   # «Что подтянуть летом?»
-    "ai_suggested_compare",  # «Сравни с прошлым месяцем»
-    "ai_suggested_concern",  # «Где есть поводы для беспокойства?»
-]
+def start_ai_chat(user_id: int, reply_keyboard=None):
+    """Точка входа из user_panel или /start.
 
-
-def _build_keyboard(lang: str, with_exit: bool = True) -> types.InlineKeyboardMarkup:
-    """Inline-keyboard с suggested prompts + кнопкой выхода."""
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    for key in _SUGGESTED_PROMPT_KEYS:
-        markup.add(types.InlineKeyboardButton(
-            t(key, lang), callback_data=f"ai_prompt:{key}"
-        ))
-    if with_exit:
-        markup.add(types.InlineKeyboardButton(
-            t("ai_chat_exit", lang), callback_data="ai_chat_exit"
-        ))
-    return markup
-
-
-def start_ai_chat(user_id: int):
-    """Точка входа из user_panel. Решает: один ребёнок → сразу в чат,
-    несколько → выбор; нет детей → сообщение."""
+    Решает: один ребёнок → сразу в чат, несколько → выбор; нет детей → сообщение.
+    `reply_keyboard` (если задан) — постоянная reply-keyboard {Чат, Дашборд,
+    Меню} которая ставится на welcome-message чтобы юзер сразу видел навигацию."""
     lang = get_user_lang(user_id)
     students = get_students_for_parent(user_id)
 
@@ -63,28 +43,43 @@ def start_ai_chat(user_id: int):
         students = [s for s in students if is_student_under_active_subscription(s['id'])]
 
     if not students:
-        bot.send_message(user_id, t("ai_chat_no_students", lang))
+        bot.send_message(user_id, t("ai_chat_no_students", lang), reply_markup=reply_keyboard)
         return
 
     if len(students) == 1:
-        _enter_chat_mode(user_id, students[0], lang)
+        _enter_chat_mode(user_id, students[0], lang, reply_keyboard=reply_keyboard)
         return
 
-    # Несколько детей — попросить выбрать
+    # Несколько детей — inline выбор. Reply-keyboard ставим здесь (а
+    # _enter_chat_mode сам её больше не ставит, т.к. уже стоит).
     markup = types.InlineKeyboardMarkup(row_width=1)
     for s in students:
         name = s.get('display_name') or s['fio']
         markup.add(types.InlineKeyboardButton(
             name, callback_data=f"ai_pick:{s['id']}"
         ))
-    markup.add(types.InlineKeyboardButton(
-        t("user_panel_back", lang), callback_data="up_back"
-    ))
-    bot.send_message(user_id, t("ai_chat_pick_student", lang), reply_markup=markup)
+    if reply_keyboard is not None:
+        # Сначала ставим reply-keyboard через отдельное сообщение, потом inline
+        bot.send_message(user_id, t("ai_chat_pick_student", lang),
+                          reply_markup=reply_keyboard)
+        bot.send_message(user_id, "👇", reply_markup=markup)
+    else:
+        bot.send_message(user_id, t("ai_chat_pick_student", lang),
+                          reply_markup=markup)
 
 
-def _enter_chat_mode(user_id: int, student: dict, lang: str):
-    """Ставит state, отправляет приветствие с suggested prompts."""
+def start_ai_chat_with_keyboard(user_id: int, reply_keyboard):
+    """Вариант start_ai_chat с обязательной reply-keyboard — для /start
+    flow когда нужно сразу установить навигацию."""
+    start_ai_chat(user_id, reply_keyboard=reply_keyboard)
+
+
+def _enter_chat_mode(user_id: int, student: dict, lang: str, reply_keyboard=None):
+    """Ставит state и отправляет лаконичное приветствие.
+
+    PR_F: примеры вопросов вшиты в welcome-текст (3 буллета), без inline-кнопок —
+    они конфликтуют с постоянной reply-keyboard {Чат, Дашборд, Меню}. Юзер
+    либо копирует пример, либо пишет свой вопрос."""
     student_id = student['id']
     set_user_state(user_id, _AI_CHAT_STATE, json.dumps({
         'student_id': student_id,
@@ -93,8 +88,8 @@ def _enter_chat_mode(user_id: int, student: dict, lang: str):
     bot.send_message(
         user_id,
         t("ai_chat_welcome", lang, name=name),
-        reply_markup=_build_keyboard(lang),
         parse_mode='HTML',
+        reply_markup=reply_keyboard,
     )
 
 
@@ -120,41 +115,6 @@ def _on_pick_student(call):
         return
 
     _enter_chat_mode(user_id, student, lang)
-
-
-@bot.callback_query_handler(func=lambda c: c.data == "ai_chat_exit")
-def _on_chat_exit(call):
-    """Выход из ai_chat_mode."""
-    bot.answer_callback_query(call.id)
-    user_id = call.from_user.id
-    lang = get_user_lang(user_id)
-    clear_user_state(user_id)
-    bot.send_message(user_id, t("ai_chat_bye", lang))
-    # Возвращаем в user panel через делегирование
-    from src.main import _show_user_panel
-    _show_user_panel(user_id)
-
-
-@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("ai_prompt:"))
-def _on_suggested_prompt(call):
-    """Юзер тапнул suggested prompt — это как-будто он сам ввёл этот вопрос."""
-    bot.answer_callback_query(call.id)
-    user_id = call.from_user.id
-    lang = get_user_lang(user_id)
-    state = get_user_state(user_id)
-    if not state or state.get('state') != _AI_CHAT_STATE:
-        # Сессия истекла (бот перезапустился? user nuked state?) — стартуем заново
-        start_ai_chat(user_id)
-        return
-
-    try:
-        prompt_key = call.data.split(":", 1)[1]
-    except IndexError:
-        return
-    # Берём локализованный текст suggested prompt'а — отправляем его в AI
-    # как-будто это был user input.
-    question_text = t(prompt_key, lang)
-    _ask_ai(user_id, question_text, lang, state)
 
 
 @bot.message_handler(func=lambda m: _is_ai_chat_state(m.from_user.id))
@@ -225,9 +185,11 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
         logger.warning(f"ai_chat answer failed for user={user_id} student={student_id}: {e}")
         answer = None
 
+    # PR_F: ответы AI идут БЕЗ повторяющихся suggested-кнопок.
+    # Suggested были в welcome, дальше юзер пишет сам или жмёт «Меню» в
+    # postoянной reply-keyboard. Это убирает визуальный шум.
     if not answer:
-        bot.send_message(user_id, t("ai_chat_error", lang),
-                          reply_markup=_build_keyboard(lang))
+        bot.send_message(user_id, t("ai_chat_error", lang))
         return
 
-    bot.send_message(user_id, answer, reply_markup=_build_keyboard(lang))
+    bot.send_message(user_id, answer)
