@@ -316,28 +316,19 @@ def contact_handler(message):
 #  Пользовательская панель + AI-first navigation (PR_F)
 # ═══════════════════════════════════════════
 
-def _build_reply_keyboard(lang: str, with_webapp: bool = True) -> types.ReplyKeyboardMarkup:
-    """Постоянная reply-keyboard внизу экрана: {Чат, Дашборд, Меню}.
+def _build_reply_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
+    """Постоянная reply-keyboard внизу: {💬 Чат, ⚙️ Меню} — 2 текстовые кнопки.
 
-    PR_F: 3 кнопки в 2 строки — это весь permanent UI для родителя.
-    Никакого «Меню» как inline-панели с 9 кнопками, никакого «Выйти из чата».
-    «Чат» — переключает в ai_chat_mode. «Дашборд» — открывает WebApp.
-    «Меню» — показывает inline-панель с family/subscription/settings/support.
-
-    `with_webapp=False` если WEBAPP_URL не задан — тогда {Чат, Меню}."""
+    PR_F-hotfix #59: «📊 Дашборд» убран из reply-keyboard, потому что
+    KeyboardButton.web_app НЕ передаёт подписанные initData (это Telegram
+    API: reply-keyboard webapp-кнопки для возврата данных боту, не для
+    авторизованной навигации). Дашборд переехал в inline-меню (Меню →
+    📊 Дашборд) — там InlineKeyboardButton.web_app работает корректно."""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
-    webapp_url = os.environ.get("WEBAPP_URL") if with_webapp else None
-    if webapp_url:
-        markup.row(
-            types.KeyboardButton(t("nav_chat", lang)),
-            types.KeyboardButton(
-                t("nav_dashboard", lang),
-                web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
-            ),
-        )
-    else:
-        markup.add(types.KeyboardButton(t("nav_chat", lang)))
-    markup.add(types.KeyboardButton(t("nav_menu", lang)))
+    markup.row(
+        types.KeyboardButton(t("nav_chat", lang)),
+        types.KeyboardButton(t("nav_menu", lang)),
+    )
     return markup
 
 
@@ -430,6 +421,17 @@ def _show_user_panel(chat_id: int, message_id: int = None):
 
         text = t("user_panel_title", lang, families_info=fam_text)
         markup = types.InlineKeyboardMarkup(row_width=2)
+
+        # 📊 Дашборд — inline WebApp button (передаёт signed initData).
+        # PR_F-hotfix #59: reply-keyboard WebApp button НЕ передаёт initData,
+        # поэтому Дашборд переехал сюда. Daily access — 1 клик через Меню.
+        if has_kids:
+            webapp_url = os.environ.get("WEBAPP_URL")
+            if webapp_url:
+                markup.add(types.InlineKeyboardButton(
+                    t("btn_webapp", lang),
+                    web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
+                ))
 
         # CTA «Добавить ребёнка» — primary action для head без детей.
         if is_head and not has_kids:
