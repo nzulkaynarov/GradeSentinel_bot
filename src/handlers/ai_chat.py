@@ -117,20 +117,16 @@ def _on_pick_student(call):
     _enter_chat_mode(user_id, student, lang)
 
 
-def _is_ai_chat_for_non_admin(user_id: int) -> bool:
-    """True только если юзер в ai_chat_mode И НЕ admin.
-
-    PR_F-hotfix: admin'ам ai_chat handler не должен матчиться вообще,
-    иначе reply-keyboard кнопки admin panel («🏠 Семьи», «🛠 Управление»)
-    ловятся здесь и admin застревает в чате."""
-    if get_parent_role(user_id) == 'admin':
-        return False
-    return _is_ai_chat_state(user_id)
-
-
-@bot.message_handler(func=lambda m: _is_ai_chat_for_non_admin(m.from_user.id))
+@bot.message_handler(func=lambda m: _is_ai_chat_state(m.from_user.id))
 def _on_chat_message(message):
-    """Любой текст в ai_chat_mode → вопрос для AI (только для не-админов)."""
+    """Любой текст в ai_chat_mode → вопрос для AI.
+
+    PR_G-hotfix: убран admin-блокировщик. Admin может legitimately быть в
+    ai_chat_mode через «👨 Я родитель» (Tier 2) — там AI должен отвечать.
+    Защита от «admin застрял»: /start для admin ВСЕГДА идёт в admin welcome
+    (не в AI), и ai_chat_mode ставится только явным тапом «Я родитель».
+    В parent-mode reply-keyboard = {💬 Чат, ⚙️ Меню} (без admin-кнопок),
+    конфликта с admin handlers нет."""
     user_id = message.from_user.id
     lang = get_user_lang(user_id)
     state = get_user_state(user_id)
