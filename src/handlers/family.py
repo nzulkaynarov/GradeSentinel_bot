@@ -102,6 +102,14 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
     else:
         send_menu_safe(chat_id, text, inline_markup=markup)
 
+@bot.callback_query_handler(func=lambda call: call.data == 'none')
+def callback_noop(call):
+    """Headers с callback_data='none' — non-clickable секции (children/members
+    заголовки). Раньше tap зависал на «loading» 30 сек. Acknowledge без
+    действия — Telegram сразу отрисовывает 'OK'."""
+    bot.answer_callback_query(call.id)
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('open_manage_'))
 def callback_open_manage(call):
     args = _parse_int_args(call.data, 'open_manage_', 1)

@@ -118,6 +118,25 @@ def on_bot_added_to_group(message: types.Message):
     )
 
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith('gcancel_'))
+def callback_group_cancel(call: types.CallbackQuery):
+    """«Отмена» в group family-select. Раньше callback был без handler →
+    silent fail (button hang). Audit fix: удаляем message и acknowledge."""
+    bot.answer_callback_query(call.id)
+    try:
+        # Только тот кто инициировал может отменить
+        parts = call.data.split('_', 1)
+        inviter_id = int(parts[1]) if len(parts) > 1 else None
+        if inviter_id and call.from_user.id != inviter_id:
+            lang = get_user_lang(call.from_user.id)
+            bot.answer_callback_query(call.id, t("group_not_inviter", lang),
+                                       show_alert=False)
+            return
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"gcancel cleanup failed: {e}")
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('glink_'))
 def callback_group_link(call: types.CallbackQuery):
     """Юзер кликнул на кнопку выбора семьи в групповом чате."""

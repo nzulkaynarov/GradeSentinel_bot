@@ -171,7 +171,7 @@
             </div>
         </div><!-- end #view-year -->
 
-        <!-- Action bar — только PDF (Share убран) + переход в AI чат -->
+        <!-- Action bar — PDF (Share убран). AI кнопка отдельно для toggle chat. -->
         <section class="action-bar" id="action-bar">
             <button id="btn-export-pdf" class="btn-action btn-action-primary" type="button"
                     data-i18n="action_export_pdf">📄 Экспорт PDF</button>
@@ -179,7 +179,29 @@
                     data-i18n="action_open_ai">💬 Спросить AI</button>
         </section>
 
-        <p class="dashboard-footer-hint" data-i18n="dashboard_ai_hint"></p>
+        <!-- ════════ INLINE AI CHAT (revert удаления — теперь inline в Mini App) ════════
+             Раньше отдельный bot чат через deep-link. User feedback: «не работает,
+             выбрасывает». Возвращаем chat прямо в дашборд — backend /api/chat уже
+             family-scoped и shared с bot chat history. -->
+        <section class="card" id="chat-section">
+            <header class="card-header">
+                <h2 class="card-title">
+                    💬 <span data-i18n="section_ai_chat">Чат с AI</span>
+                </h2>
+                <p class="card-subtitle" data-i18n="chat_hint">Спросите про оценки своими словами</p>
+            </header>
+            <div class="card-body">
+                <div id="chat-history" class="chat-history"></div>
+                <button id="chat-clear" class="chat-clear-btn hidden" type="button"
+                        data-i18n="chat_clear_btn">↻ Начать заново</button>
+                <div class="chat-input-wrap">
+                    <input type="text" id="chat-input" class="chat-input"
+                           data-i18n-placeholder="chat_placeholder"
+                           placeholder="Например: сравни обоих детей">
+                    <button id="chat-send" class="btn-primary chat-send" data-i18n="chat_send">Спросить</button>
+                </div>
+            </div>
+        </section>
 
         <!-- PDF Export Modal -->
         <div id="pdf-modal" class="modal-backdrop hidden">
