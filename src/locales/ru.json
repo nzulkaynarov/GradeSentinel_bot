@@ -76,6 +76,9 @@
   "admin_panel_cancel_sub": "❌ Отменить подписку",
   "admin_panel_broadcast": "📢 Рассылка",
   "admin_panel_stats": "📊 Статистика",
+  "admin_panel_settings": "⚙️ Настройки",
+  "admin_settings_title": "⚙️ <b>Настройки админа</b>",
+  "btn_admin_as_parent": "👨 Я родитель",
 
   "user_panel_title": "📱 <b>Меню</b>\n\n{families_info}",
   "user_panel_ai_chat": "💬 Спросить AI",

@@ -38,7 +38,18 @@ def cmd_admin_panel(message):
 
 
 def _show_admin_panel(chat_id: int, lang: str, message_id: int = None):
-    """Показывает главную админ-панель."""
+    """Главная админ-панель — 5 кнопок (вместо прежних 8).
+
+    Структура (от primary к secondary):
+    - Семьи / Новая семья: daily action — управление существующими и создание
+    - Выдать / Отменить подписку: revenue action (платежи не подключены,
+      владелец раздаёт руками — главная регулярная функция)
+    - Настройки: submenu для редких actions (тарифы / промокоды / рассылка)
+
+    Что убрано из главной панели по сравнению с PR_F-audit:
+    - «📊 Статистика»: title уже содержит те же счётчики
+    - «💰 Тарифы», «🎁 Промокоды», «📢 Рассылка»: редкие настройки → submenu
+    """
     from src.database_manager import get_global_stats
     stats = get_global_stats()
 
@@ -53,17 +64,12 @@ def _show_admin_panel(chat_id: int, lang: str, message_id: int = None):
         types.InlineKeyboardButton(t("admin_panel_new_family", lang), callback_data="ap_new_family"),
     )
     markup.row(
-        types.InlineKeyboardButton(t("admin_panel_prices", lang), callback_data="ap_prices"),
-        types.InlineKeyboardButton(t("admin_panel_promo", lang), callback_data="ap_promo"),
-    )
-    markup.row(
         types.InlineKeyboardButton(t("admin_panel_grant_sub", lang), callback_data="ap_grant_sub"),
         types.InlineKeyboardButton(t("admin_panel_cancel_sub", lang), callback_data="ap_cancel_sub"),
     )
-    markup.row(
-        types.InlineKeyboardButton(t("admin_panel_broadcast", lang), callback_data="ap_broadcast"),
-        types.InlineKeyboardButton(t("admin_panel_stats", lang), callback_data="ap_stats"),
-    )
+    markup.add(types.InlineKeyboardButton(
+        t("admin_panel_settings", lang), callback_data="ap_settings"
+    ))
 
     if message_id:
         try:
@@ -221,9 +227,44 @@ def callback_ap_broadcast(call):
     broadcast_started(call.message)
 
 
+@bot.callback_query_handler(func=lambda call: call.data == 'ap_settings')
+def callback_ap_settings(call):
+    """Submenu админских настроек: тарифы / промокоды / рассылка.
+    Выделено из главной панели чтобы primary видел только daily actions."""
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    if not is_user_admin(user_id):
+        bot.answer_callback_query(call.id)
+        return
+    bot.answer_callback_query(call.id)
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        t("admin_panel_prices", lang), callback_data="ap_prices"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        t("admin_panel_promo", lang), callback_data="ap_promo"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        t("admin_panel_broadcast", lang), callback_data="ap_broadcast"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        t("family_back", lang), callback_data="ap_back"
+    ))
+    try:
+        bot.edit_message_text(
+            t("admin_settings_title", lang),
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            reply_markup=markup, parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.debug(f"Could not edit admin settings: {e}")
+
+
 @bot.callback_query_handler(func=lambda call: call.data == 'ap_stats')
 def callback_ap_stats(call):
-    """Статистика из админ-панели."""
+    """Статистика из админ-панели (legacy, удалено из главной панели —
+    title уже содержит counters). Команда `/stats` оставлена для совместимости."""
     user_id = call.from_user.id
     lang = get_user_lang(user_id)
     if not is_user_admin(user_id):

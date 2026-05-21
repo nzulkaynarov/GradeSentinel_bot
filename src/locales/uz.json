@@ -76,6 +76,9 @@
   "admin_panel_cancel_sub": "❌ Obunani bekor qilish",
   "admin_panel_broadcast": "📢 Tarqatma",
   "admin_panel_stats": "📊 Statistika",
+  "admin_panel_settings": "⚙️ Sozlamalar",
+  "admin_settings_title": "⚙️ <b>Admin sozlamalari</b>",
+  "btn_admin_as_parent": "👨 Men ota-onaman",
 
   "user_panel_title": "📱 <b>Menyu</b>\n\n{families_info}",
   "user_panel_ai_chat": "💬 AI'dan soʻrash",
