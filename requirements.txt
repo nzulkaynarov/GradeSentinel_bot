@@ -7,6 +7,10 @@ python-dotenv==1.0.1
 anthropic>=0.50,<1.0
 flask==3.0.3
 
+# PDF экспорт дашборда (pure-python, не требует system libs). Кириллица —
+# через DejaVuSans (fonts-dejavu из Ubuntu base) с fallback на Helvetica.
+reportlab==4.2.5
+
 # Production WSGI server для webapp (Werkzeug dev server слишком slow и single-thread)
 gunicorn==23.0.0
 

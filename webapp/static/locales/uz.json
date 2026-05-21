@@ -83,5 +83,11 @@
   "ai_quick_questions": "💡 Tezkor savollar:",
   "ai_suggested_summer": "🌞 Yozda nimani tortib qoʻyish kerak?",
   "ai_suggested_compare": "📊 Oldingi oy bilan solishtir",
-  "ai_suggested_concern": "⚠️ Qayerda muammo bor?"
+  "ai_suggested_concern": "⚠️ Qayerda muammo bor?",
+
+  "action_share": "📤 Ulashish",
+  "action_export_pdf": "📄 PDF eksport",
+  "action_export_loading": "PDF yaratilmoqda…",
+  "action_export_error": "PDF yaratilmadi. Yana urinib ko'ring.",
+  "dashboard_ai_hint": "💬 Savollar qoldimi? Bot chatidagi AI'ga so'rang."
 }
