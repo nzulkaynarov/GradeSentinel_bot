@@ -83,5 +83,11 @@
   "ai_quick_questions": "💡 Quick questions:",
   "ai_suggested_summer": "🌞 What to work on over summer?",
   "ai_suggested_compare": "📊 Compare with last month",
-  "ai_suggested_concern": "⚠️ Where are there concerns?"
+  "ai_suggested_concern": "⚠️ Where are there concerns?",
+
+  "action_share": "📤 Share",
+  "action_export_pdf": "📄 Export PDF",
+  "action_export_loading": "Creating PDF…",
+  "action_export_error": "Couldn't create PDF. Try again.",
+  "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat."
 }

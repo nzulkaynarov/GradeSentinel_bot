@@ -83,5 +83,11 @@
   "ai_quick_questions": "💡 Быстрые вопросы:",
   "ai_suggested_summer": "🌞 Что подтянуть летом?",
   "ai_suggested_compare": "📊 Сравни с прошлым месяцем",
-  "ai_suggested_concern": "⚠️ Где поводы для беспокойства?"
+  "ai_suggested_concern": "⚠️ Где поводы для беспокойства?",
+
+  "action_share": "📤 Поделиться",
+  "action_export_pdf": "📄 Экспорт PDF",
+  "action_export_loading": "Создаю PDF…",
+  "action_export_error": "Не удалось создать PDF. Попробуйте ещё раз.",
+  "dashboard_ai_hint": "💬 Остались вопросы? Спросите AI в чате бота."
 }

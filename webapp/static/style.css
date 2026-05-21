@@ -975,11 +975,51 @@ body {
     opacity: 0;
 }
 
-/* Hero compact — поскольку AI наверху, цифры теперь меньше */
+/* Hero — теперь primary (AI summary убран в dashboard refresh).
+   Возвращаем «полноразмерный» вариант. */
 .hero-compact .hero-avg {
-    font-size: 36px;  /* было 48px */
+    font-size: 48px;
 }
 
 .hero-compact {
     padding: var(--space-3) 0;
+}
+
+/* Action bar — Поделиться + Экспорт PDF (dashboard refresh) */
+.action-bar {
+    display: flex;
+    gap: var(--space-2);
+    margin: var(--space-4) 0 var(--space-2);
+    padding: 0 var(--space-2);
+}
+
+.btn-action {
+    flex: 1;
+    padding: 12px 16px;
+    background: var(--tg-bg);
+    border: 1px solid rgba(99, 102, 241, 0.30);
+    border-radius: 12px;
+    color: var(--tg-text);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.btn-action:hover {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: #6366F1;
+}
+
+.btn-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dashboard-footer-hint {
+    text-align: center;
+    color: var(--tg-hint);
+    font-size: 13px;
+    margin: var(--space-3) var(--space-2) var(--space-2);
+    padding: var(--space-2);
 }

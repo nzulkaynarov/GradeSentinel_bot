@@ -540,14 +540,11 @@ def api_dashboard(student_id):
     if not first_name and user_info.get("fio"):
         first_name = user_info["fio"].split()[0]
 
-    # AI-инсайт (опционально, кэш 6h, безопасно деградирует если Claude недоступен)
-    try:
-        from src.analytics_engine import compute_dashboard_insight
-        summary["ai_insight"] = compute_dashboard_insight(student_id, summary, lang=lang, days=days)
-    except Exception as e:
-        # Никогда не блокируем dashboard из-за AI
-        logger.warning(f"AI insight failed for student {student_id}: {e}")
-        summary["ai_insight"] = None
+    # Dashboard refresh: убрали AI-инсайт из ответа. AI теперь живёт только
+    # в чате (бот). Дашборд — строго данные, родитель сам делает выводы.
+    # Функция compute_dashboard_insight сохранена в analytics_engine на случай
+    # будущих use cases, но больше не зовётся при каждом открытии (экономит
+    # ~$0.001/open на Anthropic API).
 
     response_data = {
         "summary": summary,
@@ -618,6 +615,76 @@ def api_dashboard_init():
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
 
+@app.route("/api/dashboard/<int:student_id>/pdf")
+def api_dashboard_pdf(student_id):
+    """Экспорт дашборда в PDF (Dashboard refresh).
+
+    Использует webapp.pdf_export.build_dashboard_pdf — reportlab + DejaVuSans
+    для кириллицы. Возвращает application/pdf с Content-Disposition:
+    attachment чтобы браузер/Telegram WebApp скачивали как файл.
+
+    Query params:
+      days — длина периода (по умолчанию 30 для PDF чтобы был информативный
+             объём, max 365).
+    """
+    from flask import Response
+    from webapp.pdf_export import build_dashboard_pdf
+
+    telegram_id = _authorize_student_access(student_id)
+
+    days = request.args.get("days", 30, type=int)
+    days = max(1, min(days, 365))
+
+    students = get_students_for_parent(telegram_id)
+    student = next((s for s in students if s["id"] == student_id), None)
+    if not student:
+        abort(403)
+    student_name = student.get("display_name") or student.get("fio") or "ученик"
+    lang = get_user_lang(telegram_id)
+
+    all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
+    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
+
+    def _gd(g):
+        return g.get("grade_date") or (g.get("date_added") or "")[:10]
+
+    grades_current = [g for g in all_grades if _gd(g) >= cutoff_date]
+    grades_previous = [g for g in all_grades if _gd(g) < cutoff_date]
+
+    summary = compute_summary(grades_current, grades_previous, days)
+    by_subject = compute_by_subject(grades_current)
+
+    period_labels = {
+        'ru': {7: 'неделя', 14: '2 недели', 30: 'месяц', 90: 'квартал', 365: 'год'},
+        'uz': {7: 'hafta', 14: '2 hafta', 30: 'oy', 90: 'chorak', 365: 'yil'},
+        'en': {7: 'week', 14: '2 weeks', 30: 'month', 90: 'quarter', 365: 'year'},
+    }
+    period_label = period_labels.get(lang, period_labels['ru']).get(days, f"{days} дн.")
+
+    pdf_bytes = build_dashboard_pdf(
+        student_name=student_name,
+        summary=summary,
+        by_subject=by_subject,
+        recent=grades_current,
+        period_label=period_label,
+        lang=lang,
+    )
+
+    safe_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
+    filename = f"GradeSentinel_{safe_name}_{today_tashkent.isoformat()}.pdf"
+
+    return Response(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Length': str(len(pdf_bytes)),
+            'Cache-Control': 'private, no-store',
+        },
+    )
+
+
 @app.route("/api/dashboard/year/<int:student_id>")
 def api_dashboard_year(student_id):
     """Итоги учебного года для дашборда. Подгружается lazy при клике на
@@ -645,14 +712,7 @@ def api_dashboard_year(student_id):
     report = compute_year_report(year_grades)
     report["school_year_start"] = school_year_start
 
-    # AI годовой инсайт (отдельный prompt, кэш на 6h)
-    lang = get_user_lang(telegram_id)
-    try:
-        from src.analytics_engine import compute_year_insight
-        report["ai_insight"] = compute_year_insight(student_id, report, lang=lang)
-    except Exception as e:
-        logger.warning(f"AI year insight failed for student {student_id}: {e}")
-        report["ai_insight"] = None
+    # Dashboard refresh: убрали AI годовой инсайт. AI теперь только в чате.
 
     return jsonify(report)
 

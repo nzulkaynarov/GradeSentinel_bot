@@ -45,20 +45,9 @@
             <div id="student-tabs" class="student-tabs hidden"><!-- табы детей если >1 --></div>
         </header>
 
-        <!-- AI Summary — primary, top of dashboard (AI-first navigation) -->
-        <section class="ai-summary-card hidden" id="ai-summary-card">
-            <div class="ai-summary-header">
-                <span class="ai-summary-icon">🤖</span>
-                <span class="ai-summary-label" data-i18n="ai_summary_label">AI-обзор</span>
-            </div>
-            <p class="ai-summary-text" id="ai-insight-text"></p>
-            <div class="ai-summary-quick">
-                <span class="ai-summary-quick-label" data-i18n="ai_quick_questions">💡 Быстрые вопросы:</span>
-                <div class="ai-summary-quick-buttons" id="ai-quick-buttons"></div>
-            </div>
-        </section>
-
-        <!-- HERO: средний балл + дельта + статус (secondary, под AI summary) -->
+        <!-- HERO: средний балл + дельта + статус (primary после dashboard refresh).
+             AI-обзор удалён — все AI-фичи переехали в чат (бот). -->
+        <!-- HERO: средний балл + дельта + статус -->
         <section class="hero hero-compact" id="hero">
             <div class="hero-main">
                 <div class="hero-avg" id="hero-avg">—</div>
@@ -172,7 +161,6 @@
                             <div class="year-stat-label" data-i18n="year_streak_label">лучшая серия 5</div>
                         </div>
                     </div>
-                    <p class="year-insight" id="year-insight"></p>
                     <div class="year-best-worst">
                         <div class="year-month-card year-month-best">
                             <span class="year-month-label" data-i18n="year_best_month">🌟 Лучший месяц</span>
@@ -195,30 +183,17 @@
             </div>
         </section>
 
-        <!-- AI-чат (lazy, открывается по кнопке) -->
-        <section class="card collapsible card-ai-chat" id="chat-section">
-            <header class="card-header">
-                <h2 class="card-title">
-                    💬 <span data-i18n="section_ai_chat">Спросить AI</span>
-                </h2>
-                <button class="toggle-btn" aria-expanded="false">▾</button>
-            </header>
-            <div class="card-body">
-                <p class="chat-hint" data-i18n="chat_hint">Спросите про оценки ребёнка простыми словами</p>
-                <div id="chat-suggested" class="chat-suggested"></div>
-                <div id="chat-history" class="chat-history"></div>
-                <button id="chat-clear" class="chat-clear-btn hidden"
-                        type="button"
-                        data-i18n="chat_clear_btn">↻ Начать заново</button>
-                <div class="chat-input-wrap">
-                    <input type="text" id="chat-input" class="chat-input"
-                           data-i18n-placeholder="chat_placeholder"
-                           placeholder="Например: почему упала математика?">
-                    <button id="chat-send" class="btn-primary chat-send" data-i18n="chat_send">Спросить</button>
-                </div>
-                <p id="chat-error" class="chat-error hidden"></p>
-            </div>
+        <!-- Action bar: Поделиться + Экспорт PDF.
+             AI-чат удалён — переехал в бота (Telegram) после dashboard refresh. -->
+        <section class="action-bar" id="action-bar">
+            <button id="btn-share" class="btn-action" type="button"
+                    data-i18n="action_share">📤 Поделиться</button>
+            <button id="btn-export-pdf" class="btn-action" type="button"
+                    data-i18n="action_export_pdf">📄 PDF</button>
         </section>
+
+        <!-- Hint: если непонятно — задай вопрос AI в боте -->
+        <p class="dashboard-footer-hint" data-i18n="dashboard_ai_hint"></p>
 
     </div>
 
