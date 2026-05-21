@@ -55,6 +55,7 @@ async function boot() {
         const initRes = await fetchJSON("/api/dashboard/init");
         state.lang = initRes.user?.lang || "ru";
         state.students = initRes.students || [];
+        state.botUsername = initRes.bot_username || null;
 
         // Документ-уровень атрибут lang для accessibility
         document.documentElement.lang = state.lang;
@@ -240,17 +241,61 @@ function renderDashboard() {
     renderKpis(d.kpis || {}, d.summary || {});
     renderStatusLine(d.summary || {});
     renderQuartersBlock(d.quarters_with_forecast || []);
-    renderTrendBySubject(d.trend_by_subject || []);
-    renderSubjectsTable(d.by_subject || []);
+    // Sparklines встроены в subjects table — большой trend chart удалён
+    renderSubjectsTable(d.by_subject || [], d.trend_by_subject || []);
     renderAllGrades(d.recent_grades || []);
 
     // Mark студента как просмотренного — для подсветки "новое" в следующий заход
     localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
 
-    // Year report: lazy при раскрытии collapsible. Auto-expand убрал —
-    // user feedback: «нужна вкладка?» — отдельная фича в будущем (TBD),
-    // сейчас просто collapsible default-closed без сезонных правил.
-    setupYearReportLazy();
+    // Year report — теперь в отдельной tab (view-year), load lazy при switch.
+    setupViewTabs();
+}
+
+// ═════════ VIEW TABS (Дашборд / Итоги года) ═════════
+function setupViewTabs() {
+    const tabs = document.querySelectorAll(".view-tab");
+    tabs.forEach(tab => {
+        tab.addEventListener("click", () => switchView(tab.dataset.view));
+    });
+}
+
+function switchView(view) {
+    document.querySelectorAll(".view-tab").forEach(t => {
+        t.classList.toggle("active", t.dataset.view === view);
+    });
+    const dashboardView = document.getElementById("view-dashboard");
+    const yearView = document.getElementById("view-year");
+    const periodToggle = document.getElementById("period-toggle");
+    if (view === "year") {
+        if (dashboardView) dashboardView.classList.add("hidden");
+        if (yearView) yearView.classList.remove("hidden");
+        if (periodToggle) periodToggle.classList.add("hidden");  // year — без period
+        _loadYearReportIfNeeded();
+    } else {
+        if (dashboardView) dashboardView.classList.remove("hidden");
+        if (yearView) yearView.classList.add("hidden");
+        if (periodToggle) periodToggle.classList.remove("hidden");
+    }
+}
+
+async function _loadYearReportIfNeeded() {
+    if (state.yearReport || state.yearLoading) {
+        if (state.yearReport) renderYearReport();
+        return;
+    }
+    state.yearLoading = true;
+    document.getElementById("year-loading").classList.remove("hidden");
+    try {
+        state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}`);
+        renderYearReport();
+    } catch (e) {
+        console.warn("Year report load failed", e);
+        document.getElementById("year-loading").classList.add("hidden");
+        document.getElementById("year-empty").classList.remove("hidden");
+    } finally {
+        state.yearLoading = false;
+    }
 }
 
 // ═════════ KPI ROW (4 cards) ═════════
@@ -322,99 +367,7 @@ function renderStatusLine(summary) {
 // удалены. AI-фичи (insight + suggested prompts + chat) теперь только в
 // боте — webapp дашборд только данные + Share/PDF.
 
-// Multi-line trend BY SUBJECT (заменил старый trend by day — был шумом).
-// Каждая линия = один предмет, точки по неделям. Фильтр-чекбоксы под графиком.
-const _TREND_PALETTE = [
-    "#6366F1", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9",
-    "#8B5CF6", "#EC4899", "#14B8A6",
-];
-
-function renderTrendBySubject(trendBySubject) {
-    const ctx = document.getElementById("trendChart")?.getContext("2d");
-    const emptyHint = document.getElementById("trend-empty");
-    const filtersEl = document.getElementById("trend-filters");
-    if (!ctx) return;
-
-    if (state.trendChart) { state.trendChart.destroy(); state.trendChart = null; }
-
-    if (!trendBySubject || trendBySubject.length === 0) {
-        emptyHint.classList.remove("hidden");
-        ctx.canvas.classList.add("hidden");
-        if (filtersEl) filtersEl.innerHTML = "";
-        return;
-    }
-    emptyHint.classList.add("hidden");
-    ctx.canvas.classList.remove("hidden");
-
-    // Собираем union всех week-точек чтобы Chart.js мог их align'нуть
-    const weekSet = new Set();
-    trendBySubject.forEach(line => line.points.forEach(p => weekSet.add(p.week)));
-    const weeks = Array.from(weekSet).sort();
-    const labels = weeks.map(w => formatDateShort(w));
-
-    state._trendSubjectsState = state._trendSubjectsState || {};
-    const datasets = trendBySubject.map((line, i) => {
-        const color = _TREND_PALETTE[i % _TREND_PALETTE.length];
-        // По умолчанию все видны; per-subject hide через filter buttons
-        const hidden = state._trendSubjectsState[line.subject] === false;
-        const valuesByWeek = Object.fromEntries(line.points.map(p => [p.week, p.avg]));
-        return {
-            label: line.subject,
-            data: weeks.map(w => valuesByWeek[w] ?? null),
-            borderColor: color,
-            backgroundColor: hexToRgba(color, 0.1),
-            tension: 0.25,
-            spanGaps: true,
-            pointRadius: 3,
-            hidden,
-        };
-    });
-
-    state.trendChart = new Chart(ctx, {
-        type: "line",
-        data: { labels, datasets },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: {
-                legend: { display: false },  // у нас свои filter-кнопки
-                tooltip: {
-                    callbacks: {
-                        label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? "—"}`,
-                    },
-                },
-            },
-            scales: {
-                y: { min: 1, max: 5, ticks: { stepSize: 1 } },
-                x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
-            },
-        },
-    });
-
-    // Filter кнопки — toggle visibility per subject
-    if (filtersEl) {
-        filtersEl.innerHTML = trendBySubject.map((line, i) => {
-            const color = _TREND_PALETTE[i % _TREND_PALETTE.length];
-            const isOff = state._trendSubjectsState[line.subject] === false;
-            return `<button class="trend-filter-btn ${isOff ? "off" : ""}"
-                            data-subject="${escapeHtml(line.subject)}"
-                            style="--dot:${color}">
-                        <span class="trend-dot"></span>${escapeHtml(line.subject)}
-                    </button>`;
-        }).join("");
-        filtersEl.querySelectorAll(".trend-filter-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
-                const subj = btn.dataset.subject;
-                const wasOff = state._trendSubjectsState[subj] === false;
-                state._trendSubjectsState[subj] = wasOff;  // toggle
-                renderTrendBySubject(trendBySubject);
-            });
-        });
-    }
-
-}
-
-// ═════════ QUARTERS BLOCK (primary) ═════════
+// ═════════ QUARTERS BLOCK (mobile cards вместо widescroll-таблицы) ═════════
 function renderQuartersBlock(quarters) {
     const wrap = document.getElementById("quarters-table-wrap");
     const empty = document.getElementById("quarters-empty");
@@ -427,49 +380,77 @@ function renderQuartersBlock(quarters) {
     }
     if (empty) empty.classList.add("hidden");
 
-    const headers = [
-        t("col_subject") || "Предмет",
-        "1ч", "2ч", "3ч", "4ч",
-        t("col_year") || "Год",
-        t("col_trend") || "Тренд",
-    ];
+    const cell = (val, isForecast) => {
+        if (val == null || val === '') return `<span class="qc-grade muted">—</span>`;
+        const cls = isForecast ? "qc-grade forecast" : "qc-grade";
+        return `<span class="${cls}">${escapeHtml(String(val))}</span>`;
+    };
 
-    const rows = quarters.map(q => {
-        const cell = (val, isForecast) => {
-            if (val == null || val === '') return `<td class="qr-cell muted">—</td>`;
-            const cls = isForecast ? "qr-cell qr-forecast" : "qr-cell";
-            return `<td class="${cls}">${escapeHtml(String(val))}</td>`;
-        };
+    const cards = quarters.map(q => {
         const trendSym = q.trend === 'up' ? '↑' : q.trend === 'down' ? '↓' : '→';
         const trendCls = q.trend === 'up' ? 'trend-up' : q.trend === 'down' ? 'trend-down' : 'trend-flat';
-        return `<tr class="qr-row" data-subject="${escapeHtml(q.subject)}">
-            <td class="qr-subject">${escapeHtml(q.subject)}</td>
-            ${cell(q.q1)}${cell(q.q2)}${cell(q.q3)}${cell(q.q4)}
-            ${cell(q.year, q.year_is_forecast)}
-            <td class="qr-trend ${trendCls}">${trendSym}</td>
-        </tr>`;
+        const yearVal = q.year || '—';
+        const yearCls = q.year_is_forecast ? 'qc-year-value forecast' : 'qc-year-value';
+        const yearColorCls = q.year_value != null ? gradeColorClass(q.year_value) : '';
+        return `<div class="quarter-card" data-subject="${escapeHtml(q.subject)}">
+            <div class="qc-header">
+                <span class="qc-subject">${escapeHtml(q.subject)}</span>
+                <span class="qc-trend ${trendCls}">${trendSym}</span>
+            </div>
+            <div class="qc-body">
+                <div class="qc-quarters">
+                    <div class="qc-q"><span class="qc-q-label">1ч</span>${cell(q.q1)}</div>
+                    <div class="qc-q"><span class="qc-q-label">2ч</span>${cell(q.q2)}</div>
+                    <div class="qc-q"><span class="qc-q-label">3ч</span>${cell(q.q3)}</div>
+                    <div class="qc-q"><span class="qc-q-label">4ч</span>${cell(q.q4)}</div>
+                </div>
+                <div class="qc-year">
+                    <span class="qc-year-label">${escapeHtml(t("col_year") || "Год")}</span>
+                    <span class="${yearCls} ${yearColorCls}">${escapeHtml(yearVal)}</span>
+                </div>
+            </div>
+        </div>`;
     }).join("");
 
-    wrap.innerHTML = `<table class="qr-table">
-        <thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
-        <tbody>${rows}</tbody>
-    </table>
-    <p class="qr-note muted">${escapeHtml(t("quarters_forecast_note") || "")}</p>`;
+    wrap.innerHTML = `<div class="quarter-cards">${cards}</div>
+        <p class="qr-note muted">${escapeHtml(t("quarters_forecast_note") || "")}</p>`;
 
-    // Click row → drill-down
-    wrap.querySelectorAll(".qr-row").forEach(tr => {
-        tr.addEventListener("click", () => openDrilldown(tr.dataset.subject));
+    wrap.querySelectorAll(".quarter-card").forEach(card => {
+        card.addEventListener("click", () => openDrilldown(card.dataset.subject));
     });
 }
 
-// ═════════ ALL SUBJECTS TABLE (sortable + clickable) ═════════
-function renderSubjectsTable(subjects) {
+// ═════════ ALL SUBJECTS TABLE (sortable + clickable + sparkline) ═════════
+function _sparklineSvg(points, width, height) {
+    if (!points || points.length < 2) {
+        return `<svg width="${width}" height="${height}" aria-hidden="true"></svg>`;
+    }
+    const values = points.map(p => p.avg);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(0.5, max - min);  // min range — иначе flat line из-за 1 точки
+    const dx = (width - 2) / (points.length - 1);
+    const pts = points.map((p, i) => {
+        const x = 1 + i * dx;
+        const y = height - 2 - ((p.avg - min) / range) * (height - 4);
+        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true">
+        <path d="${pts}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+function renderSubjectsTable(subjects, trendBySubject) {
     const wrap = document.getElementById("subjects-table-wrap");
     if (!wrap) return;
     if (!subjects || subjects.length === 0) {
         wrap.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
         return;
     }
+
+    // Map subject → trend points (для sparkline в строке)
+    const trendMap = new Map();
+    (trendBySubject || []).forEach(line => trendMap.set(line.subject, line.points));
 
     state._subjectsSort = state._subjectsSort || { key: 'avg', dir: 'desc' };
     const sortKey = state._subjectsSort.key;
@@ -485,26 +466,29 @@ function renderSubjectsTable(subjects) {
     const headers = [
         { key: 'name', label: t("col_subject") || "Предмет" },
         { key: 'avg', label: t("col_avg") || "Средний" },
-        { key: 'count', label: t("col_count") || "Кол-во" },
-        { key: 'last_grade', label: t("col_last") || "Последняя", noSort: true },
+        { key: 'count', label: '#', noSort: true, narrow: true },
         { key: 'trend', label: t("col_trend") || "Тренд", noSort: true },
     ];
 
     const ths = headers.map(h => {
         const arrow = (h.key === sortKey) ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
-        return `<th data-sort="${h.noSort ? '' : h.key}" class="${h.noSort ? '' : 'sortable'}">${escapeHtml(h.label)}${arrow}</th>`;
+        const cls = [h.noSort ? '' : 'sortable', h.narrow ? 'narrow' : ''].filter(Boolean).join(' ');
+        return `<th data-sort="${h.noSort ? '' : h.key}" class="${cls}">${escapeHtml(h.label)}${arrow}</th>`;
     }).join("");
 
     const rows = sorted.map(s => {
         const avgCls = gradeColorClass(s.avg);
-        const trendSym = s.trend === 'up' ? '↑' : s.trend === 'down' ? '↓' : '→';
         const trendCls = s.trend === 'up' ? 'trend-up' : s.trend === 'down' ? 'trend-down' : 'trend-flat';
-        const lastDate = s.last_date ? `<span class="muted small">${escapeHtml(s.last_date.slice(5))}</span>` : '';
+        const trendSym = s.trend === 'up' ? '↑' : s.trend === 'down' ? '↓' : '→';
+        const sparklinePoints = trendMap.get(s.name);
+        const sparkline = sparklinePoints ? _sparklineSvg(sparklinePoints, 60, 20) : '';
         return `<tr class="subj-table-row" data-subject="${escapeHtml(s.name)}">
-            <td>${escapeHtml(s.name)}</td>
+            <td class="subj-cell-name">
+                <div class="subj-name-line">${escapeHtml(s.name)}</div>
+                <div class="subj-spark ${trendCls}">${sparkline}</div>
+            </td>
             <td class="${avgCls}">${s.avg.toFixed(2)}</td>
-            <td>${s.count}</td>
-            <td>${escapeHtml(s.last_grade || '—')} ${lastDate}</td>
+            <td class="narrow">${s.count}</td>
             <td class="${trendCls}">${trendSym}</td>
         </tr>`;
     }).join("");
@@ -514,7 +498,6 @@ function renderSubjectsTable(subjects) {
         <tbody>${rows}</tbody>
     </table>`;
 
-    // Sort handlers
     wrap.querySelectorAll("th.sortable").forEach(th => {
         th.addEventListener("click", () => {
             const k = th.dataset.sort;
@@ -524,16 +507,35 @@ function renderSubjectsTable(subjects) {
                 state._subjectsSort.key = k;
                 state._subjectsSort.dir = 'desc';
             }
-            renderSubjectsTable(subjects);
+            renderSubjectsTable(subjects, trendBySubject);
         });
     });
-    // Drill-down on row click
     wrap.querySelectorAll(".subj-table-row").forEach(tr => {
         tr.addEventListener("click", () => openDrilldown(tr.dataset.subject));
     });
 }
 
-// ═════════ ALL GRADES (with subject filter) ═════════
+// ═════════ ALL GRADES (grouped by date + subject filter + "show more") ═════════
+const _GRADES_INITIAL_GROUPS = 7;  // показываем последние 7 дат
+
+function _formatDateGroupLabel(dateStr) {
+    if (!dateStr) return '?';
+    const d = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.floor((today - d) / (24 * 3600 * 1000));
+    if (diffDays === 0) return t("grades_today") || "Сегодня";
+    if (diffDays === 1) return t("grades_yesterday") || "Вчера";
+    if (diffDays < 7) {
+        const days = [
+            t("dow_sun"), t("dow_mon"), t("dow_tue"), t("dow_wed"),
+            t("dow_thu"), t("dow_fri"), t("dow_sat"),
+        ];
+        return `${days[d.getDay()] || ''}, ${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}`;
+    }
+    return `${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
 function renderAllGrades(grades) {
     const list = document.getElementById("recent-list");
     const countBadge = document.getElementById("recent-count");
@@ -542,7 +544,6 @@ function renderAllGrades(grades) {
 
     countBadge.textContent = `(${grades.length})`;
 
-    // Populate filter dropdown
     if (filter && filter.options.length <= 1) {
         const subjects = Array.from(new Set(grades.map(g => g.subject))).sort();
         subjects.forEach(s => {
@@ -550,7 +551,10 @@ function renderAllGrades(grades) {
             opt.value = s; opt.textContent = s;
             filter.appendChild(opt);
         });
-        filter.addEventListener("change", () => renderAllGrades(grades));
+        filter.addEventListener("change", () => {
+            state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;  // reset
+            renderAllGrades(grades);
+        });
     }
 
     const selected = filter ? filter.value : "";
@@ -561,21 +565,53 @@ function renderAllGrades(grades) {
         return;
     }
 
+    // Группировка по дате (DESC — свежие сверху)
+    const byDate = new Map();
+    filtered.forEach(g => {
+        const date = g.grade_date || (g.date_added ? g.date_added.slice(0, 10) : '');
+        if (!byDate.has(date)) byDate.set(date, []);
+        byDate.get(date).push(g);
+    });
+    const sortedDates = Array.from(byDate.keys()).sort().reverse();
+
+    if (!state._gradesGroupsShown) state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;
+    const visibleDates = sortedDates.slice(0, state._gradesGroupsShown);
+
     const lastSeenStr = localStorage.getItem(LAST_SEEN_KEY(state.currentStudentId));
     const lastSeen = lastSeenStr ? new Date(lastSeenStr) : new Date(0);
 
-    list.innerHTML = filtered.map(g => {
-        const isNew = g.date_added && new Date(g.date_added) > lastSeen;
-        const colorClass = g.grade_value !== null ? gradeColorClass(g.grade_value) : "grade-text";
-        const value = g.raw_text || (g.grade_value !== null ? g.grade_value : "—");
-        const newBadge = isNew ? `<span class="badge-new">${t("badge_new") || "новое"}</span>` : "";
-        const date = g.grade_date || (g.date_added ? g.date_added.slice(0, 10) : '');
-        return `<div class="recent-row ${isNew ? "is-new" : ""}">
-            <span class="recent-date">${escapeHtml(date)}</span>
-            <span class="recent-subject">${escapeHtml(g.subject)}${newBadge}</span>
-            <span class="recent-grade ${colorClass}">${escapeHtml(String(value))}</span>
+    const groupsHtml = visibleDates.map(date => {
+        const dayGrades = byDate.get(date);
+        const rows = dayGrades.map(g => {
+            const isNew = g.date_added && new Date(g.date_added) > lastSeen;
+            const colorClass = g.grade_value !== null ? gradeColorClass(g.grade_value) : "grade-text";
+            const value = g.raw_text || (g.grade_value !== null ? g.grade_value : "—");
+            const newBadge = isNew ? `<span class="badge-new">${t("badge_new") || "new"}</span>` : "";
+            return `<div class="g-row ${isNew ? "is-new" : ""}">
+                <span class="g-subject">${escapeHtml(g.subject)}${newBadge}</span>
+                <span class="g-grade ${colorClass}">${escapeHtml(String(value))}</span>
+            </div>`;
+        }).join("");
+        return `<div class="g-group">
+            <div class="g-group-header">${escapeHtml(_formatDateGroupLabel(date))}</div>
+            <div class="g-group-rows">${rows}</div>
         </div>`;
     }).join("");
+
+    const remaining = sortedDates.length - visibleDates.length;
+    const moreBtn = remaining > 0
+        ? `<button id="g-show-more" class="btn-show-more" type="button">${escapeHtml(t("grades_show_more") || "Показать ещё")} (${remaining})</button>`
+        : '';
+
+    list.innerHTML = groupsHtml + moreBtn;
+
+    const moreEl = document.getElementById("g-show-more");
+    if (moreEl) {
+        moreEl.addEventListener("click", () => {
+            state._gradesGroupsShown += 7;
+            renderAllGrades(grades);
+        });
+    }
 }
 
 // ═════════ DRILL-DOWN by SUBJECT ═════════
@@ -676,52 +712,41 @@ function _handleHashChange() {
 }
 
 function _openBotChatWithQuestion(question) {
-    // UX: показываем нативный popup с инструкцией, потом закрываем WebApp.
-    // Раньше просто tg.close() без объяснения — юзер не знал что делать.
-    // Полноценный deep-link через t.me/<bot>?start=... требует bot_username
-    // в frontend env (TBD).
+    // Real deep-link через t.me/<bot>?start=ai_<base64(question)>.
+    // Bot handler /start ai_X декодирует и сразу шлёт question в AI
+    // (см. handlers/ai_chat.handle_ai_deeplink). Юзер видит ответ
+    // мгновенно, без необходимости что-то набирать.
     const tg = window.Telegram && window.Telegram.WebApp;
-    if (!tg) return;
+    const botUsername = state.botUsername;
+
+    if (!tg || !botUsername) {
+        // Fallback: если bot_username не пришёл — просто закрываем с подсказкой
+        const hint = t("ai_popup_general") || "Откройте бот и нажмите 💬 Чат";
+        if (tg && typeof tg.showAlert === "function") {
+            tg.showAlert(hint, () => { if (tg.close) tg.close(); });
+        } else {
+            alert(hint);
+        }
+        return;
+    }
+
+    // URL-safe base64 без padding — компактно для start param (Telegram
+    // ограничивает start param до 64 символов; пустой question = '').
+    const payload = question
+        ? btoa(unescape(encodeURIComponent(question)))
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+        : '';
+    const url = `https://t.me/${botUsername}?start=ai_${payload}`;
 
     if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-
-    const hint = question
-        ? (t("ai_popup_with_subject") || "Открываю бот. Нажмите 💬 Чат и спросите про этот предмет.")
-        : (t("ai_popup_general") || "Открываю бот. Нажмите 💬 Чат и задайте вопрос про оценки.");
-
-    if (typeof tg.showPopup === "function") {
-        tg.showPopup({ message: hint, buttons: [{ type: "ok" }] }, () => {
-            if (tg.close) tg.close();
-        });
-    } else if (typeof tg.showAlert === "function") {
-        tg.showAlert(hint, () => { if (tg.close) tg.close(); });
+    if (typeof tg.openTelegramLink === "function") {
+        tg.openTelegramLink(url);
     } else {
-        alert(hint);
-        if (tg.close) tg.close();
+        window.open(url, "_blank");
     }
 }
 
 // ============ YEAR REPORT — LAZY ============
-
-function setupYearReportLazy() {
-    const section = document.getElementById("year-section");
-    if (!section) return;
-    section.addEventListener("toggle:open", async () => {
-        if (state.yearReport !== null || state.yearLoading) return;
-        state.yearLoading = true;
-        document.getElementById("year-loading").classList.remove("hidden");
-        try {
-            state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}`);
-            renderYearReport();
-        } catch (e) {
-            console.warn("Year report load failed", e);
-            document.getElementById("year-loading").classList.add("hidden");
-            document.getElementById("year-empty").classList.remove("hidden");
-        } finally {
-            state.yearLoading = false;
-        }
-    }, { once: true });
-}
 
 function renderYearReport() {
     const report = state.yearReport;
@@ -734,14 +759,17 @@ function renderYearReport() {
 
     document.getElementById("year-content").classList.remove("hidden");
 
-    document.getElementById("year-avg").textContent = report.year_avg !== null ? report.year_avg.toFixed(2) : "—";
+    // KPI cards (year view)
+    const avgEl = document.getElementById("year-avg");
+    avgEl.textContent = report.year_avg !== null ? report.year_avg.toFixed(2) : "—";
+    if (report.year_avg !== null) avgEl.className = "kpi-value " + gradeColorClass(report.year_avg);
+
     document.getElementById("year-total-grades").textContent = report.numeric_count;
 
     const growthEl = document.getElementById("year-growth");
     if (report.growth !== null && report.growth !== undefined) {
         const sign = report.growth > 0 ? "+" : "";
         growthEl.textContent = `${sign}${report.growth}`;
-        growthEl.className = "year-stat-value " + (report.growth > 0 ? "grade-good" : (report.growth < 0 ? "grade-warn" : ""));
     } else {
         growthEl.textContent = "—";
     }
@@ -755,25 +783,6 @@ function renderYearReport() {
     if (report.worst_month) {
         document.getElementById("year-worst-month").textContent =
             `${report.worst_month.label} · ${report.worst_month.avg.toFixed(2)}`;
-    }
-
-    // Период учебного года
-    if (report.school_year_start) {
-        const startYear = report.school_year_start.slice(0, 4);
-        document.getElementById("year-period").textContent = ` · ${startYear}—${parseInt(startYear) + 1}`;
-    }
-
-    // Top/problem subjects
-    const topListEl = document.getElementById("year-top-subjects");
-    topListEl.innerHTML = renderSubjectsList(report.top_subjects);
-    if (report.problem_subjects && report.problem_subjects.length) {
-        document.getElementById("year-problem-wrap").classList.remove("hidden");
-        document.getElementById("year-problem-subjects").innerHTML = renderSubjectsList(report.problem_subjects);
-    }
-
-    // AI insight
-    if (report.ai_insight) {
-        document.getElementById("year-insight").textContent = report.ai_insight;
     }
 }
 
@@ -873,14 +882,44 @@ function setupActionBar() {
 // слабый (см. user feedback). PDF (через bot) теперь основной way делиться
 // данными.
 
-async function handleExportPdf() {
-    // Стратегия: POST /pdf/send → backend генерит PDF и шлёт его как
-    // документ в чат с ботом через Bot API. Юзер видит файл как обычное
-    // сообщение в Telegram, может сохранять/пересылать стандартно.
-    //
-    // Раньше пробовали blob: download через <a download> — но Telegram
-    // WebView показывает диалог «Открыть blob://?» вместо скачивания.
-    // Send-to-bot работает на всех Telegram клиентах (desktop, mobile).
+// PDF: показываем модалку с выбором типа отчёта вместо instant-генерации
+function handleExportPdf() {
+    const modal = document.getElementById("pdf-modal");
+    if (!modal) return;
+
+    // Заполняем dropdown предметов
+    const subjSel = document.getElementById("pdf-subject-select");
+    if (subjSel && subjSel.options.length === 0) {
+        const subjects = (state.dashboard?.by_subject || []).map(s => s.name);
+        subjects.forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s; opt.textContent = s;
+            subjSel.appendChild(opt);
+        });
+    }
+
+    // Toggle subject dropdown visibility по radio
+    modal.querySelectorAll('input[name="pdf-type"]').forEach(radio => {
+        radio.addEventListener("change", () => {
+            const isSubject = modal.querySelector('input[name="pdf-type"]:checked').value === 'subject';
+            if (subjSel) subjSel.classList.toggle("hidden", !isSubject);
+        });
+    });
+
+    const closeFn = () => modal.classList.add("hidden");
+    document.getElementById("pdf-modal-close").onclick = closeFn;
+    document.getElementById("pdf-modal-cancel").onclick = closeFn;
+    document.getElementById("pdf-modal-generate").onclick = () => {
+        closeFn();
+        const type = modal.querySelector('input[name="pdf-type"]:checked').value;
+        const subject = subjSel ? subjSel.value : '';
+        _sendPdfRequest(type, subject);
+    };
+
+    modal.classList.remove("hidden");
+}
+
+async function _sendPdfRequest(reportType, subject) {
     const studentId = state.currentStudentId;
     const days = state.currentDays || 30;
 
@@ -891,9 +930,12 @@ async function handleExportPdf() {
         pdfBtn.textContent = "⏳ " + (t("action_export_loading") || "PDF…");
     }
 
+    const params = new URLSearchParams({ days: String(days), type: reportType });
+    if (subject) params.set("subject", subject);
+
     try {
         const res = await fetch(
-            `/api/dashboard/${studentId}/pdf/send?days=${days}`,
+            `/api/dashboard/${studentId}/pdf/send?${params.toString()}`,
             { method: "POST", headers: API_HEADERS },
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

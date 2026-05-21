@@ -155,6 +155,51 @@ def test_pdf_endpoint_filename_ascii_only_in_header(client, temp_db):
     assert "filename*=UTF-8''" in cd
 
 
+def test_pdf_send_with_type_subject_filters_to_one_subject(client, seeded_student, monkeypatch):
+    """type=subject + subject=X → PDF только с этим предметом."""
+    info = seeded_student
+    sent = []
+
+    class FakeBot:
+        def send_document(self, chat_id, doc, caption=None, visible_file_name=None):
+            doc.seek(0)
+            sent.append({'pdf_bytes': len(doc.read()), 'filename': visible_file_name,
+                          'caption': caption})
+
+    monkeypatch.setattr("webapp.app._get_webapp_bot", lambda: FakeBot())
+
+    with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
+        resp = client.post(
+            f"/api/dashboard/{info['student_id']}/pdf/send"
+            f"?days=30&type=subject&subject=Алгебра"
+        )
+
+    assert resp.status_code == 200
+    assert len(sent) == 1
+    # Filename содержит type suffix
+    assert '_subject' in sent[0]['filename']
+
+
+def test_pdf_send_with_type_teacher_talk(client, seeded_student, monkeypatch):
+    """type=teacher_talk → backend filters только problem subjects."""
+    info = seeded_student
+    sent = []
+
+    class FakeBot:
+        def send_document(self, chat_id, doc, caption=None, visible_file_name=None):
+            sent.append({'filename': visible_file_name})
+
+    monkeypatch.setattr("webapp.app._get_webapp_bot", lambda: FakeBot())
+
+    with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
+        resp = client.post(
+            f"/api/dashboard/{info['student_id']}/pdf/send?days=30&type=teacher_talk"
+        )
+
+    assert resp.status_code == 200
+    assert '_teacher_talk' in sent[0]['filename']
+
+
 def test_pdf_send_endpoint_calls_bot_send_document(client, seeded_student, monkeypatch):
     """POST /pdf/send → backend генерит PDF и шлёт через bot.send_document.
     Tests что endpoint вызывает send_document с правильными args."""

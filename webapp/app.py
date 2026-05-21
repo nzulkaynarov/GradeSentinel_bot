@@ -741,19 +741,40 @@ def api_dashboard(student_id):
     return response
 
 
+_BOT_USERNAME_CACHE = None
+
+
+def _get_bot_username():
+    """Lazy-cached bot username для AI deep-link'ов в frontend.
+    Один get_me() при первом вызове, потом из памяти. Fallback на None
+    если бот недоступен — frontend проверяет и не показывает deep-link."""
+    global _BOT_USERNAME_CACHE
+    if _BOT_USERNAME_CACHE is not None:
+        return _BOT_USERNAME_CACHE
+    bot = _get_webapp_bot()
+    if not bot:
+        return None
+    try:
+        _BOT_USERNAME_CACHE = bot.get_me().username
+        logger.info(f"Cached bot username: {_BOT_USERNAME_CACHE}")
+    except Exception as e:
+        logger.warning(f"Failed to fetch bot username: {e}")
+        return None
+    return _BOT_USERNAME_CACHE
+
+
 @app.route("/api/dashboard/init")
 def api_dashboard_init():
     """
-    Bootstrap endpoint: список студентов + язык юзера + имя.
-    Дашборд вызывает его первым, чтобы знать какого студента запрашивать.
+    Bootstrap endpoint: список студентов + язык юзера + имя + bot_username
+    для AI deep-link'ов.
     """
     auth = _get_authenticated_user()
     telegram_id = auth["telegram_id"]
 
     students = get_students_for_parent(telegram_id)
+    bot_username = _get_bot_username()
     if not students:
-        # Юзер залогинен но без детей — это нормальный кейс
-        # (например, глава семьи без добавленных учеников).
         return jsonify({
             "students": [],
             "user": {
@@ -761,6 +782,7 @@ def api_dashboard_init():
                 "first_name": "",
                 "is_admin": get_parent_role(telegram_id) == "admin",
             },
+            "bot_username": bot_username,
         })
 
     user_info = get_user_info_by_tg_id(telegram_id) or {}
@@ -777,6 +799,7 @@ def api_dashboard_init():
             }
             for s in students
         ],
+        "bot_username": bot_username,
         "user": {
             "lang": get_user_lang(telegram_id),
             "first_name": first_name,
@@ -789,12 +812,19 @@ def api_dashboard_init():
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
 
-def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
+def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
+                              report_type: str = 'full', subject_filter: str = '',
+                              date_from: str = '', date_to: str = ''):
     """Общая логика: собирает данные и генерит PDF bytes + filename.
     Используется обоими endpoint'ами (GET download + POST send-to-bot).
 
-    Dashboard refactor: PDF теперь полный proof-документ — quarters +
-    student class + period range + full history."""
+    Dashboard refactor v2: фильтры типа отчёта (popup в UI):
+      - 'full' — все предметы за `days` (default behavior)
+      - 'subject' — только subject_filter
+      - 'teacher_talk' — фокус на problem subjects (avg <= 3.5)
+      - custom: date_from/date_to override days
+
+    PDF теперь proof-документ — quarters + class + period range + full history."""
     from webapp.pdf_export import build_dashboard_pdf
     from src.database_manager import get_quarter_grades
 
@@ -817,16 +847,39 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
     today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
+    period_end = today_tashkent.isoformat()
+
+    # Custom period override
+    if date_from and date_to:
+        cutoff_date = date_from
+        period_end = date_to
 
     def _gd(g):
         return g.get("grade_date") or (g.get("date_added") or "")[:10]
 
-    grades_current = [g for g in all_grades if _gd(g) >= cutoff_date]
+    grades_current = [g for g in all_grades if cutoff_date <= _gd(g) <= period_end]
     grades_previous = [g for g in all_grades if _gd(g) < cutoff_date]
+
+    # Type-specific фильтрация
+    if report_type == 'subject' and subject_filter:
+        grades_current = [g for g in grades_current if g.get('subject') == subject_filter]
+        grades_previous = [g for g in grades_previous if g.get('subject') == subject_filter]
+    # 'teacher_talk' — оставляем все grades, но subjects будут отфильтрованы ниже
+
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
     quarter_grades = get_quarter_grades(student_id)
     quarters = compute_quarters_with_forecast(quarter_grades)
+
+    # 'teacher_talk' — оставляем только problem subjects + четверти по ним
+    if report_type == 'teacher_talk':
+        problem_names = {s['name'] for s in by_subject if s['avg'] <= 3.5}
+        if problem_names:
+            by_subject = [s for s in by_subject if s['name'] in problem_names]
+            quarters = [q for q in quarters if q['subject'] in problem_names]
+            grades_current = [g for g in grades_current if g.get('subject') in problem_names]
+    elif report_type == 'subject' and subject_filter:
+        quarters = [q for q in quarters if q['subject'] == subject_filter]
 
     period_labels = {
         'ru': {7: 'неделя', 14: '2 недели', 30: 'месяц', 90: 'квартал', 365: 'год'},
@@ -835,17 +888,24 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     }
     period_label = period_labels.get(lang, period_labels['ru']).get(days, f"{days} дн.")
 
+    # Modify period_label для type-specific reports
+    if report_type == 'subject' and subject_filter:
+        period_label = f"{subject_filter} · {period_label}"
+    elif report_type == 'teacher_talk':
+        period_label = f"{period_label} · {('фокус: проблемные' if lang=='ru' else 'focus: problems')}"
+
     pdf_bytes = build_dashboard_pdf(
         student_name=student_name, summary=summary, by_subject=by_subject,
         recent=grades_current, period_label=period_label, lang=lang,
         student_class=student_class,
         quarters=quarters,
         period_start=cutoff_date,
-        period_end=today_tashkent.isoformat(),
+        period_end=period_end,
     )
 
     full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
-    filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}.pdf"
+    suffix = f"_{report_type}" if report_type != 'full' else ''
+    filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}{suffix}.pdf"
     return pdf_bytes, filename, student_name, period_label, lang
 
 
@@ -886,6 +946,10 @@ def api_dashboard_pdf_send(student_id):
 
     pdf_bytes, filename, student_name, period_label, lang = _generate_dashboard_pdf(
         student_id, telegram_id, days,
+        report_type=request.args.get("type", "full"),
+        subject_filter=request.args.get("subject", ""),
+        date_from=request.args.get("from", ""),
+        date_to=request.args.get("to", ""),
     )
 
     bot = _get_webapp_bot()

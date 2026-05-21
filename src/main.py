@@ -131,6 +131,13 @@ def send_welcome(message):
         handle_invite_deeplink(message, invite_code)
         return
 
+    # Deep-link AI: /start ai_<base64(question)> — переход из WebApp
+    # дашборда. Open chat в ai_chat_mode + opt. pre-filled question.
+    if len(args) > 1 and args[1].startswith('ai_'):
+        from src.handlers.ai_chat import handle_ai_deeplink
+        handle_ai_deeplink(message, args[1][3:])
+        return
+
     # Автоматическая авторизация админа.
     # PR_F-hotfix: admin НЕ попадает в AI-чат как default — он работает с
     # admin panel. Чистим ai_chat_mode state если случайно туда зашёл,
