@@ -758,3 +758,143 @@ def answer_parent_question(
     except Exception as e:
         logger.warning(f"Chat unexpected error for student {student_id}: {e}")
         return None
+
+
+# ════════════════════════════════════════════════════════════
+#  Proactive alerts — anomaly detection + AI text generation (PR_H5)
+# ════════════════════════════════════════════════════════════
+
+# Что считаем «плохой» оценкой. Узбекская 5-балльная: 1-2 = неуд, 3 = удовл.
+# Триггер на ≤3 (включая тройки), потому что внезапная серия троек у
+# обычно-четвёрочника — уже сигнал для родителя.
+_LOW_GRADE_THRESHOLD = 3.0
+
+# Сколько ≤3 за окно считается «серией»
+_LOW_GRADES_SERIES_MIN = 3
+_LOW_GRADES_SERIES_WINDOW_DAYS = 7
+
+# Token cap для proactive alert текста — короткий, чтобы не перегружать
+# notification. 2-3 предложения.
+_ALERT_MAX_TOKENS = 180
+
+
+def detect_anomalies(student_id: int) -> list:
+    """Возвращает список аномалий для ученика (для каждой будет alert).
+
+    MVP: один тип — 'low_grades_series'. Future: 'sudden_drop',
+    'attendance_issue' и т.д.
+
+    Возвращает [] если всё нормально или данных мало.
+    """
+    grades = get_grade_history_for_student(student_id, days=_LOW_GRADES_SERIES_WINDOW_DAYS + 7)
+    if not grades:
+        return []
+
+    # Tashkent today для cutoff
+    today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    window_start = today - timedelta(days=_LOW_GRADES_SERIES_WINDOW_DAYS)
+
+    low_grades = []
+    for g in grades:
+        if g.get('grade_value') is None:
+            continue
+        date_str = g.get('grade_date') or (g.get('date_added') or '')[:10]
+        if not date_str:
+            continue
+        try:
+            d = datetime.fromisoformat(date_str).date()
+        except (ValueError, TypeError):
+            continue
+        if d < window_start:
+            continue
+        if g['grade_value'] <= _LOW_GRADE_THRESHOLD:
+            low_grades.append(g)
+
+    anomalies = []
+    if len(low_grades) >= _LOW_GRADES_SERIES_MIN:
+        # Уникальные предметы, ограничиваем до 3 для краткости alert'а
+        subjects = list(dict.fromkeys(g['subject'] for g in low_grades))[:3]
+        anomalies.append({
+            'type': 'low_grades_series',
+            'count': len(low_grades),
+            'subjects': subjects,
+            'days': _LOW_GRADES_SERIES_WINDOW_DAYS,
+        })
+
+    return anomalies
+
+
+# Промпты для proactive alert'а на 3 языках. Каждый промпт должен возвращать
+# короткий заботливый текст (2-3 предложения) — не паника, конструктивный
+# тон. Plain text, без markdown (notification format).
+_ALERT_PROMPTS = {
+    'low_grades_series': {
+        'ru': (
+            "Ты — заботливый помощник родителя. У ребёнка {name} за последние "
+            "{days} дней появилось {count} оценок ≤3 по предметам: {subjects}. "
+            "Напиши короткое (2-3 предложения, без markdown и без приветствия) "
+            "уведомление родителю: упомяни факт без драматизма, предложи "
+            "обсудить с ребёнком 1 конкретное действие (помощь, разговор, "
+            "репетитор) — на выбор родителя. Тон — спокойный, поддерживающий."
+        ),
+        'uz': (
+            "Sen — ota-onaning g'amxo'r yordamchisisan. {name} bolaning so'nggi "
+            "{days} kun ichida {subjects} fanlaridan {count}ta ≤3 bahosi bor. "
+            "Ota-onaga qisqa (2-3 jumla, markdown'siz va salomsiz) xabar yoz: "
+            "faktni dramasiz aytib, bola bilan muhokama qilish uchun 1 ta "
+            "aniq harakat taklif qil (yordam, suhbat, repetitor) — ota-ona "
+            "tanlasin. Ohang — xotirjam, qo'llab-quvvatlovchi."
+        ),
+        'en': (
+            "You're a caring assistant for the parent. Their child {name} has "
+            "received {count} grades ≤3 in the last {days} days in subjects: "
+            "{subjects}. Write a short (2-3 sentences, no markdown, no "
+            "greeting) notification: mention the fact without drama, suggest "
+            "1 concrete action to discuss with the child (help, talk, tutor) "
+            "— the parent's choice. Tone: calm, supportive."
+        ),
+    },
+}
+
+
+def generate_proactive_alert(student_name: str, anomaly: dict,
+                              lang: str = 'ru') -> Optional[str]:
+    """Генерит короткий текст alert'а через Claude. Безопасно деградирует
+    (None при отсутствии API key / timeout / error)."""
+    client = _get_client()
+    if not client:
+        return None
+
+    alert_type = anomaly.get('type')
+    prompts_by_lang = _ALERT_PROMPTS.get(alert_type)
+    if not prompts_by_lang:
+        logger.warning(f"generate_proactive_alert: unknown type {alert_type!r}")
+        return None
+
+    prompt_template = prompts_by_lang.get(lang) or prompts_by_lang.get('ru')
+    prompt = prompt_template.format(
+        name=student_name,
+        count=anomaly.get('count', '?'),
+        days=anomaly.get('days', '?'),
+        subjects=', '.join(anomaly.get('subjects', [])) or '—',
+    )
+
+    try:
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=_ALERT_MAX_TOKENS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = message.content[0].text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        return text or None
+    except anthropic.APITimeoutError:
+        logger.warning(f"Proactive alert timeout for {student_name}")
+        return None
+    except anthropic.APIError as e:
+        logger.warning(f"Proactive alert API error for {student_name}: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Proactive alert unexpected error for {student_name}: {e}")
+        return None

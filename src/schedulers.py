@@ -135,6 +135,11 @@ def _scheduler_loop():
             if now.hour == 19 and now.minute < 6:
                 _run_job_safe('evening', today_str, _send_daily_evening_summary)
 
+            # PR_H5: proactive AI alerts (17:00 — после окончания школьного дня,
+            # до evening summary в 19:00). Раз в день, dedup на 48ч в БД.
+            if now.hour == 17 and now.minute < 6:
+                _run_job_safe('proactive_alerts', today_str, _check_proactive_alerts)
+
             # Проверка четвертных оценок 2 раза в день: 12:00 и 18:00
             if now.hour in (12, 18) and now.minute < 6:
                 marker = f"{today_str}_{now.hour}"
@@ -542,6 +547,106 @@ def _send_weekly_text_digest():
         except Exception as e:
             logger.warning(f"Failed to send weekly text digest to {tg_id}: {e}")
     logger.info(f"Weekly text digest sent to {sent} parents.")
+
+
+def _check_proactive_alerts():
+    """PR_H5: ежедневно (17:00) сканирует активных учеников на аномалии
+    в оценках и шлёт AI-сгенерированный alert родителям семьи.
+
+    MVP — один тип аномалии: серия из 3+ оценок ≤3 за последние 7 дней.
+    Dedup'нуто через proactive_alerts (cooldown 48ч на тип×ребёнка).
+    В тихие часы alert кладётся в notification_queue → flush утром.
+
+    Безопасно деградирует: один сломанный student не валит цикл."""
+    from src.db.families import get_active_spreadsheets_with_subscription, get_families_for_student
+    from src.database_manager import (
+        was_alerted_recently, save_alert, get_user_lang,
+        get_family_members_telegram_ids, queue_notification,
+    )
+    from src.analytics_engine import detect_anomalies, generate_proactive_alert
+    from src.notification_helpers import is_quiet_hours
+    from src.telegram_utils import send_with_retry
+
+    students = get_active_spreadsheets_with_subscription()
+    if not students:
+        return
+
+    quiet = is_quiet_hours()
+    total_sent = 0
+    total_skipped_dedup = 0
+    total_anomalies = 0
+
+    for s in students:
+        student_id = s['student_id']
+        student_name = s.get('display_name') or s.get('fio') or 'ученик'
+        try:
+            anomalies = detect_anomalies(student_id)
+        except Exception as e:
+            logger.warning(f"detect_anomalies failed for student {student_id}: {e}")
+            continue
+
+        for anomaly in anomalies:
+            total_anomalies += 1
+            atype = anomaly['type']
+
+            if was_alerted_recently(student_id, atype):
+                total_skipped_dedup += 1
+                continue
+
+            # Резолвим семьи для отправки — берём ВСЕХ telegram_id членов
+            families = get_families_for_student(student_id)
+            if not families:
+                continue
+            recipients = []
+            for fam in families:
+                recipients.extend(get_family_members_telegram_ids(fam['id']))
+            recipients = list(dict.fromkeys(recipients))  # dedup
+            if not recipients:
+                continue
+
+            # Lang берём первого получателя — у разных родителей в семье
+            # обычно один язык. Если разные — first wins, остальные получат
+            # на том же языке. Acceptable для MVP.
+            lang = get_user_lang(recipients[0]) or 'ru'
+
+            text = generate_proactive_alert(student_name, anomaly, lang=lang)
+            if not text:
+                continue
+
+            # Префиксуем заголовком чтобы alert выделялся среди обычных
+            # notification'ов об оценках.
+            heading_by_lang = {
+                'ru': '⚠️ <b>Замечено по успеваемости</b>',
+                'uz': '⚠️ <b>O\'qish bo\'yicha eslatma</b>',
+                'en': '⚠️ <b>Heads up on grades</b>',
+            }
+            full_text = f"{heading_by_lang.get(lang, heading_by_lang['ru'])}\n\n{text}"
+
+            for tg_id in recipients:
+                try:
+                    if quiet:
+                        queue_notification(tg_id, full_text)
+                    else:
+                        send_with_retry(
+                            _bot.send_message,
+                            tg_id,
+                            full_text,
+                            parse_mode='HTML',
+                        )
+                    total_sent += 1
+                    time.sleep(0.05)  # gentle pacing
+                except Exception as e:
+                    logger.warning(f"Failed to send proactive alert to {tg_id}: {e}")
+
+            try:
+                save_alert(student_id, atype)
+            except Exception as e:
+                logger.warning(f"save_alert failed for student {student_id}: {e}")
+
+    logger.info(
+        f"Proactive alerts cycle: anomalies={total_anomalies}, "
+        f"sent={total_sent}, deduped={total_skipped_dedup}"
+    )
 
 
 def _run_weekly_cleanup():
