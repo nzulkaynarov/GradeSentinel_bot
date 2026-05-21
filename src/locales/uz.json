@@ -97,6 +97,8 @@
   "nav_chat": "💬 Chat",
   "nav_dashboard": "📊 Panel",
   "nav_menu": "⚙️ Menyu",
+  "nav_admin_panel": "🛠 Boshqaruv",
+  "nav_as_parent": "👨 Men ota-onaman",
   "add_child_no_family": "ℹ️ Avval 🏠 Mening oilam orqali oila yarating.",
   "add_child_pick_family": "Bolani qaysi oilaga qo'shasiz?",
   "user_panel_empty": "📱 <b>Menyu</b>\n\nℹ️ Oila hali yo'q.",

@@ -97,6 +97,8 @@
   "nav_chat": "💬 Chat",
   "nav_dashboard": "📊 Dashboard",
   "nav_menu": "⚙️ Menu",
+  "nav_admin_panel": "🛠 Admin",
+  "nav_as_parent": "👨 I'm a parent",
   "add_child_no_family": "ℹ️ Create a family first via 🏠 My Family.",
   "add_child_pick_family": "Which family to add the child to?",
   "user_panel_empty": "📱 <b>Menu</b>\n\nℹ️ No family yet.",

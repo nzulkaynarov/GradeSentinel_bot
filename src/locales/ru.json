@@ -97,6 +97,8 @@
   "nav_chat": "💬 Чат",
   "nav_dashboard": "📊 Дашборд",
   "nav_menu": "⚙️ Меню",
+  "nav_admin_panel": "🛠 Управление",
+  "nav_as_parent": "👨 Я родитель",
   "add_child_no_family": "ℹ️ Сначала создайте семью через 🏠 Моя семья.",
   "add_child_pick_family": "В какую семью добавить ребёнка?",
   "user_panel_empty": "📱 <b>Меню</b>\n\nℹ️ Семьи пока нет.",
