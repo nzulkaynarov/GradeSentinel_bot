@@ -13,8 +13,8 @@
     <script>window.GS_BOT_USERNAME = "{{ bot_username }}";</script>
     <script src="/static/vendor/chart.umd.min.js" defer></script>
 
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="preload" href="/static/app.js" as="script">
+    <link rel="stylesheet" href="/static/style.css?v={{ build_id }}">
+    <link rel="preload" href="/static/app.js?v={{ build_id }}" as="script">
 </head>
 <body>
     <!-- SKELETON -->
@@ -261,6 +261,6 @@
         </section>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v={{ build_id }}"></script>
 </body>
 </html>
