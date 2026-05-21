@@ -468,11 +468,16 @@ def answer_parent_question(
     grades: list,
     question: str,
     lang: str = 'ru',
+    prev_messages: Optional[list] = None,
 ) -> Optional[str]:
     """Отвечает на вопрос родителя про оценки ученика с контекстом из БД.
 
-    Не кэширует (каждый вопрос уникальный). Без conversation history — каждый
-    запрос самостоятельный. Безопасно деградирует."""
+    Multi-turn (PR_D R6): если переданы `prev_messages` (список dict с
+    role/content из ai_chat_messages), история включается в Anthropic API
+    messages array — Claude видит предыдущие вопросы и свои ответы, что
+    позволяет follow-up без перезаписи контекста.
+
+    Не кэширует ответ (каждый turn уникальный). Безопасно деградирует."""
     client = _get_client()
     if not client:
         logger.warning("answer_parent_question: no anthropic client (missing ANTHROPIC_API_KEY)")
@@ -480,18 +485,52 @@ def answer_parent_question(
 
     system_prompt = _CHAT_SYSTEM_PROMPTS.get(lang, _CHAT_SYSTEM_PROMPTS['ru'])
     context = _format_grades_context(grades)
-    user_message = (
-        f"Ученик: {student_name}\n"
-        f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
-        f"Вопрос родителя: {question}"
-    )
+
+    # Для первого turn'а — даём весь контекст с оценками в user message.
+    # Для follow-up — контекст уже в истории, новый вопрос лаконичнее.
+    if prev_messages:
+        # Multi-turn: prev_messages — это [{"role": "user"|"assistant", "content": "..."}, ...]
+        # уже в правильном chronological порядке для Anthropic API.
+        # Sanity: первое сообщение должно быть user (Anthropic требование).
+        first_user_idx = next((i for i, m in enumerate(prev_messages) if m["role"] == "user"), None)
+        if first_user_idx is None:
+            # Странно — history без user сообщений; падаем в single-turn.
+            prev_messages = None
+
+    if prev_messages:
+        # Контекст оценок добавляем в самый ПЕРВЫЙ user message (важно для
+        # Anthropic — system + user пара). Дальше — серия turn'ов как есть.
+        messages_array = []
+        first_user_done = False
+        for m in prev_messages:
+            if m["role"] == "user" and not first_user_done:
+                # Вшиваем grade-контекст в первое user-сообщение
+                enriched = (
+                    f"Ученик: {student_name}\n"
+                    f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
+                    f"Вопрос родителя: {m['content']}"
+                )
+                messages_array.append({"role": "user", "content": enriched})
+                first_user_done = True
+            else:
+                messages_array.append({"role": m["role"], "content": m["content"]})
+        # Текущий новый вопрос — последний user turn
+        messages_array.append({"role": "user", "content": question})
+    else:
+        # Single-turn (старое поведение)
+        user_message = (
+            f"Ученик: {student_name}\n"
+            f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
+            f"Вопрос родителя: {question}"
+        )
+        messages_array = [{"role": "user", "content": user_message}]
 
     try:
         message = client.messages.create(
             model="claude-haiku-4-5",
             max_tokens=_CHAT_MAX_TOKENS,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages_array,
         )
         text = message.content[0].text.strip()
         if text.startswith('"') and text.endswith('"'):

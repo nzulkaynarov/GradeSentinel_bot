@@ -718,6 +718,14 @@ def api_chat():
     recent_grades = get_grade_history_for_student_all(student_id, days=30)
     lang = get_user_lang(telegram_id)
 
+    # Multi-turn: подгружаем недавнюю историю (PR_D R6)
+    from src.database_manager import get_recent_chat_history, save_chat_message
+    prev_messages = get_recent_chat_history(telegram_id, student_id)
+
+    # Сохраняем user message ДО вызова AI (чтобы при race condition
+    # юзер видел свой вопрос даже если AI упал)
+    save_chat_message(telegram_id, student_id, 'user', question)
+
     try:
         from src.analytics_engine import answer_parent_question
         answer = answer_parent_question(
@@ -726,6 +734,7 @@ def api_chat():
             grades=recent_grades,
             question=question,
             lang=lang,
+            prev_messages=prev_messages,
         )
     except Exception as e:
         logger.warning(f"Chat error for tg={telegram_id} student={student_id}: {e}")
@@ -734,7 +743,29 @@ def api_chat():
     if not answer:
         return jsonify({"answer": None, "error": "no_response"}), 503
 
+    # Сохраняем assistant message в history (для follow-up turn'ов)
+    save_chat_message(telegram_id, student_id, 'assistant', answer)
+
     return jsonify({"answer": answer})
+
+
+@app.route("/api/chat/history/<int:student_id>")
+def api_chat_history(student_id):
+    """Возвращает последние chat-сообщения для ученика — UI рендерит при
+    открытии chat-section, чтобы родитель видел контекст прошлой беседы."""
+    telegram_id = _authorize_student_access(student_id)
+    from src.database_manager import get_recent_chat_history
+    history = get_recent_chat_history(telegram_id, student_id)
+    return jsonify({"messages": history})
+
+
+@app.route("/api/chat/clear/<int:student_id>", methods=["POST"])
+def api_chat_clear(student_id):
+    """Очищает историю чата по запросу юзера («начать заново»)."""
+    telegram_id = _authorize_student_access(student_id)
+    from src.database_manager import clear_chat_history
+    clear_chat_history(telegram_id, student_id)
+    return jsonify({"ok": True})
 
 
 # ════════════════════════════════════════════════════════════
