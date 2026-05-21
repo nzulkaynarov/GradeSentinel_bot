@@ -12,6 +12,12 @@ from src.database_manager import (
     set_setting,
 )
 from src.i18n import t
+from src.ai_tools import (
+    TOOL_DEFINITIONS,
+    MAX_TOOL_ITERATIONS,
+    dispatch_tool,
+    resolve_family_id_for_student,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -479,10 +485,15 @@ _CHAT_SYSTEM_PROMPTS = {
         "— Когда приходят уведомления: новая оценка — в течение 5 минут (вне "
         "тихих часов), вечерняя сводка — 19:00, утренняя сводка ночных оценок — "
         "07:00, четвертные — как учитель выставит.\n\n"
-        "ЧЕГО ТЫ НЕ ЗНАЕШЬ без запроса данных (не угадывай): точную дату окончания "
-        "подписки этой семьи, список конкретных членов семьи, актуальные цены "
-        "тарифов (админ может менять). Если родитель спросит — попроси открыть "
-        "/subscription или /manage_family.\n\n"
+        "ЖИВЫЕ ДАННЫЕ — вызывай tools (НЕ угадывай, НЕ упоминай слово «tool»):\n"
+        "• `get_subscription_status` — когда спрашивают про статус подписки, "
+        "сколько осталось, когда истекает.\n"
+        "• `get_family_members` — когда спрашивают кто в семье, у кого есть "
+        "доступ, перечисли детей.\n"
+        "• `get_family_pricing` — когда спрашивают сколько стоит, какие тарифы. "
+        "ВСЕГДА вызывай этот tool, не помни цены наизусть.\n"
+        "После вызова tool отвечай родителю человеческим языком, цитируя "
+        "конкретные числа из результата.\n\n"
         "ЧЕГО БОТ НЕ ДЕЛАЕТ: не предсказывает будущие оценки, не пишет учителям и "
         "в школу, не редактирует дневник. Если просьба не про оценки и не про "
         "работу бота — мягко предложи открыть /support.\n\n"
@@ -530,10 +541,15 @@ _CHAT_SYSTEM_PROMPTS = {
         "— Xabarlar qachon keladi: yangi baho — 5 daqiqa ichida (sokin soatlardan "
         "tashqari), kechki xulosa — 19:00, tungi baholar ertalabki xulosasi — 07:00, "
         "choraklik — o'qituvchi qo'yganda.\n\n"
-        "MA'LUMOT SO'RAMASDAN BILMAYDIGAN narsalar (taxmin qilma): bu oilaning aniq "
-        "obuna tugash sanasi, oila a'zolarining aniq ro'yxati, tariflarning hozirgi "
-        "narxlari (admin o'zgartirishi mumkin). Agar ota-ona so'rasa — /subscription "
-        "yoki /manage_family ochishni so'ra.\n\n"
+        "JONLI MA'LUMOTLAR — tools'larni chaqir (taxmin qilma, «tool» so'zini "
+        "tilga olma):\n"
+        "• `get_subscription_status` — obuna holati, qancha qoldi, qachon tugaydi.\n"
+        "• `get_family_members` — oilada kim bor, kimning kirishi bor, bolalarni "
+        "sanab ber.\n"
+        "• `get_family_pricing` — narx qancha, qanday tariflar. HAR DOIM bu "
+        "tool'ni chaqir, narxlarni yodda saqlama.\n"
+        "Tool chaqirgandan keyin natijadagi aniq raqamlarni iqtibos qilib, "
+        "ota-onaga oddiy tilda javob ber.\n\n"
         "BOT BAJARMAYDIGAN narsalar: kelajakdagi baholarni bashorat qilmaydi, "
         "o'qituvchilarga yoki maktabga yozmaydi, kundalikni tahrirlamaydi. Agar "
         "iltimos baho yoki bot ishi haqida bo'lmasa — yumshoqlik bilan /support "
@@ -583,10 +599,15 @@ _CHAT_SYSTEM_PROMPTS = {
         "— When notifications arrive: new grade — within 5 minutes (outside quiet "
         "hours), evening digest — 19:00, morning digest of night grades — 07:00, "
         "quarterly grades — as the teacher posts them.\n\n"
-        "WHAT YOU DON'T KNOW without a data lookup (don't guess): the exact "
-        "subscription end date for this family, the exact list of family members, "
-        "current plan prices (the admin may change them). If the parent asks — "
-        "ask them to open /subscription or /manage_family.\n\n"
+        "LIVE DATA — call tools (don't guess, don't say the word «tool»):\n"
+        "• `get_subscription_status` — for subscription status, days remaining, "
+        "when it expires.\n"
+        "• `get_family_members` — for who's in the family, who has access, list "
+        "the children.\n"
+        "• `get_family_pricing` — for prices and plans. ALWAYS call this tool, "
+        "don't rely on memorized prices.\n"
+        "After calling a tool, answer the parent in plain language, quoting the "
+        "specific numbers from the result.\n\n"
         "WHAT THE BOT DOESN'T DO: doesn't predict future grades, doesn't contact "
         "teachers or the school, doesn't edit the gradebook. If the request isn't "
         "about grades or how the bot works — gently suggest opening /support.\n\n"
@@ -601,6 +622,23 @@ def _tashkent_today_str() -> str:
     return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
 
 
+def _extract_text_from_response(response) -> Optional[str]:
+    """Достаёт первый text-блок из Anthropic response. Defensive — толерантен
+    к mock-объектам и нестандартным шейпам ответа."""
+    content = getattr(response, 'content', None) or []
+    for block in content:
+        btype = getattr(block, 'type', None)
+        # text может быть и в TextBlock, и в mock'е (где type не задан)
+        if btype is None or btype == 'text':
+            text = getattr(block, 'text', None)
+            if text:
+                stripped = text.strip()
+                if stripped.startswith('"') and stripped.endswith('"'):
+                    stripped = stripped[1:-1].strip()
+                return stripped or None
+    return None
+
+
 def answer_parent_question(
     student_id: int,
     student_name: str,
@@ -608,6 +646,7 @@ def answer_parent_question(
     question: str,
     lang: str = 'ru',
     prev_messages: Optional[list] = None,
+    family_id: Optional[int] = None,
 ) -> Optional[str]:
     """Отвечает на вопрос родителя про оценки ученика с контекстом из БД.
 
@@ -616,11 +655,20 @@ def answer_parent_question(
     messages array — Claude видит предыдущие вопросы и свои ответы, что
     позволяет follow-up без перезаписи контекста.
 
+    Tool use (PR_E2): AI может вызывать get_subscription_status /
+    get_family_members / get_family_pricing для live данных. family_id
+    резолвится из student_id если не передан явно. Cap MAX_TOOL_ITERATIONS
+    защищает от infinite loop'а.
+
     Не кэширует ответ (каждый turn уникальный). Безопасно деградирует."""
     client = _get_client()
     if not client:
         logger.warning("answer_parent_question: no anthropic client (missing ANTHROPIC_API_KEY)")
         return None
+
+    # Резолвим family_id для tool dispatcher (один раз на вопрос)
+    if family_id is None and student_id:
+        family_id = resolve_family_id_for_student(student_id)
 
     system_prompt = _CHAT_SYSTEM_PROMPTS.get(lang, _CHAT_SYSTEM_PROMPTS['ru'])
     context = _format_grades_context(grades)
@@ -666,17 +714,59 @@ def answer_parent_question(
         )
         messages_array = [{"role": "user", "content": user_message}]
 
+    # Tool-use loop. MAX_TOOL_ITERATIONS — cap чтобы Claude не зациклился
+    # на serial вызовах tools. +1 для финального ответа после последней пачки tools.
     try:
-        message = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=_CHAT_MAX_TOKENS,
-            system=system_prompt,
-            messages=messages_array,
+        for iteration in range(MAX_TOOL_ITERATIONS + 1):
+            response = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=_CHAT_MAX_TOKENS,
+                system=system_prompt,
+                tools=TOOL_DEFINITIONS,
+                messages=messages_array,
+            )
+
+            stop_reason = getattr(response, 'stop_reason', None)
+            if stop_reason != 'tool_use':
+                # Финальный ответ — извлекаем текст и возвращаем
+                return _extract_text_from_response(response)
+
+            # Claude хочет вызвать tool. Добавляем assistant turn с tool_use
+            # блоками и user turn с tool_result.
+            messages_array.append({"role": "assistant", "content": response.content})
+
+            tool_results = []
+            for block in response.content:
+                if getattr(block, 'type', None) == 'tool_use':
+                    result_text = dispatch_tool(
+                        tool_name=block.name,
+                        tool_input=getattr(block, 'input', None) or {},
+                        family_id=family_id,
+                        lang=lang,
+                    )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result_text,
+                    })
+
+            if not tool_results:
+                # stop_reason='tool_use' но блоков tool_use нет — странно,
+                # выходим с тем что есть
+                logger.warning(
+                    f"answer_parent_question: stop_reason=tool_use but no tool_use blocks "
+                    f"(student={student_id})"
+                )
+                return _extract_text_from_response(response)
+
+            messages_array.append({"role": "user", "content": tool_results})
+
+        # Hit iteration cap — Claude не сошёлся
+        logger.warning(
+            f"answer_parent_question hit MAX_TOOL_ITERATIONS={MAX_TOOL_ITERATIONS} "
+            f"(student={student_id}, family={family_id})"
         )
-        text = message.content[0].text.strip()
-        if text.startswith('"') and text.endswith('"'):
-            text = text[1:-1].strip()
-        return text or None
+        return None
     except anthropic.APITimeoutError:
         logger.warning(f"Chat timeout for student {student_id}")
         return None
