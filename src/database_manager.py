@@ -204,17 +204,23 @@ def init_db():
         if admin_id:
             try:
                 admin_id_int = int(admin_id)
-                # Поскольку мы не знаем номер телефона админа заранее при первой авторизации по ID,
-                # создадим заглушку для телефона из ID, чтобы удовлетворить ограничение UNIQUE.
-                # Пользователь потом сможет авторизоваться с любого телефона, либо бот обновит запись.
-                # Но лучше: используем telegram_id сразу как приоритетный ключ.
-                cursor.execute('''
-                INSERT OR IGNORE INTO parents (fio, phone, telegram_id, role) 
-                VALUES ('Super Admin', ?, ?, 'admin')
-                ''', (f"admin_{admin_id_int}", admin_id_int))
-                
-                # Если админ уже был по телефону, но без telegram_id, или роль сбилась:
-                cursor.execute('UPDATE parents SET role = "admin" WHERE telegram_id = ?', (admin_id_int,))
+                if admin_id_int <= 0:
+                    logger.warning(
+                        "ADMIN_ID=%s is not a valid Telegram user id (must be > 0). "
+                        "Skipping admin row insert to avoid ghost parent.",
+                        admin_id,
+                    )
+                else:
+                    # Поскольку мы не знаем номер телефона админа заранее при первой авторизации по ID,
+                    # создадим заглушку для телефона из ID, чтобы удовлетворить ограничение UNIQUE.
+                    # Пользователь потом сможет авторизоваться с любого телефона, либо бот обновит запись.
+                    cursor.execute('''
+                    INSERT OR IGNORE INTO parents (fio, phone, telegram_id, role)
+                    VALUES ('Super Admin', ?, ?, 'admin')
+                    ''', (f"admin_{admin_id_int}", admin_id_int))
+
+                    # Если админ уже был по телефону, но без telegram_id, или роль сбилась:
+                    cursor.execute('UPDATE parents SET role = "admin" WHERE telegram_id = ?', (admin_id_int,))
             except ValueError:
                 logger.error("ADMIN_ID in environment is not a valid integer")
 
