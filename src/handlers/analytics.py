@@ -104,6 +104,12 @@ def _send_weekly_reports():
     students = get_active_spreadsheets()
     processed_pairs = set()
 
+    # NAV-010: считаем AI fail/success по cycle. Если все Anthropic вызовы
+    # fail'нут — _track_ai_outcome предупредит admin'а через Telegram
+    # после _AI_FAIL_THRESHOLD подряд-проваленных cycles.
+    ai_calls = 0
+    ai_successes = 0
+
     for student in students:
         student_id = student['student_id']
         display_name = student.get('display_name') or student['fio']
@@ -116,9 +122,11 @@ def _send_weekly_reports():
             processed_pairs.add(pair_key)
 
             lang = get_user_lang(tg_id)
+            ai_calls += 1
             analysis = generate_weekly_summary(student_id, display_name, lang=lang)
             if not analysis:
                 continue
+            ai_successes += 1
 
             msg = t("ai_weekly_title", lang, name=display_name, analysis=analysis)
             try:
@@ -126,3 +134,8 @@ def _send_weekly_reports():
                 time.sleep(0.1)
             except Exception as e:
                 logger.error(f"Failed to send weekly report to {tg_id}: {e}")
+
+    # NAV-010 tracking — если все вызовы fail'нули, предупредить admin.
+    if ai_calls > 0:
+        from src.schedulers import _track_ai_outcome
+        _track_ai_outcome('weekly_reports', success=(ai_successes > 0))

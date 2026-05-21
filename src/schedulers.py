@@ -94,6 +94,81 @@ def _set_marker(job: str, marker: str):
         _marker_cache[job] = marker
 
 
+def _track_ai_outcome(job_name: str, success: bool):
+    """NAV-010: трекать AI fail/success по scheduler job'у.
+
+    После _AI_FAIL_THRESHOLD подряд-fails уведомляем admin'а через Telegram
+    (с cooldown 24h — не спамим). При success резетим счётчик.
+
+    Используется в jobs которые делают Anthropic API вызовы:
+    - _check_proactive_alerts (proactive)
+    - _send_weekly_reports в analytics.py (weekly)
+    Если ANTHROPIC_API_KEY невалидный или Anthropic down — admin узнает быстро."""
+    import os as _os
+    from src.database_manager import get_setting, set_setting
+
+    key = f"ai_consec_fails_{job_name}"
+    last_notify_key = f"ai_fail_last_notify_{job_name}"
+
+    if success:
+        try:
+            if int(get_setting(key) or "0") > 0:
+                logger.info(f"AI job '{job_name}' recovered.")
+        except (ValueError, TypeError):
+            pass
+        set_setting(key, "0")
+        return
+
+    # Fail — incrementим счётчик
+    try:
+        current = int(get_setting(key) or "0")
+    except (ValueError, TypeError):
+        current = 0
+    current += 1
+    set_setting(key, str(current))
+
+    if current < _AI_FAIL_THRESHOLD:
+        return
+
+    # Проверяем cooldown notification'а — не больше раза в _AI_FAIL_NOTIFY_COOLDOWN_HOURS
+    last_notify = get_setting(last_notify_key)
+    now_iso = _get_local_now().isoformat()
+    if last_notify:
+        try:
+            last_dt = datetime.fromisoformat(last_notify)
+            if (_get_local_now() - last_dt).total_seconds() < _AI_FAIL_NOTIFY_COOLDOWN_HOURS * 3600:
+                return
+        except (ValueError, TypeError):
+            pass
+
+    admin_id_raw = _os.environ.get("ADMIN_ID")
+    if not admin_id_raw or not _bot:
+        return
+    try:
+        admin_id = int(admin_id_raw)
+    except (ValueError, TypeError):
+        return
+    try:
+        _bot.send_message(
+            admin_id,
+            f"⚠️ <b>AI service issue</b>\n\n"
+            f"Job <code>{job_name}</code> failed {current} times in a row.\n"
+            f"Check <code>ANTHROPIC_API_KEY</code> и Anthropic status.\n\n"
+            f"Следующий alert не раньше чем через {_AI_FAIL_NOTIFY_COOLDOWN_HOURS}ч.",
+            parse_mode='HTML',
+        )
+        set_setting(last_notify_key, now_iso)
+        logger.warning(
+            f"NAV-010: admin notified about {job_name} failing {current} times."
+        )
+    except Exception as e:
+        logger.warning(f"Failed to notify admin about AI failures ({job_name}): {e}")
+
+
+_AI_FAIL_THRESHOLD = 3
+_AI_FAIL_NOTIFY_COOLDOWN_HOURS = 24
+
+
 def _run_job_safe(job: str, marker: str, func):
     """Запускает job под локом с проверкой, что задача ещё не выполнена сегодня.
     Маркер хранится в settings (переживает рестарт) + кэшируется в памяти
@@ -575,6 +650,8 @@ def _check_proactive_alerts():
     total_sent = 0
     total_skipped_dedup = 0
     total_anomalies = 0
+    ai_calls = 0       # NAV-010: счётчик вызовов AI в этом цикле
+    ai_successes = 0   # NAV-010: счётчик успешных AI ответов
 
     for s in students:
         student_id = s['student_id']
@@ -609,9 +686,14 @@ def _check_proactive_alerts():
             # на том же языке. Acceptable для MVP.
             lang = get_user_lang(recipients[0]) or 'ru'
 
+            ai_calls += 1
             text = generate_proactive_alert(student_name, anomaly, lang=lang)
             if not text:
+                # NAV-010: счётчик AI fail; цикл всё равно continue.
+                # Если ВСЕ вызовы в этом цикле fail'нут → trigger admin alert
+                # (см. _track_ai_outcome вызов после loop'а).
                 continue
+            ai_successes += 1
 
             # Префиксуем заголовком чтобы alert выделялся среди обычных
             # notification'ов об оценках.
@@ -645,8 +727,13 @@ def _check_proactive_alerts():
 
     logger.info(
         f"Proactive alerts cycle: anomalies={total_anomalies}, "
-        f"sent={total_sent}, deduped={total_skipped_dedup}"
+        f"sent={total_sent}, deduped={total_skipped_dedup}, "
+        f"ai_calls={ai_calls}, ai_successes={ai_successes}"
     )
+    # NAV-010: если все AI вызовы fail'нули, считаем cycle проваленным.
+    # 0 calls (нет аномалий) = не fail (нет данных для оценки).
+    if ai_calls > 0:
+        _track_ai_outcome('proactive_alerts', success=(ai_successes > 0))
 
 
 def _run_weekly_cleanup():

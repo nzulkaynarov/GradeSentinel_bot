@@ -41,11 +41,12 @@ def seeded_chat(temp_db):
             (future, fam_id),
         )
 
-    # Сохраняем 2 turn'а
-    dbm.save_chat_message(111111, student_id, 'user', 'Как дела у ребёнка?')
-    dbm.save_chat_message(111111, student_id, 'assistant', 'В целом хорошо.')
-    dbm.save_chat_message(111111, student_id, 'user', 'А по математике?')
-    dbm.save_chat_message(111111, student_id, 'assistant', 'Есть тройка.')
+    # NAV-001: family-scoped история. Webapp endpoint резолвит family_id
+    # из student_id внутри, поэтому seed'им family-scoped через новую функцию.
+    dbm.save_family_chat_message(111111, fam_id, 'user', 'Как дела у ребёнка?')
+    dbm.save_family_chat_message(111111, fam_id, 'assistant', 'В целом хорошо.')
+    dbm.save_family_chat_message(111111, fam_id, 'user', 'А по математике?')
+    dbm.save_family_chat_message(111111, fam_id, 'assistant', 'Есть тройка.')
 
     return {"student_id": student_id, "tg_id": 111111, "family_id": fam_id}
 
@@ -78,8 +79,7 @@ def test_history_endpoint_returns_chronological_messages(client, seeded_chat):
 def test_history_endpoint_empty_for_new_student(client, seeded_chat):
     """Если в чате не было сообщений — возвращаем messages: []."""
     info = seeded_chat
-    # Очищаем
-    dbm.clear_chat_history(info['tg_id'], info['student_id'])
+    dbm.clear_family_chat_history(info['tg_id'], info['family_id'])
     with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
         resp = client.get(f"/api/chat/history/{info['student_id']}")
 
@@ -105,18 +105,17 @@ def test_history_endpoint_isolated_per_telegram_id(client, seeded_chat):
 
 
 def test_clear_endpoint_deletes_history(client, seeded_chat):
-    """POST /api/chat/clear/<id> → удаляет все сообщения для (tg_id, student_id)."""
+    """POST /api/chat/clear/<id> → удаляет all сообщения для (tg_id, family_id)."""
     info = seeded_chat
-    # Sanity: до очистки 4 сообщения
-    assert len(dbm.get_recent_chat_history(info['tg_id'], info['student_id'])) == 4
+    # Sanity: до очистки 4 сообщения family-scoped
+    assert len(dbm.get_recent_family_chat_history(info['tg_id'], info['family_id'])) == 4
 
     with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
         resp = client.post(f"/api/chat/clear/{info['student_id']}")
 
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True}
-    # История пуста
-    assert dbm.get_recent_chat_history(info['tg_id'], info['student_id']) == []
+    assert dbm.get_recent_family_chat_history(info['tg_id'], info['family_id']) == []
 
 
 def test_clear_endpoint_only_affects_caller(client, seeded_chat):
@@ -127,5 +126,5 @@ def test_clear_endpoint_only_affects_caller(client, seeded_chat):
         resp = client.post(f"/api/chat/clear/{info['student_id']}")
 
     assert resp.status_code == 200
-    # История owner'а нетронута
-    assert len(dbm.get_recent_chat_history(info['tg_id'], info['student_id'])) == 4
+    # История owner'а нетронута (family-scoped после NAV-001)
+    assert len(dbm.get_recent_family_chat_history(info['tg_id'], info['family_id'])) == 4

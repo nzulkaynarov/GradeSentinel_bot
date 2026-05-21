@@ -269,14 +269,17 @@ def init_db():
         ''')
 
         # 10b. AI conversation history (PR_D R6). Сообщения родитель↔AI для
-        # multi-turn чата с памятью контекста. Ключ — (telegram_id, student_id):
-        # каждый ребёнок имеет отдельную ветку разговора. role: 'user'|'assistant'.
-        # Limit логикой держим N последних, чтобы не палить токены.
+        # multi-turn чата с памятью контекста. Изначально был ключ
+        # (telegram_id, student_id) — каждый ребёнок имеет отдельную ветку.
+        # NAV-001: pivot на family_id — чат теперь family-scoped (AI видит
+        # всех детей семьи). student_id остаётся для legacy rows и для
+        # webapp dashboard chat (TBD migrate в PR_NAV-001b если нужно).
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS ai_chat_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INTEGER NOT NULL,
-            student_id INTEGER NOT NULL,
+            student_id INTEGER,
+            family_id INTEGER,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -285,6 +288,30 @@ def init_db():
         cursor.execute(
             'CREATE INDEX IF NOT EXISTS idx_ai_chat_tg_student '
             'ON ai_chat_messages(telegram_id, student_id, created_at)'
+        )
+
+        # NAV-001 миграция: добавляем family_id колонку для существующих БД
+        # (CREATE TABLE IF NOT EXISTS не пересоздаёт). Backfill через JOIN
+        # students→family_links: каждой строке ставим family_id первой семьи
+        # этого ученика. После backfill старые строки доступны через новые
+        # family-scoped функции.
+        cursor.execute("PRAGMA table_info(ai_chat_messages)")
+        ai_chat_cols = [col[1] for col in cursor.fetchall()]
+        if 'family_id' not in ai_chat_cols:
+            cursor.execute("ALTER TABLE ai_chat_messages ADD COLUMN family_id INTEGER")
+            cursor.execute('''
+                UPDATE ai_chat_messages
+                SET family_id = (
+                    SELECT fl.family_id FROM family_links fl
+                    WHERE fl.student_id = ai_chat_messages.student_id
+                    LIMIT 1
+                )
+                WHERE family_id IS NULL AND student_id IS NOT NULL
+            ''')
+            logger.info("Database migration: ai_chat_messages.family_id added + backfilled.")
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ai_chat_tg_family '
+            'ON ai_chat_messages(telegram_id, family_id, created_at)'
         )
 
         # 10c. AI feedback (PR_H3). 👍/👎 на каждый assistant ответ.
@@ -602,6 +629,9 @@ from src.db.ai_chat import (  # noqa: E402, F401
     save_chat_message,
     get_recent_chat_history,
     clear_chat_history,
+    save_family_chat_message,
+    get_recent_family_chat_history,
+    clear_family_chat_history,
     save_feedback,
     get_feedback_for_message,
     get_message_owner,

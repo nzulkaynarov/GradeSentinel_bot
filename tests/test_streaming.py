@@ -168,14 +168,17 @@ def test_handler_streaming_throttles_edits(monkeypatch):
     import src.handlers.ai_chat as ai_chat_mod
     import src.analytics_engine as ae
 
-    monkeypatch.setattr(ai_chat_mod, "get_students_for_parent",
+    # NAV-001: family-scoped mocks
+    monkeypatch.setattr(ai_chat_mod, "get_families_for_user",
+                        lambda _: [{"id": 10, "family_name": "T"}])
+    monkeypatch.setattr(ai_chat_mod, "get_family_students",
                         lambda _: [{"id": 5, "fio": "X", "display_name": "X"}])
     monkeypatch.setattr(ai_chat_mod, "get_grade_history_for_student_all",
                         lambda *a, **kw: [])
     monkeypatch.setattr(ai_chat_mod, "get_user_lang", lambda _: 'ru')
-    monkeypatch.setattr(ai_chat_mod, "get_recent_chat_history", lambda *a: [])
+    monkeypatch.setattr(ai_chat_mod, "get_recent_family_chat_history", lambda *a: [])
     saved = []
-    monkeypatch.setattr(ai_chat_mod, "save_chat_message",
+    monkeypatch.setattr(ai_chat_mod, "save_family_chat_message",
                         lambda *a, **kw: saved.append(a) or 42)
     monkeypatch.setattr(ai_chat_mod.bot, "send_chat_action",
                         lambda *a, **kw: None, raising=False)
@@ -202,7 +205,7 @@ def test_handler_streaming_throttles_edits(monkeypatch):
     monkeypatch.setattr(ae, "answer_parent_question", fake_ai)
 
     import json
-    state = {"state": "ai_chat_mode", "data": json.dumps({"student_id": 5})}
+    state = {"state": "ai_chat_mode", "data": json.dumps({"family_id": 10})}
     from src.handlers.ai_chat import _ask_ai
     _ask_ai(user_id=123, question="?", lang='ru', state=state)
 
@@ -223,13 +226,16 @@ def test_handler_streaming_falls_back_when_placeholder_send_fails(monkeypatch):
     import src.handlers.ai_chat as ai_chat_mod
     import src.analytics_engine as ae
 
-    monkeypatch.setattr(ai_chat_mod, "get_students_for_parent",
+    # NAV-001: family-scoped mocks
+    monkeypatch.setattr(ai_chat_mod, "get_families_for_user",
+                        lambda _: [{"id": 10, "family_name": "T"}])
+    monkeypatch.setattr(ai_chat_mod, "get_family_students",
                         lambda _: [{"id": 5, "fio": "X", "display_name": "X"}])
     monkeypatch.setattr(ai_chat_mod, "get_grade_history_for_student_all",
                         lambda *a, **kw: [])
     monkeypatch.setattr(ai_chat_mod, "get_user_lang", lambda _: 'ru')
-    monkeypatch.setattr(ai_chat_mod, "get_recent_chat_history", lambda *a: [])
-    monkeypatch.setattr(ai_chat_mod, "save_chat_message",
+    monkeypatch.setattr(ai_chat_mod, "get_recent_family_chat_history", lambda *a: [])
+    monkeypatch.setattr(ai_chat_mod, "save_family_chat_message",
                         lambda *a, **kw: 42)
     monkeypatch.setattr(ai_chat_mod.bot, "send_chat_action",
                         lambda *a, **kw: None, raising=False)
@@ -258,7 +264,7 @@ def test_handler_streaming_falls_back_when_placeholder_send_fails(monkeypatch):
     monkeypatch.setattr(ae, "answer_parent_question", fake_ai)
 
     import json
-    state = {"state": "ai_chat_mode", "data": json.dumps({"student_id": 5})}
+    state = {"state": "ai_chat_mode", "data": json.dumps({"family_id": 10})}
     from src.handlers.ai_chat import _ask_ai
     _ask_ai(user_id=123, question="?", lang='ru', state=state)
 
