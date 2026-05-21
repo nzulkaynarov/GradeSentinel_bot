@@ -615,26 +615,12 @@ def api_dashboard_init():
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
 
-@app.route("/api/dashboard/<int:student_id>/pdf")
-def api_dashboard_pdf(student_id):
-    """Экспорт дашборда в PDF (Dashboard refresh).
-
-    Использует webapp.pdf_export.build_dashboard_pdf — reportlab + DejaVuSans
-    для кириллицы. Возвращает application/pdf с Content-Disposition:
-    attachment чтобы браузер/Telegram WebApp скачивали как файл.
-
-    Query params:
-      days — длина периода (по умолчанию 30 для PDF чтобы был информативный
-             объём, max 365).
-    """
-    from flask import Response
+def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
+    """Общая логика: собирает данные и генерит PDF bytes + filename.
+    Используется обоими endpoint'ами (GET download + POST send-to-bot)."""
     from webapp.pdf_export import build_dashboard_pdf
 
-    telegram_id = _authorize_student_access(student_id)
-
-    days = request.args.get("days", 30, type=int)
     days = max(1, min(days, 365))
-
     students = get_students_for_parent(telegram_id)
     student = next((s for s in students if s["id"] == student_id), None)
     if not student:
@@ -651,7 +637,6 @@ def api_dashboard_pdf(student_id):
 
     grades_current = [g for g in all_grades if _gd(g) >= cutoff_date]
     grades_previous = [g for g in all_grades if _gd(g) < cutoff_date]
-
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
 
@@ -663,36 +648,111 @@ def api_dashboard_pdf(student_id):
     period_label = period_labels.get(lang, period_labels['ru']).get(days, f"{days} дн.")
 
     pdf_bytes = build_dashboard_pdf(
-        student_name=student_name,
-        summary=summary,
-        by_subject=by_subject,
-        recent=grades_current,
-        period_label=period_label,
-        lang=lang,
+        student_name=student_name, summary=summary, by_subject=by_subject,
+        recent=grades_current, period_label=period_label, lang=lang,
     )
 
-    # Content-Disposition filename должен быть ASCII (RFC 7230 — gunicorn
-    # rejects headers с кириллицей с 400 Invalid HTTP Header). Используем
-    # двойной filename: ASCII-fallback (filename=) + URL-encoded UTF-8
-    # (filename*=) по RFC 6266 — современные браузеры берут UTF-8 версию.
+    full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
+    filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}.pdf"
+    return pdf_bytes, filename, student_name, period_label, lang
+
+
+# Отдельный TeleBot instance внутри webapp процесса. Bot polling крутится
+# в другом процессе (gradesentinel-bot.service); этот instance используется
+# только для send_document через Bot API. Lazy init чтобы тесты без BOT_TOKEN
+# не падали на module load.
+_webapp_bot = None
+
+
+def _get_webapp_bot():
+    global _webapp_bot
+    if _webapp_bot is not None:
+        return _webapp_bot
+    import os as _os
+    import telebot
+    token = _os.environ.get("BOT_TOKEN")
+    if not token or ":" not in token:
+        return None
+    _webapp_bot = telebot.TeleBot(token)
+    return _webapp_bot
+
+
+@app.route("/api/dashboard/<int:student_id>/pdf/send", methods=["POST"])
+def api_dashboard_pdf_send(student_id):
+    """Send-to-bot вариант экспорта PDF (Dashboard refresh).
+
+    Проблема blob: URL в Telegram WebView (показывает «Открыть blob://?»
+    вместо скачивания файла) → пробуем доставлять PDF как обычный документ
+    через bot.send_document(user_id, ...). Юзер видит файл в чате с ботом
+    и может сохранять/пересылать стандартными Telegram-механизмами.
+
+    Query params: days (default 30, max 365).
+    """
+    import io as _io
+    telegram_id = _authorize_student_access(student_id)
+    days = request.args.get("days", 30, type=int)
+
+    pdf_bytes, filename, student_name, period_label, lang = _generate_dashboard_pdf(
+        student_id, telegram_id, days,
+    )
+
+    bot = _get_webapp_bot()
+    if not bot:
+        logger.warning("webapp_bot not available (BOT_TOKEN missing)")
+        return jsonify({"error": "bot_unavailable"}), 503
+
+    caption_by_lang = {
+        'ru': f"📊 Дашборд: {student_name}\nПериод: {period_label}",
+        'uz': f"📊 Panel: {student_name}\nDavr: {period_label}",
+        'en': f"📊 Dashboard: {student_name}\nPeriod: {period_label}",
+    }
+    caption = caption_by_lang.get(lang, caption_by_lang['ru'])
+
+    try:
+        # pyTelegramBotAPI принимает file-like объект с .name атрибутом
+        # для filename в Telegram.
+        f = _io.BytesIO(pdf_bytes)
+        f.name = filename
+        bot.send_document(telegram_id, f, caption=caption, visible_file_name=filename)
+    except Exception as e:
+        logger.warning(f"PDF send_document failed for tg={telegram_id}: {e}")
+        return jsonify({"error": "send_failed"}), 500
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/dashboard/<int:student_id>/pdf")
+def api_dashboard_pdf(student_id):
+    """GET-вариант экспорта PDF — для случая открытия дашборда в desktop
+    браузере (не WebApp). Внутри Telegram WebView лучше использовать
+    /pdf/send (POST), потому что WebView не умеет blob: download.
+
+    Query params: days (default 30, max 365).
+    """
+    from flask import Response
     from urllib.parse import quote
 
-    ascii_name = ''.join(
-        c if (c.isascii() and (c.isalnum() or c in '-_')) else '_'
-        for c in student_name
-    ) or 'student'
-    ascii_filename = f"GradeSentinel_{ascii_name}_{today_tashkent.isoformat()}.pdf"
+    telegram_id = _authorize_student_access(student_id)
+    days = request.args.get("days", 30, type=int)
 
-    full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
-    utf8_filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}.pdf"
-    utf8_encoded = quote(utf8_filename)
+    pdf_bytes, filename, _name, _period, _lang = _generate_dashboard_pdf(
+        student_id, telegram_id, days,
+    )
+
+    # Content-Disposition filename должен быть ASCII (RFC 7230). Двойной
+    # filename (RFC 6266): ASCII fallback + filename*=UTF-8 для современных
+    # клиентов которые покажут юзеру кириллическое имя.
+    ascii_name = ''.join(
+        c if (c.isascii() and (c.isalnum() or c in '-_')) else '_' for c in filename
+    ) or 'GradeSentinel_report.pdf'
+    utf8_encoded = quote(filename)
 
     return Response(
         pdf_bytes,
         mimetype='application/pdf',
         headers={
             'Content-Disposition': (
-                f'attachment; filename="{ascii_filename}"; '
+                f'attachment; filename="{ascii_name}"; '
                 f"filename*=UTF-8''{utf8_encoded}"
             ),
             'Content-Length': str(len(pdf_bytes)),

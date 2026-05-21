@@ -89,5 +89,6 @@
   "action_export_pdf": "📄 Export PDF",
   "action_export_loading": "Creating PDF…",
   "action_export_error": "Couldn't create PDF. Try again.",
+  "action_export_sent": "📄 PDF sent to the bot chat — open the bot to download or forward.",
   "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat."
 }

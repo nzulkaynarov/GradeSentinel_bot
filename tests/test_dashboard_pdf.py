@@ -155,6 +155,65 @@ def test_pdf_endpoint_filename_ascii_only_in_header(client, temp_db):
     assert "filename*=UTF-8''" in cd
 
 
+def test_pdf_send_endpoint_calls_bot_send_document(client, seeded_student, monkeypatch):
+    """POST /pdf/send → backend генерит PDF и шлёт через bot.send_document.
+    Tests что endpoint вызывает send_document с правильными args."""
+    import io
+    info = seeded_student
+    sent = []
+
+    class FakeBot:
+        def send_document(self, chat_id, doc, caption=None, visible_file_name=None):
+            sent.append({
+                'chat_id': chat_id,
+                'doc_size': len(doc.read()) if hasattr(doc, 'read') else 0,
+                'caption': caption,
+                'visible_file_name': visible_file_name,
+            })
+
+    monkeypatch.setattr("webapp.app._get_webapp_bot", lambda: FakeBot())
+
+    with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
+        resp = client.post(f"/api/dashboard/{info['student_id']}/pdf/send?days=7")
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
+    assert len(sent) == 1
+    assert sent[0]['chat_id'] == info['tg_id']
+    assert sent[0]['doc_size'] > 1000  # реальный PDF >1KB
+    assert sent[0]['caption']
+    assert sent[0]['visible_file_name'].endswith('.pdf')
+
+
+def test_pdf_send_endpoint_503_when_bot_unavailable(client, seeded_student, monkeypatch):
+    """Если BOT_TOKEN не задан / _webapp_bot init failed → 503."""
+    info = seeded_student
+    monkeypatch.setattr("webapp.app._get_webapp_bot", lambda: None)
+
+    with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
+        resp = client.post(f"/api/dashboard/{info['student_id']}/pdf/send")
+
+    assert resp.status_code == 503
+    assert resp.get_json()['error'] == 'bot_unavailable'
+
+
+def test_pdf_send_endpoint_500_when_bot_fails(client, seeded_student, monkeypatch):
+    """bot.send_document raise → 500 с error: send_failed."""
+    info = seeded_student
+
+    class FakeBot:
+        def send_document(self, *a, **kw):
+            raise RuntimeError("Telegram unreachable")
+
+    monkeypatch.setattr("webapp.app._get_webapp_bot", lambda: FakeBot())
+
+    with patch("webapp.app._authorize_student_access", return_value=info["tg_id"]):
+        resp = client.post(f"/api/dashboard/{info['student_id']}/pdf/send")
+
+    assert resp.status_code == 500
+    assert resp.get_json()['error'] == 'send_failed'
+
+
 def test_pdf_endpoint_404_for_other_student(client, seeded_student, temp_db):
     """Foreign student → 403 (auth_student_access защищает)."""
     info = seeded_student

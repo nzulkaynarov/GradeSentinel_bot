@@ -694,9 +694,15 @@ function handleShare() {
 }
 
 async function handleExportPdf() {
+    // Стратегия: POST /pdf/send → backend генерит PDF и шлёт его как
+    // документ в чат с ботом через Bot API. Юзер видит файл как обычное
+    // сообщение в Telegram, может сохранять/пересылать стандартно.
+    //
+    // Раньше пробовали blob: download через <a download> — но Telegram
+    // WebView показывает диалог «Открыть blob://?» вместо скачивания.
+    // Send-to-bot работает на всех Telegram клиентах (desktop, mobile).
     const studentId = state.currentStudentId;
-    const days = state.currentDays || 30;  // PDF: по умолчанию месячный
-    const pdfUrl = `/api/dashboard/${studentId}/pdf?days=${days}`;
+    const days = state.currentDays || 30;
 
     const pdfBtn = document.getElementById("btn-export-pdf");
     const originalText = pdfBtn ? pdfBtn.textContent : "";
@@ -706,30 +712,30 @@ async function handleExportPdf() {
     }
 
     try {
-        const res = await fetch(pdfUrl, { headers: API_HEADERS });
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-        }
-        const blob = await res.blob();
-        // Скачивание через blob URL — работает в Telegram WebApp WebView
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        // Имя файла можно взять из Content-Disposition, но проще
-        // конструируем из контекста.
-        const student = state.students.find(s => s.id === studentId);
-        const safeName = (student ? (student.display_name || student.fio) : "report")
-            .replace(/[^a-zA-Zа-яА-Я0-9_-]/g, "_");
-        a.download = `GradeSentinel_${safeName}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        // Освобождаем blob URL через секунду чтобы успел запуститься download
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const res = await fetch(
+            `/api/dashboard/${studentId}/pdf/send?days=${days}`,
+            { method: "POST", headers: API_HEADERS },
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
         const tg = window.Telegram && window.Telegram.WebApp;
         if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+
+        // Показываем popup «отправлено в бот» через Telegram WebApp API
+        // (нативный UI) с fallback на alert если SDK не доступен.
+        const msg = t("action_export_sent") || "📄 PDF отправлен в чат с ботом";
+        if (tg && typeof tg.showPopup === "function") {
+            tg.showPopup({ message: msg, buttons: [{ type: "ok" }] }, () => {
+                // После закрытия popup'а закрываем WebApp чтобы юзер увидел
+                // файл в чате с ботом.
+                if (tg.close) tg.close();
+            });
+        } else {
+            alert(msg);
+            if (tg && tg.close) tg.close();
+        }
     } catch (e) {
-        console.warn("PDF export failed", e);
+        console.warn("PDF send failed", e);
         alert(t("action_export_error") || "Не удалось создать PDF");
     } finally {
         if (pdfBtn) {
