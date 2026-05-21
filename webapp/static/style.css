@@ -1089,83 +1089,195 @@ body {
 .status-line.status-declining { color: #EF4444; font-weight: 500; }
 .status-line.status-improving { color: #10B981; font-weight: 500; }
 
-/* Quarters/Subjects tables — wrap в scrollable container для mobile */
-#quarters-table-wrap,
+/* View tabs (Дашборд / Итоги года) — наверху над period toggle */
+.view-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid rgba(127,127,127,0.20);
+    margin: 0 var(--space-2);
+}
+.view-tab {
+    flex: 1;
+    padding: 12px 8px;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--tg-hint);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+.view-tab.active {
+    color: var(--tg-text);
+    border-bottom-color: #6366F1;
+}
+.view-tab:hover { color: var(--tg-text); }
+
+/* Subjects table — wrap (quarters перешли на card layout) */
 #subjects-table-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    margin: 0 -8px;  /* extend до краёв card-body */
+    margin: 0 -8px;
 }
 
-/* Quarters table — primary block */
-.qr-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    min-width: 460px;  /* mobile: горизонтальный скролл если уже */
+/* Quarters cards — mobile-friendly layout вместо широкой таблицы */
+.quarter-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
-.qr-table th {
-    background: var(--tg-bg-secondary, #f1f5f9);
-    color: var(--tg-hint);
+.quarter-card {
+    background: var(--tg-bg-secondary, #1c2733);
+    border: 1px solid rgba(127,127,127,0.15);
+    border-radius: 12px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.quarter-card:active { background: rgba(99,102,241,0.08); }
+.qc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.qc-subject {
     font-weight: 600;
-    text-align: center;
-    padding: 8px 4px;
-    border-bottom: 1px solid rgba(127,127,127,0.20);
-    font-size: 11px;
+    font-size: 14px;
+    color: var(--tg-text);
+}
+.qc-trend { font-size: 18px; line-height: 1; }
+.qc-trend.trend-up { color: #10B981; }
+.qc-trend.trend-down { color: #EF4444; }
+.qc-trend.trend-flat { color: var(--tg-hint); }
+.qc-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.qc-quarters {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+}
+.qc-q {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+.qc-q-label {
+    font-size: 10px;
+    color: var(--tg-hint);
     text-transform: uppercase;
 }
-.qr-table th:first-child { text-align: left; }
-.qr-table tr.qr-row { cursor: pointer; transition: background 0.15s; }
-.qr-table tr.qr-row:hover { background: rgba(99,102,241,0.06); }
-.qr-table td {
-    padding: 8px 4px;
-    text-align: center;
-    border-bottom: 1px solid rgba(127,127,127,0.06);
+.qc-grade {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--tg-text);
 }
-.qr-subject {
-    text-align: left;
-    font-weight: 500;
-}
-.qr-cell { font-weight: 600; }
-.qr-cell.muted { color: var(--tg-hint); font-weight: 400; }
-.qr-forecast {
+.qc-grade.muted { color: var(--tg-hint); font-weight: 400; }
+.qc-grade.forecast {
     color: var(--tg-hint);
     font-style: italic;
 }
-.qr-trend.trend-up { color: #10B981; font-weight: 700; }
-.qr-trend.trend-down { color: #EF4444; font-weight: 700; }
-.qr-trend.trend-flat { color: var(--tg-hint); }
+.qc-year {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    padding-left: 8px;
+    border-left: 1px solid rgba(127,127,127,0.20);
+    min-width: 60px;
+}
+.qc-year-label {
+    font-size: 10px;
+    color: var(--tg-hint);
+    text-transform: uppercase;
+}
+.qc-year-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--tg-text);
+}
+.qc-year-value.forecast {
+    color: var(--tg-hint);
+    font-style: italic;
+    font-weight: 600;
+}
 .qr-note {
     font-size: 11px;
     margin-top: 8px;
 }
 
-/* Trend chart filters — pills под графиком */
-.trend-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: var(--space-2);
+/* Sparkline в subjects table (заменил большой trend chart) */
+.sparkline {
+    display: block;
 }
-.trend-filter-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 10px;
-    border: 1px solid rgba(127,127,127,0.20);
-    border-radius: 12px;
-    background: var(--tg-bg);
+.subj-cell-name {
+    min-width: 0;
+}
+.subj-name-line {
+    font-weight: 500;
     color: var(--tg-text);
-    font-size: 12px;
-    cursor: pointer;
-    transition: opacity 0.15s;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.trend-filter-btn.off { opacity: 0.4; }
-.trend-dot {
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--dot, currentColor);
+.subj-spark {
+    height: 20px;
+    margin-top: 2px;
+    line-height: 0;
+}
+.subj-spark.trend-up { color: #10B981; }
+.subj-spark.trend-down { color: #EF4444; }
+.subj-spark.trend-flat { color: var(--tg-hint); }
+
+/* Grades grouped by date */
+.g-group { margin-bottom: 12px; }
+.g-group-header {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--tg-hint);
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(127,127,127,0.10);
+    margin-bottom: 6px;
+}
+.g-group-rows { display: flex; flex-direction: column; gap: 4px; }
+.g-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: var(--tg-bg-secondary, #1c2733);
+    font-size: 14px;
+}
+.g-row.is-new {
+    background: rgba(99,102,241,0.10);
+    border-left: 2px solid #6366F1;
+}
+.g-subject { color: var(--tg-text); }
+.g-grade { font-weight: 700; font-size: 15px; }
+.btn-show-more {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+    background: transparent;
+    border: 1px dashed rgba(127,127,127,0.30);
+    border-radius: 8px;
+    color: var(--tg-hint);
+    font-size: 13px;
+    cursor: pointer;
+}
+.btn-show-more:hover {
+    color: var(--tg-text);
+    border-color: var(--tg-text);
 }
 
 /* Subjects table — sortable */
@@ -1173,7 +1285,11 @@ body {
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
-    min-width: 440px;  /* mobile: scroll если уже */
+}
+.subj-table th.narrow,
+.subj-table td.narrow {
+    width: 36px;
+    text-align: center;
 }
 .subj-table th {
     background: var(--tg-bg-secondary, #f1f5f9);
@@ -1245,6 +1361,99 @@ body {
 }
 .chart-wrap-small {
     height: 180px;
+}
+
+/* Modal (PDF type picker) */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+}
+.modal {
+    background: var(--tg-bg, #18222d);
+    border-radius: 16px;
+    max-width: 480px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid rgba(127,127,127,0.20);
+}
+.modal-header h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--tg-text);
+}
+.modal-close {
+    background: transparent;
+    border: 0;
+    color: var(--tg-hint);
+    font-size: 24px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+}
+.modal-body { padding: 16px; }
+.modal-footer {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid rgba(127,127,127,0.20);
+}
+.modal-footer .btn-action { flex: 1; }
+.pdf-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid rgba(127,127,127,0.15);
+    border-radius: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+.pdf-option:has(input:checked) {
+    border-color: #6366F1;
+    background: rgba(99,102,241,0.06);
+}
+.pdf-option input[type="radio"] {
+    margin-top: 4px;
+    flex-shrink: 0;
+}
+.pdf-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+.pdf-option-text strong {
+    color: var(--tg-text);
+    font-size: 14px;
+}
+.pdf-option-text span {
+    color: var(--tg-hint);
+    font-size: 12px;
+}
+.pdf-subject-select {
+    margin-top: 8px;
+    padding: 6px 8px;
+    background: var(--tg-bg-secondary, #1c2733);
+    border: 1px solid rgba(127,127,127,0.20);
+    border-radius: 8px;
+    color: var(--tg-text);
+    font-size: 13px;
+    width: 100%;
 }
 
 /* Action bar primary button (PDF) */

@@ -36,6 +36,61 @@ _AI_CHAT_STATE = 'ai_chat_mode'
 # было необоснованное ограничение, и welcome-текст врал юзеру.
 _RECENT_DAYS = 365
 
+def handle_ai_deeplink(message, payload: str):
+    """Deep-link `/start ai_<base64_question>` из WebApp дашборда.
+
+    Resolve семьи юзера, входит в ai_chat_mode. Если payload не пустой —
+    декодирует base64 question и сразу шлёт его в AI. Pre-filled UX.
+
+    Используется кнопками «💬 Спросить AI» в WebApp:
+    - General: payload = '' → просто открыть чат
+    - Drill-down «про предмет X»: payload = base64('Расскажи про X')
+    """
+    import base64 as _b64
+    user_id = message.from_user.id if hasattr(message, 'from_user') else message.chat.id
+    lang = get_user_lang(user_id)
+
+    # Decode payload (URL-safe base64 без padding для коротких payload'ов)
+    question = ""
+    if payload:
+        try:
+            # Дополняем padding если был обрезан в URL
+            padded = payload + "=" * (-len(payload) % 4)
+            question = _b64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
+        except Exception as e:
+            logger.warning(f"ai_deeplink: bad payload {payload!r}: {e}")
+            question = ""
+
+    # Резолвим семью + входим в чат
+    families = get_families_for_user(user_id)
+    if get_parent_role(user_id) != 'admin':
+        families = [f for f in families if is_subscription_active(f['id'])]
+    if not families:
+        _show_no_chat_dead_end(user_id, lang)
+        return
+
+    family = families[0]  # multi-family edge case: берём первую (как и start_ai_chat)
+    family_id = family['id']
+    set_user_state(user_id, _AI_CHAT_STATE, json.dumps({'family_id': family_id}))
+
+    # Show welcome message
+    students = get_family_students(family_id)
+    if not students:
+        bot.send_message(user_id, t("ai_chat_family_empty", lang))
+        return
+    names = ", ".join(s.get('display_name') or s['fio'] for s in students)
+    bot.send_message(
+        user_id,
+        t("ai_chat_welcome_family", lang, names=names),
+        parse_mode='HTML',
+    )
+
+    # Если был pre-filled question — сразу шлём в AI
+    if question.strip():
+        state = get_user_state(user_id)
+        _ask_ai(user_id, question.strip(), lang, state)
+
+
 def start_ai_chat(user_id: int, reply_keyboard=None):
     """Точка входа в family-scoped AI чат (NAV-001).
 

@@ -31,7 +31,7 @@
     <!-- ════════════ MAIN CONTENT — Analytical Dashboard ════════════ -->
     <div id="content" class="screen hidden">
 
-        <!-- Header: greeting + student switcher + period toggle -->
+        <!-- Header: greeting + student switcher -->
         <header class="header">
             <div class="greeting">
                 <span id="greeting-text" data-i18n="greeting_no_name">Дневник</span>
@@ -39,13 +39,22 @@
             <div id="student-tabs" class="student-tabs hidden"></div>
         </header>
 
-        <!-- Period toggle — primary control (default = current quarter) -->
+        <!-- Main tabs: Dashboard / Year Summary -->
+        <div class="view-tabs" id="view-tabs" role="tablist">
+            <button class="view-tab active" data-view="dashboard" data-i18n="tab_dashboard">📊 Дашборд</button>
+            <button class="view-tab" data-view="year" data-i18n="tab_year">🎓 Итоги года</button>
+        </div>
+
+        <!-- Period toggle — только для dashboard view -->
         <div class="period-toggle" id="period-toggle" role="tablist">
             <button class="period-btn" data-days="7" data-i18n="period_week">Неделя</button>
             <button class="period-btn" data-days="30" data-i18n="period_month">Месяц</button>
             <button class="period-btn active" data-days="90" data-i18n="period_quarter">Четверть</button>
             <button class="period-btn" data-days="365" data-i18n="period_year">Год</button>
         </div>
+
+        <!-- ════════ VIEW: DASHBOARD ════════ -->
+        <div id="view-dashboard">
 
         <!-- KPI row — 4 numerical cards, all visible at a glance (best practice) -->
         <section class="kpi-row" id="kpi-row">
@@ -89,22 +98,7 @@
             </div>
         </section>
 
-        <!-- РАЗДЕЛ: Динамика по предметам (multi-line chart с фильтром) -->
-        <section class="card" id="trend-section">
-            <header class="card-header">
-                <h2 class="card-title" data-i18n="section_trend_by_subject">Динамика по предметам</h2>
-                <p class="card-subtitle" data-i18n="section_trend_subtitle">по неделям</p>
-            </header>
-            <div class="card-body">
-                <div class="chart-wrap">
-                    <canvas id="trendChart"></canvas>
-                </div>
-                <div id="trend-filters" class="trend-filters"></div>
-                <p id="trend-empty" class="empty-hint hidden" data-i18n="chart_trend_empty">
-                    Недостаточно данных
-                </p>
-            </div>
-        </section>
+        <!-- Trend chart удалён — sparklines теперь в строках subjects table -->
 
         <!-- РАЗДЕЛ: Все предметы (sortable, clickable for drill-down) -->
         <section class="card" id="subjects-section">
@@ -138,52 +132,52 @@
             </div>
         </section>
 
-        <!-- РАЗДЕЛ: Итоги учебного года (collapsible, auto-open в апреле-июне) -->
-        <section class="card collapsible" id="year-section">
-            <header class="card-header">
-                <h2 class="card-title">
-                    🎓 <span data-i18n="section_year_report">Итоги учебного года</span>
-                </h2>
-                <button class="toggle-btn" aria-expanded="false">▾</button>
-            </header>
-            <div class="card-body">
-                <div id="year-loading" class="hidden" data-i18n="year_loading">Загружаю…</div>
-                <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных</div>
-                <div id="year-content" class="hidden">
-                    <div class="year-hero">
-                        <div class="year-avg" id="year-avg">—</div>
-                        <div class="year-meta">
-                            <span data-i18n="year_avg_label">средний за год</span>
-                            <span class="year-period" id="year-period"></span>
+        </div><!-- end #view-dashboard -->
+
+        <!-- ════════ VIEW: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
+        <div id="view-year" class="hidden">
+            <div id="year-loading" class="empty-hint hidden" data-i18n="year_loading">Загружаю…</div>
+            <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
+            <div id="year-content" class="hidden">
+                <section class="kpi-row">
+                    <div class="kpi-card kpi-primary">
+                        <div class="kpi-value" id="year-avg">—</div>
+                        <div class="kpi-label" data-i18n="year_avg_label">Средний за год</div>
+                        <div class="kpi-delta hidden" id="year-growth-delta"></div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="year-total-grades">—</div>
+                        <div class="kpi-label" data-i18n="year_total_grades">Оценок за год</div>
+                    </div>
+                    <div class="kpi-card kpi-good">
+                        <div class="kpi-value" id="year-streak">—</div>
+                        <div class="kpi-label" data-i18n="year_streak_label">Серия пятёрок</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="year-growth">—</div>
+                        <div class="kpi-label" data-i18n="year_growth_label">Динамика года</div>
+                    </div>
+                </section>
+
+                <section class="card">
+                    <header class="card-header">
+                        <h2 class="card-title" data-i18n="year_months_title">Лучший и сложный месяц</h2>
+                    </header>
+                    <div class="card-body">
+                        <div class="year-best-worst">
+                            <div class="year-month-card year-month-best">
+                                <span class="year-month-label" data-i18n="year_best_month">🌟 Лучший месяц</span>
+                                <span class="year-month-name" id="year-best-month">—</span>
+                            </div>
+                            <div class="year-month-card year-month-worst">
+                                <span class="year-month-label" data-i18n="year_worst_month">⚠️ Сложный месяц</span>
+                                <span class="year-month-name" id="year-worst-month">—</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="year-grid">
-                        <div class="year-stat">
-                            <div class="year-stat-value" id="year-total-grades">—</div>
-                            <div class="year-stat-label" data-i18n="year_total_grades">оценок</div>
-                        </div>
-                        <div class="year-stat">
-                            <div class="year-stat-value" id="year-growth">—</div>
-                            <div class="year-stat-label" data-i18n="year_growth_label">динамика</div>
-                        </div>
-                        <div class="year-stat">
-                            <div class="year-stat-value" id="year-streak">—</div>
-                            <div class="year-stat-label" data-i18n="year_streak_label">серия 5</div>
-                        </div>
-                    </div>
-                    <div class="year-best-worst">
-                        <div class="year-month-card year-month-best">
-                            <span class="year-month-label" data-i18n="year_best_month">🌟 Лучший месяц</span>
-                            <span class="year-month-name" id="year-best-month">—</span>
-                        </div>
-                        <div class="year-month-card year-month-worst">
-                            <span class="year-month-label" data-i18n="year_worst_month">⚠️ Сложный месяц</span>
-                            <span class="year-month-name" id="year-worst-month">—</span>
-                        </div>
-                    </div>
-                </div>
+                </section>
             </div>
-        </section>
+        </div><!-- end #view-year -->
 
         <!-- Action bar — только PDF (Share убран) + переход в AI чат -->
         <section class="action-bar" id="action-bar">
@@ -194,6 +188,44 @@
         </section>
 
         <p class="dashboard-footer-hint" data-i18n="dashboard_ai_hint"></p>
+
+        <!-- PDF Export Modal -->
+        <div id="pdf-modal" class="modal-backdrop hidden">
+            <div class="modal">
+                <header class="modal-header">
+                    <h3 data-i18n="pdf_modal_title">Что включить в PDF?</h3>
+                    <button class="modal-close" id="pdf-modal-close" type="button">×</button>
+                </header>
+                <div class="modal-body">
+                    <label class="pdf-option">
+                        <input type="radio" name="pdf-type" value="full" checked>
+                        <div class="pdf-option-text">
+                            <strong data-i18n="pdf_type_full">Полный отчёт</strong>
+                            <span data-i18n="pdf_type_full_hint">Все предметы за выбранный период</span>
+                        </div>
+                    </label>
+                    <label class="pdf-option">
+                        <input type="radio" name="pdf-type" value="subject">
+                        <div class="pdf-option-text">
+                            <strong data-i18n="pdf_type_subject">По одному предмету</strong>
+                            <span data-i18n="pdf_type_subject_hint">Углублённо: динамика и все оценки</span>
+                            <select id="pdf-subject-select" class="pdf-subject-select hidden"></select>
+                        </div>
+                    </label>
+                    <label class="pdf-option">
+                        <input type="radio" name="pdf-type" value="teacher_talk">
+                        <div class="pdf-option-text">
+                            <strong data-i18n="pdf_type_teacher">Для разговора с учителем</strong>
+                            <span data-i18n="pdf_type_teacher_hint">Фокус на проблемных предметах</span>
+                        </div>
+                    </label>
+                </div>
+                <footer class="modal-footer">
+                    <button id="pdf-modal-cancel" class="btn-action" type="button" data-i18n="btn_cancel">Отмена</button>
+                    <button id="pdf-modal-generate" class="btn-action btn-action-primary" type="button" data-i18n="btn_generate">Сгенерировать</button>
+                </footer>
+            </div>
+        </div>
 
     </div>
 
