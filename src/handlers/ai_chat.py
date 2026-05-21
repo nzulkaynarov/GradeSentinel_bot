@@ -18,6 +18,7 @@ from src.database_manager import (
     get_students_for_parent, get_user_lang,
     get_grade_history_for_student_all, get_parent_role,
     is_student_under_active_subscription,
+    get_recent_chat_history, save_chat_message,
 )
 from src.i18n import t
 
@@ -174,6 +175,16 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
 
     recent_grades = get_grade_history_for_student_all(student_id, days=_RECENT_DAYS)
 
+    # PR_H1: multi-turn history. Подгружаем предыдущие сообщения для
+    # follow-up («а что насчёт следующей четверти?» после вопроса про прошлый
+    # месяц). Webapp уже использует тот же pattern с PR_D R6 — теперь и бот.
+    prev_messages = get_recent_chat_history(user_id, student_id)
+
+    # Сохраняем user message ДО вызова AI — чтобы при race condition или
+    # AI-фейле юзер видел свой вопрос в истории webapp (а не пустоту).
+    # Trade-off: orphan user message если AI упал, но это лучше потери.
+    save_chat_message(user_id, student_id, 'user', question)
+
     try:
         from src.analytics_engine import answer_parent_question
         answer = answer_parent_question(
@@ -182,6 +193,7 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
             grades=recent_grades,
             question=question,
             lang=lang,
+            prev_messages=prev_messages,
         )
     except Exception as e:
         logger.warning(f"ai_chat answer failed for user={user_id} student={student_id}: {e}")
@@ -193,5 +205,8 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
     if not answer:
         bot.send_message(user_id, t("ai_chat_error", lang))
         return
+
+    # Сохраняем assistant ответ — для будущих follow-up'ов
+    save_chat_message(user_id, student_id, 'assistant', answer)
 
     bot.send_message(user_id, answer)
