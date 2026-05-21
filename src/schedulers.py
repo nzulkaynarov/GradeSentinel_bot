@@ -156,6 +156,22 @@ def _scheduler_loop():
         time.sleep(180)
 
 
+def _dedup_preserve_order(messages):
+    """Удаляет точные дубли сообщений с сохранением порядка первого появления.
+
+    Defense in depth для morning flush — если когда-нибудь баг создаст
+    дубли в очереди (как инцидент 2026-05-21 с cell_reference race),
+    родитель получит каждое сообщение один раз, не 14 копий.
+    """
+    seen = set()
+    result = []
+    for m in messages:
+        if m not in seen:
+            seen.add(m)
+            result.append(m)
+    return result
+
+
 def _flush_quiet_hours_queue():
     """Утренняя сводка: агрегирует ночные оценки по ученикам вместо свалки сырых сообщений."""
     from src.database_manager import (
@@ -179,6 +195,13 @@ def _flush_quiet_hours_queue():
         queued_messages = get_and_clear_queued_notifications(tg_id)
         if not queued_messages:
             continue
+
+        # Defense in depth: дедуплицируем сообщения с сохранением порядка.
+        # Если когда-нибудь monitor / другой writer положит одну оценку
+        # несколько раз (как в инциденте 2026-05-21), родитель не получит
+        # 14 копий — только одну. Этот fallback path рендерится без
+        # агрегации по предметам, так что dedup здесь — последняя защита.
+        queued_messages = _dedup_preserve_order(queued_messages)
 
         lang = get_user_lang(tg_id)
 
@@ -272,6 +295,8 @@ def _flush_quiet_hours_queue():
         chat_id = tgt['chat_id']
         thread_id = tgt['message_thread_id']
         messages = get_and_clear_queued_group_notifications(chat_id, thread_id)
+        # Defense in depth: дедуп для групп — см. комментарий выше.
+        messages = _dedup_preserve_order(messages)
         if not messages:
             continue
         for m in messages:
