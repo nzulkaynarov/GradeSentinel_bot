@@ -89,5 +89,6 @@
   "action_export_pdf": "📄 Экспорт PDF",
   "action_export_loading": "Создаю PDF…",
   "action_export_error": "Не удалось создать PDF. Попробуйте ещё раз.",
+  "action_export_sent": "📄 PDF отправлен в чат с ботом — откройте бот, чтобы скачать или переслать.",
   "dashboard_ai_hint": "💬 Остались вопросы? Спросите AI в чате бота."
 }

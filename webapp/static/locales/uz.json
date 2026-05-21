@@ -89,5 +89,6 @@
   "action_export_pdf": "📄 PDF eksport",
   "action_export_loading": "PDF yaratilmoqda…",
   "action_export_error": "PDF yaratilmadi. Yana urinib ko'ring.",
+  "action_export_sent": "📄 PDF bot chatiga yuborildi — yuklab olish yoki ulashish uchun botni oching.",
   "dashboard_ai_hint": "💬 Savollar qoldimi? Bot chatidagi AI'ga so'rang."
 }
