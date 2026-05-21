@@ -346,7 +346,7 @@
   "help_head": "\n\n👑 <b>Siz — oila boshlig'isiz</b>\n\n🏠 <b>Mening oilam</b> → mumkin:\n• 🧒 Bola qo'shish (Google jadval havolasi)\n• 🔗 Qarindosh taklif qilish — bir martalik havola\n• 📋 Birovni o'chirish\n\n💡 <b>Oilaviy chatda bot</b>\nMeni guruhga qo'shing → oilani tanlang → baholar shu yerga ham keladi. Mavzuli supergruhda — kerakli mavzuga havolani yuboring yoki /set_thread &lt;havola&gt; buyrug'ini ishlating.",
   "help_admin": "\n\n<b>Boshqaruv:</b>\n🛠 <b>Boshqaruv</b> — administrator paneli:\n  • 🏠 Oilalar — ko'rish va boshqarish\n  • ➕ Yangi oila — yaratish\n  • 💰 Tariflar — narxlarni o'zgartirish\n  • 🎁 Promokodlar — yaratish va boshqarish\n  • 👑 Obuna berish / ❌ Bekor qilish\n  • 📢 Tarqatma — barchaga xabar\n  • 📊 Tizim statistikasi",
 
-  "ai_chat_welcome": "💬 <b>{name} haqida javob berishga tayyorman</b>\n\nOddiy so'zlar bilan savol bering — men so'nggi 30 kun baholarini bilaman. Masalan:\n• Yozda nimani tortib qo'yish kerak?\n• Matematika nega pasayib ketdi?\n• Oldingi oy bilan solishtir\n\nYoki quyidagi taklifga teging.",
+  "ai_chat_welcome": "💬 <b>{name} haqida javob berishga tayyorman</b>\n\nOddiy so'zlar bilan savol bering — men o'quv yili davomidagi barcha baholarni bilaman. Masalan:\n• Yozda nimani tortib qo'yish kerak?\n• Matematika nega pasayib ketdi?\n• Oldingi oy bilan solishtir\n\nYoki quyidagi taklifga teging.",
   "ai_chat_pick_student": "👨‍👩‍👧 Qaysi farzandingiz haqida so'ramoqchisiz?",
   "ai_chat_no_students": "ℹ️ Sizda hali aktiv obunali o'quvchi yo'q.",
   "ai_chat_bye": "Ko'rishguncha! Yana so'rash uchun menyudagi «💬 AI'dan soʻrash» tugmasini bosing.",

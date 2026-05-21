@@ -24,7 +24,10 @@ from src.i18n import t
 logger = logging.getLogger(__name__)
 
 _AI_CHAT_STATE = 'ai_chat_mode'
-_RECENT_DAYS = 30  # сколько дней оценок отдаём AI как контекст
+# 365 дней = вся история учебного года. Claude Haiku 4.5 200K context
+# спокойно ест ~3K токенов для ~500 оценок. Раньше было 30 дней — это
+# было необоснованное ограничение, и welcome-текст врал юзеру.
+_RECENT_DAYS = 365
 
 # Suggested prompts по умолчанию — снижают порог входа (большинство юзеров
 # не знает что спрашивать). Текст кнопок локализуется через t().
@@ -75,7 +78,7 @@ def start_ai_chat(user_id: int):
             name, callback_data=f"ai_pick:{s['id']}"
         ))
     markup.add(types.InlineKeyboardButton(
-        t("btn_back", lang), callback_data="up_back"
+        t("user_panel_back", lang), callback_data="up_back"
     ))
     bot.send_message(user_id, t("ai_chat_pick_student", lang), reply_markup=markup)
 

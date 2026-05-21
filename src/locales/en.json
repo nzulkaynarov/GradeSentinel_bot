@@ -346,7 +346,7 @@
   "help_head": "\n\n👑 <b>You are the family head</b>\n\n🏠 <b>My Family</b> → you can:\n• 🧒 Add a child (Google Sheet link)\n• 🔗 Invite a relative — one-time link\n• 📋 Remove someone\n\n💡 <b>Bot in a family chat</b>\nAdd me to a group → pick a family → grades will arrive there too. Supergroup with topics — send the topic link or /set_thread &lt;link&gt;.",
   "help_admin": "\n\n<b>Administration:</b>\n🛠 <b>Admin Panel</b> — centralized admin panel:\n  • 🏠 Families — view and manage\n  • ➕ New Family — create\n  • 💰 Pricing — change prices\n  • 🎁 Promo Codes — create and manage\n  • 👑 Grant / ❌ Cancel subscription\n  • 📢 Broadcast — message to all\n  • 📊 System statistics",
 
-  "ai_chat_welcome": "💬 <b>Ready to answer about {name}</b>\n\nAsk in plain words — I know the last 30 days of grades. For example:\n• What to work on over summer?\n• Why did math drop?\n• Compare with last month\n\nOr tap a suggestion below.",
+  "ai_chat_welcome": "💬 <b>Ready to answer about {name}</b>\n\nAsk in plain words — I know the full school-year grade history. For example:\n• What to work on over summer?\n• Why did math drop?\n• Compare with last month\n\nOr tap a suggestion below.",
   "ai_chat_pick_student": "👨‍👩‍👧 Which child do you want to ask about?",
   "ai_chat_no_students": "ℹ️ You don't have any students with an active subscription.",
   "ai_chat_bye": "See you! To ask again, tap «💬 Ask AI» in the menu.",

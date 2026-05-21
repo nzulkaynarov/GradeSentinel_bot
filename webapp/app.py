@@ -715,7 +715,9 @@ def api_chat():
         abort(403)
     display_name = student.get("display_name") or student.get("fio") or "ученик"
 
-    recent_grades = get_grade_history_for_student_all(student_id, days=30)
+    # Передаём всю историю учебного года (а не последние 30 дней) — Claude
+    # spокойно ест год оценок в контексте, и нет смысла обрезать.
+    recent_grades = get_grade_history_for_student_all(student_id, days=365)
     lang = get_user_lang(telegram_id)
 
     # Multi-turn: подгружаем недавнюю историю (PR_D R6)
