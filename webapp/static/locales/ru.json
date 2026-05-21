@@ -74,5 +74,11 @@
   "chat_send": "Спросить",
   "chat_thinking": "AI думает…",
   "chat_error": "Не получилось получить ответ. Попробуйте ещё раз.",
-  "chat_rate_limited": "Слишком много вопросов — подождите минуту"
+  "chat_rate_limited": "Слишком много вопросов — подождите минуту",
+
+  "ai_summary_label": "AI-обзор",
+  "ai_quick_questions": "💡 Быстрые вопросы:",
+  "ai_suggested_summer": "🌞 Что подтянуть летом?",
+  "ai_suggested_compare": "📊 Сравни с прошлым месяцем",
+  "ai_suggested_concern": "⚠️ Где поводы для беспокойства?"
 }

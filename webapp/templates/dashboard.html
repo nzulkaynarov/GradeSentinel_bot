@@ -45,8 +45,21 @@
             <div id="student-tabs" class="student-tabs hidden"><!-- табы детей если >1 --></div>
         </header>
 
-        <!-- HERO: средний балл + дельта + статус -->
-        <section class="hero" id="hero">
+        <!-- AI Summary — primary, top of dashboard (AI-first navigation) -->
+        <section class="ai-summary-card hidden" id="ai-summary-card">
+            <div class="ai-summary-header">
+                <span class="ai-summary-icon">🤖</span>
+                <span class="ai-summary-label" data-i18n="ai_summary_label">AI-обзор</span>
+            </div>
+            <p class="ai-summary-text" id="ai-insight-text"></p>
+            <div class="ai-summary-quick">
+                <span class="ai-summary-quick-label" data-i18n="ai_quick_questions">💡 Быстрые вопросы:</span>
+                <div class="ai-summary-quick-buttons" id="ai-quick-buttons"></div>
+            </div>
+        </section>
+
+        <!-- HERO: средний балл + дельта + статус (secondary, под AI summary) -->
+        <section class="hero hero-compact" id="hero">
             <div class="hero-main">
                 <div class="hero-avg" id="hero-avg">—</div>
                 <div class="hero-delta hidden" id="hero-delta">
@@ -61,13 +74,7 @@
             <div class="hero-status" id="hero-status"></div>
         </section>
 
-        <!-- AI-инсайт (отображается только если Claude вернул текст) -->
-        <section class="ai-insight hidden" id="ai-insight">
-            <div class="ai-insight-icon">🤖</div>
-            <p class="ai-insight-text" id="ai-insight-text"></p>
-        </section>
-
-        <!-- Период (минимально, не доминирует) -->
+        <!-- Period toggle -->
         <div class="period-toggle" id="period-toggle">
             <button class="period-btn active" data-days="7" data-i18n="period_week">Неделя</button>
             <button class="period-btn" data-days="30" data-i18n="period_month">Месяц</button>
@@ -198,6 +205,7 @@
             </header>
             <div class="card-body">
                 <p class="chat-hint" data-i18n="chat_hint">Спросите про оценки ребёнка простыми словами</p>
+                <div id="chat-suggested" class="chat-suggested"></div>
                 <div id="chat-history" class="chat-history"></div>
                 <div class="chat-input-wrap">
                     <input type="text" id="chat-input" class="chat-input"
