@@ -431,7 +431,13 @@ def _show_user_panel(chat_id: int, message_id: int = None):
         else:
             fam_text = t("sub_no_family", lang)
 
-        text = t("user_panel_title", lang, families_info=fam_text)
+        # NAV-002: head без детей видит «Меню» без явного гайда что делать.
+        # Используем enhanced text c CTA-описанием — кнопка «Добавить ребёнка»
+        # ниже + текст объясняет почему её надо нажать первой.
+        if is_head and not has_kids:
+            text = t("user_panel_title_head_no_kids", lang, families_info=fam_text)
+        else:
+            text = t("user_panel_title", lang, families_info=fam_text)
         markup = types.InlineKeyboardMarkup(row_width=2)
 
         # 📊 Дашборд — inline WebApp button (передаёт signed initData).
@@ -947,11 +953,15 @@ def _register_bot_commands():
     - в группе: /set_thread /unlink_group (управление привязкой к семье).
     Без scope-разделения в группе подсказывались бы /grades и /status, которые там не работают."""
     try:
+        # NAV-008: добавлены /ai_report и /subscription — раньше они были
+        # доступны как handler'ы, но не отображались в BotFather menu (кнопка «/»).
         # Default scope — на случай если новый scope-API не поддержан
         bot.set_my_commands([
             types.BotCommand("start", "Начать / авторизоваться"),
             types.BotCommand("help", "Справка по боту"),
             types.BotCommand("grades", "Оценки за сегодня"),
+            types.BotCommand("ai_report", "AI-анализ за 2 недели"),
+            types.BotCommand("subscription", "Подписка"),
             types.BotCommand("status", "Статус и статистика"),
         ])
 
@@ -961,6 +971,8 @@ def _register_bot_commands():
                 types.BotCommand("start", "Начать / авторизоваться"),
                 types.BotCommand("help", "Справка по боту"),
                 types.BotCommand("grades", "Оценки за сегодня"),
+                types.BotCommand("ai_report", "AI-анализ за 2 недели"),
+                types.BotCommand("subscription", "Подписка"),
                 types.BotCommand("status", "Статус и статистика"),
             ],
             scope=types.BotCommandScopeAllPrivateChats(),

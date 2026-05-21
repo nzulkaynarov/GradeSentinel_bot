@@ -1,9 +1,14 @@
-"""Conversation history для AI-чата (PR_D R6).
+"""Conversation history для AI-чата (PR_D R6, family-scoped с NAV-001).
 
-Хранит сообщения родитель↔AI per (telegram_id, student_id) — каждый ребёнок
-имеет отдельную ветку. Используется для multi-turn чата: follow-up вопросы
-с памятью прошлых ответов («а что насчёт следующей четверти?» после
-вопроса про прошлый месяц).
+Хранит сообщения родитель↔AI. Изначально ключ был (telegram_id, student_id)
+— каждый ребёнок отдельная ветка. NAV-001: pivot на family_id — чат
+family-scoped, AI видит всех детей семьи в одном разговоре.
+
+Старые student-scoped функции (save_chat_message, get_recent_chat_history,
+clear_chat_history) сохранены для webapp dashboard (он остаётся
+student-scoped — там UI per-student). Новые family-scoped функции
+(save_family_chat_message, get_recent_family_chat_history,
+clear_family_chat_history) — для bot и family-wide контекста.
 
 Limit: 20 сообщений в контексте AI (10 пар user+assistant). Старше — не
 шлём в Anthropic API (экономия токенов + latency).
@@ -119,10 +124,64 @@ def clear_chat_history(telegram_id: int, student_id: int):
         )
 
 
+# ════════════════════════════════════════════════════════════
+#  NAV-001: family-scoped chat functions
+# ════════════════════════════════════════════════════════════
+
+def save_family_chat_message(telegram_id: int, family_id: int,
+                               role: str, content: str) -> int:
+    """NAV-001: family-scoped версия save_chat_message. student_id=NULL,
+    family_id заполняется. Возвращает row id для feedback привязки."""
+    if role not in ('user', 'assistant'):
+        raise ValueError(f"Invalid role: {role!r}")
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'INSERT INTO ai_chat_messages (telegram_id, family_id, role, content) '
+            'VALUES (?, ?, ?, ?)',
+            (telegram_id, family_id, role, content),
+        )
+        return cursor.lastrowid
+
+
+def get_recent_family_chat_history(
+    telegram_id: int, family_id: int, limit: int = MAX_HISTORY_FOR_AI
+) -> List[Dict[str, Any]]:
+    """NAV-001: family-scoped история. Включает все сообщения по этой семье,
+    в т.ч. legacy строки где student_id != NULL но family_id заполнено
+    миграцией. В chronological order (oldest first)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, role, content, created_at FROM ai_chat_messages '
+            'WHERE telegram_id = ? AND family_id = ? '
+            'ORDER BY id DESC LIMIT ?',
+            (telegram_id, family_id, limit),
+        )
+        rows = list(reversed(cursor.fetchall()))
+        return [
+            {"id": r["id"], "role": r["role"], "content": r["content"],
+             "created_at": r["created_at"]}
+            for r in rows
+        ]
+
+
+def clear_family_chat_history(telegram_id: int, family_id: int):
+    """NAV-001: очистка family-scoped истории."""
+    with get_db_connection() as conn:
+        conn.cursor().execute(
+            'DELETE FROM ai_chat_messages WHERE telegram_id = ? AND family_id = ?',
+            (telegram_id, family_id),
+        )
+
+
 __all__ = [
     "save_chat_message",
     "get_recent_chat_history",
     "clear_chat_history",
+    "save_family_chat_message",
+    "get_recent_family_chat_history",
+    "clear_family_chat_history",
     "save_feedback",
     "get_feedback_for_message",
     "get_message_owner",

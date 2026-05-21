@@ -431,7 +431,11 @@ _CHAT_MAX_GRADES_IN_CONTEXT = 600
 
 
 def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CONTEXT) -> str:
-    """Компактное представление оценок для prompt'а. По убыванию даты."""
+    """Компактное представление оценок для prompt'а. По убыванию даты.
+
+    NAV-001 (family-scoped): если grade dict содержит поле 'student_name',
+    оно добавляется в префиксе строки [Имя]. Без поля — backward-compat
+    формат для single-student режима (webapp dashboard и legacy callers)."""
     if not grades:
         return "(пусто — оценок в БД пока нет)"
     lines = []
@@ -439,13 +443,21 @@ def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CO
         date_str = g.get("grade_date") or (g.get("date_added") or "")[:10]
         subj = g.get("subject", "?")
         raw = g.get("raw_text", "?")
-        lines.append(f"  {date_str}  {subj}: {raw}")
+        student_name = g.get("student_name")
+        prefix = f"[{student_name}] " if student_name else ""
+        lines.append(f"  {date_str}  {prefix}{subj}: {raw}")
     return "\n".join(lines)
 
 
 _CHAT_SYSTEM_PROMPTS = {
     'ru': (
-        "Ты помогаешь родителю разобраться в оценках его/её ребёнка. Отвечай коротко "
+        "Ты помогаешь родителю разобраться в оценках его/её детей. У него может "
+        "быть один или несколько детей в семье — все они в контексте. Если в "
+        "строке оценки есть префикс [Имя] — оценка относится к этому ребёнку; "
+        "без префикса (или один ребёнок) — считай что это единственный ученик. "
+        "Когда родитель спрашивает про конкретного ребёнка по имени — фильтруй "
+        "только его оценки. Когда спрашивает «оба», «все» или сравнивает — "
+        "используй полный контекст. Отвечай коротко "
         "(2-4 предложения, кроме случаев когда родитель просит подробный разбор), "
         "на русском, обычным текстом без markdown. Тебе дана вся история оценок за "
         "учебный год И сегодняшняя дата. Опирайся ТОЛЬКО на эти данные. Если родитель "
@@ -501,7 +513,12 @@ _CHAT_SYSTEM_PROMPTS = {
         "мягко напомни что ты помощник по дневнику."
     ),
     'uz': (
-        "Ota-onaga farzandining baholarini tushunishga yordam berasan. Qisqa javob "
+        "Ota-onaga farzandlarining baholarini tushunishga yordam berasan. Oilada "
+        "bir yoki bir nechta bola bo'lishi mumkin — hammasi kontekstda. Agar baho "
+        "satrida [Ism] prefiks bo'lsa — bu shu bolaning bahosi; prefikssiz (yoki "
+        "bola bitta) — yagona o'quvchi. Agar ota-ona ma'lum bolaning ismini "
+        "aytib so'rasa — faqat shu bolaning baholarini ko'r. Agar «ikkala», «hamma» "
+        "yoki taqqoslash so'rasa — to'liq kontekstdan foydalan. Qisqa javob "
         "ber (2-4 jumla, agar ota-ona batafsil tahlil so'rasa — uzunroq), o'zbekcha, "
         "oddiy matn, markdown'siz. Senga butun o'quv yili davomidagi baholar tarixi "
         "VA bugungi sana berilgan. FAQAT shu ma'lumotlardan foydalan. Agar ota-ona "
@@ -558,7 +575,12 @@ _CHAT_SYSTEM_PROMPTS = {
         "siyosat va h.k.) — yumshoq eslatib qo'y."
     ),
     'en': (
-        "You're helping a parent make sense of their child's grades. Be brief "
+        "You're helping a parent make sense of their children's grades. The "
+        "family may have one or multiple children — all are in context. If a "
+        "grade line has a [Name] prefix — it belongs to that child; no prefix "
+        "(or single child) — assume single student. When the parent asks about "
+        "a specific child by name — filter to that child only. When they ask "
+        "«both», «all», or compare — use the full context. Be brief "
         "(2-4 sentences, longer if the parent explicitly asks for a deep dive), "
         "plain text, no markdown. You have the full school-year history of grades "
         "AND today's date. Use ONLY this data. When the parent uses relative "

@@ -708,70 +708,93 @@ def api_chat():
     if not _check_chat_rate_limit(telegram_id):
         return ("Rate limit exceeded", 429)
 
-    # Собираем контекст: имя ученика + последние 30 дней оценок
+    # NAV-001: pivot на family_id внутри (URL контракт остался student_id
+    # для backward compat). Webapp chat теперь shared с bot history,
+    # AI видит всех детей семьи и может сравнивать.
     students = get_students_for_parent(telegram_id)
     student = next((s for s in students if s["id"] == student_id), None)
     if not student:
         abort(403)
-    display_name = student.get("display_name") or student.get("fio") or "ученик"
 
-    # Передаём всю историю учебного года (а не последние 30 дней) — Claude
-    # spокойно ест год оценок в контексте, и нет смысла обрезать.
-    recent_grades = get_grade_history_for_student_all(student_id, days=365)
+    from src.database_manager import (
+        get_families_for_student, get_family_students,
+        get_recent_family_chat_history, save_family_chat_message,
+    )
+    fams = get_families_for_student(student_id)
+    if not fams:
+        abort(403)
+    family_id = fams[0]['id']
+    family_students = get_family_students(family_id)
+
+    # Собираем grades всех детей семьи с annotation
+    all_grades = []
+    student_names = []
+    for s in family_students:
+        s_name = s.get("display_name") or s.get("fio") or "ученик"
+        student_names.append(s_name)
+        s_grades = get_grade_history_for_student_all(s['id'], days=365)
+        for g in s_grades:
+            gg = dict(g)
+            gg['student_name'] = s_name
+            all_grades.append(gg)
+    all_grades.sort(
+        key=lambda g: g.get('grade_date') or (g.get('date_added') or '')[:10],
+        reverse=True,
+    )
+    family_label = student_names[0] if len(student_names) == 1 else ", ".join(student_names)
     lang = get_user_lang(telegram_id)
 
-    # Multi-turn: подгружаем недавнюю историю (PR_D R6)
-    from src.database_manager import get_recent_chat_history, save_chat_message
-    prev_messages = get_recent_chat_history(telegram_id, student_id)
+    # Multi-turn history (family-scoped после NAV-001)
+    prev_messages = get_recent_family_chat_history(telegram_id, family_id)
 
-    # Сохраняем user message ДО вызова AI (чтобы при race condition
-    # юзер видел свой вопрос даже если AI упал)
-    save_chat_message(telegram_id, student_id, 'user', question)
+    # Save user message before AI call (orphan if AI fails)
+    save_family_chat_message(telegram_id, family_id, 'user', question)
 
     try:
         from src.analytics_engine import answer_parent_question
         answer = answer_parent_question(
-            student_id=student_id,
-            student_name=display_name,
-            grades=recent_grades,
+            student_id=None,
+            student_name=family_label,
+            grades=all_grades,
             question=question,
             lang=lang,
             prev_messages=prev_messages,
+            family_id=family_id,
         )
     except Exception as e:
-        logger.warning(f"Chat error for tg={telegram_id} student={student_id}: {e}")
+        logger.warning(f"Chat error for tg={telegram_id} family={family_id}: {e}")
         return jsonify({"answer": None, "error": "internal"}), 500
 
     if not answer:
         return jsonify({"answer": None, "error": "no_response"}), 503
 
-    # Сохраняем assistant message в history (для follow-up turn'ов).
-    # PR_H3: возвращаем id чтобы UI мог привязать 👍/👎 feedback к нему.
-    assistant_msg_id = save_chat_message(telegram_id, student_id, 'assistant', answer)
-
-    # PR_H2: возвращаем id для UI history рендера тоже (тогда render'нем
-    # уже сохранённый ответ с привязанным id для feedback).
+    assistant_msg_id = save_family_chat_message(telegram_id, family_id, 'assistant', answer)
     return jsonify({"answer": answer, "message_id": assistant_msg_id})
 
 
 @app.route("/api/chat/history/<int:student_id>")
 def api_chat_history(student_id):
-    """Возвращает последние chat-сообщения для ученика — UI рендерит при
-    открытии chat-section, чтобы родитель видел контекст прошлой беседы.
+    """Возвращает chat-сообщения для рендера в dashboard chat-section.
 
-    PR_H3: для assistant-сообщений добавляем id (нужен для feedback)."""
+    NAV-001: внутри pivot на family_id (student_id из URL → resolve семью).
+    URL контракт остался для backward compat фронта."""
     telegram_id = _authorize_student_access(student_id)
-    from src.database_manager import get_recent_chat_history
-    history = get_recent_chat_history(telegram_id, student_id)
+    from src.database_manager import get_families_for_student, get_recent_family_chat_history
+    fams = get_families_for_student(student_id)
+    if not fams:
+        return jsonify({"messages": []})
+    history = get_recent_family_chat_history(telegram_id, fams[0]['id'])
     return jsonify({"messages": history})
 
 
 @app.route("/api/chat/clear/<int:student_id>", methods=["POST"])
 def api_chat_clear(student_id):
-    """Очищает историю чата по запросу юзера («начать заново»)."""
+    """Очищает family-scoped историю чата (NAV-001: pivot на family_id)."""
     telegram_id = _authorize_student_access(student_id)
-    from src.database_manager import clear_chat_history
-    clear_chat_history(telegram_id, student_id)
+    from src.database_manager import get_families_for_student, clear_family_chat_history
+    fams = get_families_for_student(student_id)
+    if fams:
+        clear_family_chat_history(telegram_id, fams[0]['id'])
     return jsonify({"ok": True})
 
 

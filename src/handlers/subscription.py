@@ -81,8 +81,12 @@ def get_plans() -> dict:
 #  ЭКРАН 1: Статус подписки (точка входа)
 # ═══════════════════════════════════════════
 
+@bot.message_handler(commands=['subscription'])
 def cmd_subscription(message):
-    """Кнопка '💳 Подписка' — показывает статус + что входит + CTA."""
+    """Кнопка '💳 Подписка' и команда /subscription — статус + что входит + CTA.
+
+    NAV-008: /subscription был упомянут в system prompt и /help, но раньше
+    не регистрировался — теперь это полноценная команда."""
     user_id = message.chat.id if hasattr(message, 'chat') else message.from_user.id
     lang = get_user_lang(user_id)
 
