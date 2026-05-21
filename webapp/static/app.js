@@ -620,15 +620,22 @@ function renderSubjectsList(subjects) {
 function setupChatUI() {
     const input = document.getElementById("chat-input");
     const sendBtn = document.getElementById("chat-send");
+    const clearBtn = document.getElementById("chat-clear");
     if (!input || !sendBtn) return;
 
-    // Чистим historу между переключениями студентов
+    // Чистим UI между переключениями студентов. История каждого ребёнка —
+    // изолированная ветка в БД (telegram_id, student_id) — но в UI мы
+    // показываем только текущего, поэтому каждый switch ресетит DOM.
     document.getElementById("chat-history").innerHTML = "";
+    state.chatHistoryLoaded = false;
+    if (clearBtn) clearBtn.classList.add("hidden");
 
     // Suggested prompts — те же что в AI summary card. UX: видишь chat,
-    // не знаешь что спросить — тапаешь pill → авто-отправляется.
+    // не знаешь что спросить — тапаешь pill → авто-отправляется. Прячем
+    // их если у юзера уже есть history (он уже спрашивал — pills его не учат).
     const suggestedEl = document.getElementById("chat-suggested");
     if (suggestedEl) {
+        suggestedEl.classList.remove("hidden");
         suggestedEl.innerHTML = SUGGESTED_PROMPTS.map(key => {
             const label = t(key);
             return `<button class="chat-suggested-btn" data-prompt-key="${key}">${escapeHtml(label)}</button>`;
@@ -673,6 +680,14 @@ function setupChatUI() {
             const data = await res.json();
             thinkingNode.textContent = data.answer || t("chat_error");
             thinkingNode.classList.remove("chat-thinking");
+            // PR_H3: цепляем 👍/👎 row на свежий AI ответ. msg_id пришёл
+            // от /api/chat после save_chat_message на бэке.
+            if (data.message_id) {
+                attachFeedbackToNode(thinkingNode, data.message_id);
+            }
+            // После первого успешного turn'а — показываем «Начать заново»,
+            // прячем suggested-prompts (родитель уже в беседе).
+            _markChatHasHistory();
         } catch (e) {
             console.warn("Chat failed", e);
             thinkingNode.textContent = t("chat_error");
@@ -685,16 +700,143 @@ function setupChatUI() {
     input.onkeydown = (e) => {
         if (e.key === "Enter") send();
     };
+
+    if (clearBtn) {
+        clearBtn.onclick = clearChatHistory;
+    }
+
+    // Lazy-load истории (PR_H2). Webapp endpoint /api/chat/history/<id>
+    // существует с PR_D R6, но UI её не рендерил. Грузим при первом
+    // expand chat-section ИЛИ сразу если секция уже открыта (после
+    // student switch — section может быть открыта от прошлой сессии).
+    const section = document.getElementById("chat-section");
+    if (section && section.classList.contains("open")) {
+        loadChatHistory();
+    } else if (section) {
+        section.addEventListener("toggle:open", loadChatHistory, { once: true });
+    }
 }
 
-function appendChatMessage(role, text) {
+async function loadChatHistory() {
+    if (state.chatHistoryLoaded) return;
+    state.chatHistoryLoaded = true;
+    try {
+        const data = await fetchJSON(`/api/chat/history/${state.currentStudentId}`);
+        const messages = data.messages || [];
+        if (messages.length === 0) return;  // первый раз — pills видны, всё ок
+
+        messages.forEach(m => {
+            const role = m.role === "user" ? "user" : "ai";
+            // PR_H3: для assistant передаём message_id чтобы прицепить
+            // 👍/👎 feedback кнопки на каждый старый ответ.
+            appendChatMessage(role, m.content, role === "ai" ? m.id : null);
+        });
+        _markChatHasHistory();
+    } catch (e) {
+        console.warn("Chat history load failed", e);
+        // Молчаливый деградирующий fail — пустая UI, suggested-pills остаются.
+    }
+}
+
+function _markChatHasHistory() {
+    // UX: prompts-pills скрываются (уже не нужны для начала), кнопка
+    // «Начать заново» появляется.
+    const suggested = document.getElementById("chat-suggested");
+    if (suggested) suggested.classList.add("hidden");
+    const clearBtn = document.getElementById("chat-clear");
+    if (clearBtn) clearBtn.classList.remove("hidden");
+}
+
+async function clearChatHistory() {
+    if (!window.confirm(t("chat_clear_confirm"))) return;
+    try {
+        await fetch(`/api/chat/clear/${state.currentStudentId}`, {
+            method: "POST",
+            headers: API_HEADERS,
+        });
+    } catch (e) {
+        console.warn("Chat clear failed", e);
+        return;
+    }
+    document.getElementById("chat-history").innerHTML = "";
+    const clearBtn = document.getElementById("chat-clear");
+    if (clearBtn) clearBtn.classList.add("hidden");
+    const suggested = document.getElementById("chat-suggested");
+    if (suggested) suggested.classList.remove("hidden");
+}
+
+function appendChatMessage(role, text, messageId) {
     const container = document.getElementById("chat-history");
     const div = document.createElement("div");
     div.className = `chat-msg chat-msg-${role}`;
     div.textContent = text;
     container.appendChild(div);
+
+    // PR_H3: для ai сообщений добавляем 👍/👎 feedback row сразу под bubble.
+    // messageId передаётся для history-bubbles (известен заранее) и обновляется
+    // позже через attachFeedbackToNode для live new turns (id приходит с
+    // /api/chat ответом, после того как bubble уже создан).
+    if (role === "ai" && messageId != null) {
+        attachFeedbackToNode(div, messageId);
+    }
+
     container.scrollTop = container.scrollHeight;
     return div;
+}
+
+function attachFeedbackToNode(bubbleNode, messageId) {
+    // Идемпотентно — если уже есть row, не дублируем (например при rerender)
+    if (bubbleNode.nextSibling && bubbleNode.nextSibling.classList &&
+        bubbleNode.nextSibling.classList.contains("chat-feedback-row")) {
+        return;
+    }
+    const row = document.createElement("div");
+    row.className = "chat-feedback-row";
+    row.dataset.messageId = String(messageId);
+    row.innerHTML = `
+        <button class="chat-fb-btn" data-rating="1"
+                aria-label="${escapeHtml(t("chat_feedback_up_label"))}">👍</button>
+        <button class="chat-fb-btn" data-rating="-1"
+                aria-label="${escapeHtml(t("chat_feedback_down_label"))}">👎</button>
+    `;
+    row.querySelectorAll(".chat-fb-btn").forEach(btn => {
+        btn.addEventListener("click", () => sendFeedback(row, messageId,
+                                                          parseInt(btn.dataset.rating, 10)));
+    });
+    bubbleNode.parentNode.insertBefore(row, bubbleNode.nextSibling);
+}
+
+async function sendFeedback(rowNode, messageId, rating) {
+    try {
+        const res = await fetch("/api/chat/feedback", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...API_HEADERS,
+            },
+            body: JSON.stringify({ message_id: messageId, rating }),
+        });
+        if (!res.ok) {
+            console.warn("Feedback POST failed", res.status);
+            return;
+        }
+    } catch (e) {
+        console.warn("Feedback network failed", e);
+        return;
+    }
+    // UI: помечаем выбранную кнопку, кратко показываем «спасибо»
+    rowNode.querySelectorAll(".chat-fb-btn").forEach(btn => {
+        btn.classList.toggle("selected", parseInt(btn.dataset.rating, 10) === rating);
+    });
+    const thanks = document.createElement("span");
+    thanks.className = "chat-fb-thanks";
+    thanks.textContent = t("chat_feedback_thanks");
+    // Удаляем старый thanks если был (toggle сценарий)
+    const old = rowNode.querySelector(".chat-fb-thanks");
+    if (old) old.remove();
+    rowNode.appendChild(thanks);
+    setTimeout(() => thanks.classList.add("fade-out"), 1500);
+    setTimeout(() => { if (thanks.parentNode) thanks.remove(); }, 2500);
 }
 
 // ============ COLLAPSIBLE ============

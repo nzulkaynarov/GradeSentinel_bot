@@ -581,6 +581,9 @@ from src.db.ai_chat import (  # noqa: E402, F401
     save_chat_message,
     get_recent_chat_history,
     clear_chat_history,
+    save_feedback,
+    get_feedback_for_message,
+    get_message_owner,
     MAX_HISTORY_FOR_AI,
 )
 

@@ -10,6 +10,7 @@ navigation). До этого AI был спрятан в WebApp в самом н
 """
 import logging
 import json
+import time
 from telebot import types
 
 from src.bot_instance import bot
@@ -18,6 +19,8 @@ from src.database_manager import (
     get_students_for_parent, get_user_lang,
     get_grade_history_for_student_all, get_parent_role,
     is_student_under_active_subscription,
+    get_recent_chat_history, save_chat_message,
+    save_feedback, get_message_owner,
 )
 from src.i18n import t
 
@@ -174,6 +177,52 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
 
     recent_grades = get_grade_history_for_student_all(student_id, days=_RECENT_DAYS)
 
+    # PR_H1: multi-turn history.
+    prev_messages = get_recent_chat_history(user_id, student_id)
+
+    # Сохраняем user message ДО вызова AI.
+    save_chat_message(user_id, student_id, 'user', question)
+
+    # PR_H4: streaming. Шлём placeholder, throttled callback edit'ит его
+    # по мере накопления текста. Throttle 1.5с защищает от telegram flood
+    # (edit_message_text жёсткого rate-limit'а не имеет, но flood-control
+    # сработает при ~20+ edits/sec на один message). Финальный edit ставит
+    # feedback markup на готовый ответ.
+    try:
+        placeholder = bot.send_message(user_id, t("ai_chat_thinking", lang))
+        placeholder_msg_id = placeholder.message_id
+    except Exception as e:
+        logger.warning(f"placeholder send failed user={user_id}: {e}")
+        placeholder_msg_id = None
+
+    stream_state = {
+        'last_edit_at': 0.0,
+        'last_edit_text': '',
+    }
+
+    def _on_chunk(accumulated: str):
+        if placeholder_msg_id is None:
+            return
+        now = time.monotonic()
+        if now - stream_state['last_edit_at'] < 1.5:
+            return
+        if accumulated == stream_state['last_edit_text']:
+            return
+        if not accumulated.strip():
+            return
+        try:
+            bot.edit_message_text(
+                chat_id=user_id,
+                message_id=placeholder_msg_id,
+                text=accumulated,
+            )
+            stream_state['last_edit_at'] = now
+            stream_state['last_edit_text'] = accumulated
+        except Exception as e:
+            # edit может упасть из-за "message is not modified" или
+            # telegram rate limit — не фатально, просто пропускаем чанк
+            logger.debug(f"stream edit_message_text failed: {e}")
+
     try:
         from src.analytics_engine import answer_parent_question
         answer = answer_parent_question(
@@ -182,16 +231,105 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
             grades=recent_grades,
             question=question,
             lang=lang,
+            prev_messages=prev_messages,
+            stream_callback=_on_chunk if placeholder_msg_id else None,
         )
     except Exception as e:
         logger.warning(f"ai_chat answer failed for user={user_id} student={student_id}: {e}")
         answer = None
 
-    # PR_F: ответы AI идут БЕЗ повторяющихся suggested-кнопок.
-    # Suggested были в welcome, дальше юзер пишет сам или жмёт «Меню» в
-    # postoянной reply-keyboard. Это убирает визуальный шум.
     if not answer:
+        # Если placeholder был отправлен — заменяем на error, иначе шлём новое
+        if placeholder_msg_id is not None:
+            try:
+                bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=placeholder_msg_id,
+                    text=t("ai_chat_error", lang),
+                )
+                return
+            except Exception:
+                pass
         bot.send_message(user_id, t("ai_chat_error", lang))
         return
 
-    bot.send_message(user_id, answer)
+    # Сохраняем assistant ответ + получаем msg_id для feedback markup
+    msg_id = save_chat_message(user_id, student_id, 'assistant', answer)
+
+    # Финальный edit с полным текстом + 👍/👎 markup. Если placeholder
+    # потерялся (send упал) — fallback на send_message.
+    final_markup = _build_feedback_markup(msg_id)
+    if placeholder_msg_id is not None:
+        try:
+            bot.edit_message_text(
+                chat_id=user_id,
+                message_id=placeholder_msg_id,
+                text=answer,
+                reply_markup=final_markup,
+            )
+            return
+        except Exception as e:
+            logger.debug(f"final edit failed, fallback to send: {e}")
+    bot.send_message(user_id, answer, reply_markup=final_markup)
+
+
+def _build_feedback_markup(msg_id: int, selected: int = 0) -> types.InlineKeyboardMarkup:
+    """Возвращает 2-кнопочную клавиатуру 👍/👎. selected=1 → ✓ на 👍,
+    selected=-1 → ✓ на 👎, 0 → без ✓ (свежий ответ)."""
+    up = "👍" + (" ✓" if selected == 1 else "")
+    down = "👎" + (" ✓" if selected == -1 else "")
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(
+        types.InlineKeyboardButton(up, callback_data=f"fb:{msg_id}:u"),
+        types.InlineKeyboardButton(down, callback_data=f"fb:{msg_id}:d"),
+    )
+    return markup
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fb:"))
+def _on_feedback(call):
+    """PR_H3: обработка тапа на 👍/👎 под AI-ответом.
+
+    Авторизация: msg_id должен принадлежать user_id вызывающего (защита
+    от подделки callback_data через DevTools)."""
+    user_id = call.from_user.id
+    parts = call.data.split(":", 2)
+    if len(parts) != 3 or parts[0] != "fb":
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        msg_id = int(parts[1])
+    except (ValueError, TypeError):
+        bot.answer_callback_query(call.id)
+        return
+    rating_code = parts[2]
+    if rating_code not in ('u', 'd'):
+        bot.answer_callback_query(call.id)
+        return
+
+    owner = get_message_owner(msg_id)
+    if owner != user_id:
+        # Не палим разницу 403 vs 404 — silent fail
+        bot.answer_callback_query(call.id)
+        return
+
+    rating = 1 if rating_code == 'u' else -1
+    try:
+        save_feedback(msg_id, user_id, rating)
+    except Exception as e:
+        logger.warning(f"save_feedback failed user={user_id} msg={msg_id}: {e}")
+        bot.answer_callback_query(call.id)
+        return
+
+    # Подтверждение + обновляем клавиатуру (✓ на выбранном)
+    lang = get_user_lang(user_id)
+    bot.answer_callback_query(call.id, t("chat_feedback_thanks", lang))
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=user_id,
+            message_id=call.message.message_id,
+            reply_markup=_build_feedback_markup(msg_id, selected=rating),
+        )
+    except Exception as e:
+        # Edit может упасть если "message is not modified" — не критично
+        logger.debug(f"edit_message_reply_markup failed: {e}")

@@ -75,6 +75,9 @@
   "chat_thinking": "AI is thinking…",
   "chat_error": "Couldn't get a response. Try again.",
   "chat_rate_limited": "Too many questions — wait a minute",
+  "chat_clear_btn": "↻ Start over",
+  "chat_clear_confirm": "Delete the entire conversation history?",
+  "chat_history_loading": "Loading history…",
 
   "ai_summary_label": "AI overview",
   "ai_quick_questions": "💡 Quick questions:",
