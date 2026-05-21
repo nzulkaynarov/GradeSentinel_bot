@@ -84,6 +84,9 @@
   "user_panel_support": "💬 Support",
   "user_panel_lang": "⚙️ Language",
   "user_panel_back": "⬅️ Back to menu",
+  "user_panel_add_child": "🧒 Add child",
+  "add_child_no_family": "ℹ️ Create a family first via 🏠 My Family.",
+  "add_child_pick_family": "Which family to add the child to?",
   "user_panel_empty": "📱 <b>Main Menu</b>\n\nℹ️ No family yet. Create your own or wait for an invite link from a relative.",
 
   "admin_help": "🛠 <b>GradeSentinel Admin Panel</b>\n\nUse the buttons at the bottom to navigate between sections.\nThe bot automatically removes old menus to keep the chat clean.",

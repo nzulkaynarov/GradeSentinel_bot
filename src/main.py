@@ -357,6 +357,14 @@ def _show_user_panel(chat_id: int, message_id: int = None):
                 types.InlineKeyboardButton(t("user_panel_ai", lang), callback_data="up_ai"),
             )
 
+        # «🧒 Добавить ребёнка» — primary CTA для head у которого ещё нет детей
+        # (self-serve путь): зарегался → создал семью → теперь добавить Sheets URL.
+        # PR_C: дискаваримость + одно касание до flow вместо «My Family → Add child».
+        if is_head and not has_kids:
+            markup.add(types.InlineKeyboardButton(
+                t("user_panel_add_child", lang), callback_data="up_add_child"
+            ))
+
         if is_head:
             markup.row(
                 types.InlineKeyboardButton(t("user_panel_family", lang), callback_data="up_family"),
@@ -573,6 +581,46 @@ def callback_up_family(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for family: {e}")
     cmd_manage_family(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_add_child')
+def callback_up_add_child(call):
+    """Self-serve добавление ученика через Sheets URL прямо из user_panel.
+
+    PR_C: shortcut к существующему process_add_child_step flow без перехода
+    через «Моя семья → Добавить ребёнка». Для head ровно одной семьи —
+    сразу в state STATE_AWAITING_CHILD_URL. Для head нескольких — спрашиваем."""
+    bot.answer_callback_query(call.id)
+    user_id = call.from_user.id
+    lang = get_user_lang(user_id)
+    from src.database_manager import get_families_for_head, set_user_state
+    families = get_families_for_head(user_id)
+    if not families:
+        bot.send_message(user_id, t("add_child_no_family", lang))
+        return
+
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete panel for add_child: {e}")
+
+    if len(families) == 1:
+        f_id = families[0]['id']
+        set_user_state(user_id, "awaiting_child_url", str(f_id))
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
+                                            input_field_placeholder=t("child_url_placeholder", lang))
+        markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+        bot.send_message(user_id, t("child_enter_url", lang), reply_markup=markup)
+        return
+
+    # Несколько семей — спросить какую
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for fam in families:
+        markup.add(types.InlineKeyboardButton(
+            f"🏠 {fam['family_name']}", callback_data=f"add_child_{fam['id']}"
+        ))
+    markup.add(types.InlineKeyboardButton(t("user_panel_back", lang), callback_data="up_back"))
+    bot.send_message(user_id, t("add_child_pick_family", lang), reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_subscription')

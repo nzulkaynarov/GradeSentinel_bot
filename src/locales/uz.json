@@ -84,6 +84,9 @@
   "user_panel_support": "💬 Yordam",
   "user_panel_lang": "⚙️ Til",
   "user_panel_back": "⬅️ Menyuga qaytish",
+  "user_panel_add_child": "🧒 Bola qo'shish",
+  "add_child_no_family": "ℹ️ Avval 🏠 Mening oilam orqali oila yarating.",
+  "add_child_pick_family": "Bolani qaysi oilaga qo'shasiz?",
   "user_panel_empty": "📱 <b>Bosh menyu</b>\n\nℹ️ Oila hali yo'q. O'z oilangizni yarating yoki qarindoshdan taklif havolasini kuting.",
 
   "admin_help": "🛠 <b>GradeSentinel administrator paneli</b>\n\nEkran pastidagi tugmalar bo'limlar bo'yicha harakatlanishga yordam beradi.\nBot eski menyularni avtomatik o'chiradi.",
