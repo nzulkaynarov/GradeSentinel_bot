@@ -19,6 +19,7 @@ from src.database_manager import (
     get_grade_history_for_student_all, get_parent_role,
     is_student_under_active_subscription,
     get_recent_chat_history, save_chat_message,
+    save_feedback, get_message_owner,
 )
 from src.i18n import t
 
@@ -206,7 +207,73 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
         bot.send_message(user_id, t("ai_chat_error", lang))
         return
 
-    # Сохраняем assistant ответ — для будущих follow-up'ов
-    save_chat_message(user_id, student_id, 'assistant', answer)
+    # Сохраняем assistant ответ — для будущих follow-up'ов. Captured id
+    # используется PR_H3 для привязки feedback-кнопок к конкретному ответу.
+    msg_id = save_chat_message(user_id, student_id, 'assistant', answer)
 
-    bot.send_message(user_id, answer)
+    # PR_H3: 👍/👎 inline-кнопки под каждым AI ответом. Callback хранит
+    # msg_id чтобы знать какой именно ответ оценили. UPSERT в БД позволяет
+    # переключать оценку (👍 → 👎 или обратно).
+    bot.send_message(user_id, answer, reply_markup=_build_feedback_markup(msg_id))
+
+
+def _build_feedback_markup(msg_id: int, selected: int = 0) -> types.InlineKeyboardMarkup:
+    """Возвращает 2-кнопочную клавиатуру 👍/👎. selected=1 → ✓ на 👍,
+    selected=-1 → ✓ на 👎, 0 → без ✓ (свежий ответ)."""
+    up = "👍" + (" ✓" if selected == 1 else "")
+    down = "👎" + (" ✓" if selected == -1 else "")
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(
+        types.InlineKeyboardButton(up, callback_data=f"fb:{msg_id}:u"),
+        types.InlineKeyboardButton(down, callback_data=f"fb:{msg_id}:d"),
+    )
+    return markup
+
+
+@bot.callback_query_handler(func=lambda c: c.data and c.data.startswith("fb:"))
+def _on_feedback(call):
+    """PR_H3: обработка тапа на 👍/👎 под AI-ответом.
+
+    Авторизация: msg_id должен принадлежать user_id вызывающего (защита
+    от подделки callback_data через DevTools)."""
+    user_id = call.from_user.id
+    parts = call.data.split(":", 2)
+    if len(parts) != 3 or parts[0] != "fb":
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        msg_id = int(parts[1])
+    except (ValueError, TypeError):
+        bot.answer_callback_query(call.id)
+        return
+    rating_code = parts[2]
+    if rating_code not in ('u', 'd'):
+        bot.answer_callback_query(call.id)
+        return
+
+    owner = get_message_owner(msg_id)
+    if owner != user_id:
+        # Не палим разницу 403 vs 404 — silent fail
+        bot.answer_callback_query(call.id)
+        return
+
+    rating = 1 if rating_code == 'u' else -1
+    try:
+        save_feedback(msg_id, user_id, rating)
+    except Exception as e:
+        logger.warning(f"save_feedback failed user={user_id} msg={msg_id}: {e}")
+        bot.answer_callback_query(call.id)
+        return
+
+    # Подтверждение + обновляем клавиатуру (✓ на выбранном)
+    lang = get_user_lang(user_id)
+    bot.answer_callback_query(call.id, t("chat_feedback_thanks", lang))
+    try:
+        bot.edit_message_reply_markup(
+            chat_id=user_id,
+            message_id=call.message.message_id,
+            reply_markup=_build_feedback_markup(msg_id, selected=rating),
+        )
+    except Exception as e:
+        # Edit может упасть если "message is not modified" — не критично
+        logger.debug(f"edit_message_reply_markup failed: {e}")
