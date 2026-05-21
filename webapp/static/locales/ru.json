@@ -78,6 +78,9 @@
   "chat_clear_btn": "↻ Начать заново",
   "chat_clear_confirm": "Удалить всю историю беседы?",
   "chat_history_loading": "Загружаем историю…",
+  "chat_feedback_up_label": "Полезный ответ",
+  "chat_feedback_down_label": "Неполезный ответ",
+  "chat_feedback_thanks": "Спасибо за оценку",
 
   "ai_summary_label": "AI-обзор",
   "ai_quick_questions": "💡 Быстрые вопросы:",

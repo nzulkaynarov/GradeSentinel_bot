@@ -878,6 +878,7 @@ function setupInlineChat() {
 
 async function _loadChatHistory() {
     if (state.chatHistoryLoaded) return;
+    if (!state.currentStudentId) return;
     state.chatHistoryLoaded = true;
     try {
         const data = await fetchJSON(`/api/chat/history/${state.currentStudentId}`);
@@ -885,7 +886,8 @@ async function _loadChatHistory() {
         if (messages.length === 0) return;
         messages.forEach(m => {
             const role = m.role === "user" ? "user" : "ai";
-            _appendChatMessage(role, m.content);
+            const node = _appendChatMessage(role, m.content);
+            if (role === "ai" && m.id != null && node) _attachFeedbackToNode(node, m.id);
         });
         _markChatHasHistory();
     } catch (e) {
@@ -904,6 +906,48 @@ function _appendChatMessage(role, text) {
     return div;
 }
 
+function _attachFeedbackToNode(bubbleNode, messageId) {
+    if (bubbleNode.nextSibling && bubbleNode.nextSibling.classList &&
+        bubbleNode.nextSibling.classList.contains("chat-feedback-row")) return;
+    const row = document.createElement("div");
+    row.className = "chat-feedback-row";
+    row.dataset.messageId = String(messageId);
+    const upLabel = t("chat_feedback_up_label") || "Helpful";
+    const downLabel = t("chat_feedback_down_label") || "Not helpful";
+    const up = document.createElement("button");
+    up.type = "button"; up.className = "chat-fb-btn"; up.dataset.rating = "1";
+    up.textContent = "👍"; up.setAttribute("aria-label", upLabel);
+    const down = document.createElement("button");
+    down.type = "button"; down.className = "chat-fb-btn"; down.dataset.rating = "-1";
+    down.textContent = "👎"; down.setAttribute("aria-label", downLabel);
+    up.addEventListener("click", () => _sendFeedback(row, messageId, 1));
+    down.addEventListener("click", () => _sendFeedback(row, messageId, -1));
+    row.appendChild(up); row.appendChild(down);
+    bubbleNode.parentNode.insertBefore(row, bubbleNode.nextSibling);
+}
+
+async function _sendFeedback(rowNode, messageId, rating) {
+    try {
+        const res = await fetch("/api/chat/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...API_HEADERS },
+            body: JSON.stringify({ message_id: messageId, rating }),
+        });
+        if (!res.ok) { console.warn("Feedback failed", res.status); return; }
+    } catch (e) { console.warn("Feedback network failed", e); return; }
+    rowNode.querySelectorAll(".chat-fb-btn").forEach(btn => {
+        btn.classList.toggle("selected", parseInt(btn.dataset.rating, 10) === rating);
+        btn.disabled = true;
+    });
+    const existing = rowNode.querySelector(".chat-fb-thanks");
+    if (existing) existing.remove();
+    const thanks = document.createElement("span");
+    thanks.className = "chat-fb-thanks";
+    thanks.textContent = t("chat_feedback_thanks") || "Thanks";
+    rowNode.appendChild(thanks);
+    setTimeout(() => { if (thanks.parentNode) thanks.remove(); }, 2500);
+}
+
 function _markChatHasHistory() {
     const clearBtn = document.getElementById("chat-clear");
     if (clearBtn) clearBtn.classList.remove("hidden");
@@ -911,8 +955,14 @@ function _markChatHasHistory() {
 
 async function _sendChatMessage(question) {
     if (!question) return;
+    if (!state.currentStudentId) return;
+    if (state.chatBusy) return;
+    state.chatBusy = true;
     const input = document.getElementById("chat-input");
-    if (input) input.value = "";
+    const sendBtn = document.getElementById("chat-send");
+    if (input) { input.value = ""; input.disabled = true; }
+    if (sendBtn) sendBtn.disabled = true;
+
     _appendChatMessage("user", question);
     const thinking = _appendChatMessage("ai", t("chat_thinking") || "AI думает…");
     if (thinking) thinking.classList.add("chat-thinking");
@@ -937,6 +987,7 @@ async function _sendChatMessage(question) {
             thinking.textContent = data.answer || (t("chat_error") || "Ошибка");
             thinking.classList.remove("chat-thinking");
             if (!data.answer) thinking.classList.add("chat-error-msg");
+            else if (data.message_id != null) _attachFeedbackToNode(thinking, data.message_id);
         }
         _markChatHasHistory();
     } catch (e) {
@@ -946,6 +997,10 @@ async function _sendChatMessage(question) {
             thinking.classList.remove("chat-thinking");
             thinking.classList.add("chat-error-msg");
         }
+    } finally {
+        state.chatBusy = false;
+        if (input) { input.disabled = false; input.focus(); }
+        if (sendBtn) sendBtn.disabled = false;
     }
 }
 

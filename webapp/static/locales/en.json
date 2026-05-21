@@ -78,6 +78,9 @@
   "chat_clear_btn": "↻ Start over",
   "chat_clear_confirm": "Delete the entire conversation history?",
   "chat_history_loading": "Loading history…",
+  "chat_feedback_up_label": "Helpful answer",
+  "chat_feedback_down_label": "Not helpful",
+  "chat_feedback_thanks": "Thanks for the feedback",
 
   "ai_summary_label": "AI overview",
   "ai_quick_questions": "💡 Quick questions:",
