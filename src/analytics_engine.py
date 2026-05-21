@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import anthropic
 
@@ -441,29 +441,43 @@ _CHAT_SYSTEM_PROMPTS = {
     'ru': (
         "Ты помогаешь родителю разобраться в оценках его/её ребёнка. Отвечай коротко "
         "(2-4 предложения), на русском, обычным текстом без markdown. Тебе дана "
-        "вся история оценок за учебный год. Опирайся ТОЛЬКО на эти данные — "
-        "если их недостаточно для ответа, скажи об этом прямо. Тон — "
-        "поддерживающий и конкретный, без морализаторства и общих фраз. Не выдумывай "
-        "оценки или предметы которых нет в данных. Если родитель спросил что-то не "
-        "по теме оценок — мягко напомни что ты помощник по дневнику."
+        "вся история оценок за учебный год И сегодняшняя дата. Опирайся ТОЛЬКО "
+        "на эти данные. Если родитель использует относительные выражения "
+        "(«прошлый месяц», «на этой неделе», «недавно», «летом», «в начале года») — "
+        "вычисляй их сам от сегодняшней даты (например, если сегодня 21 мая, "
+        "то «прошлый месяц» = апрель), и сразу отвечай по сути, не переспрашивай. "
+        "Тон — поддерживающий и конкретный, без морализаторства и общих фраз. "
+        "Не выдумывай оценки или предметы которых нет в данных. Если родитель "
+        "спросил что-то не по теме оценок — мягко напомни что ты помощник по дневнику."
     ),
     'uz': (
         "Ota-onaga farzandining baholarini tushunishga yordam berasan. Qisqa javob "
         "ber (2-4 jumla), o'zbekcha, oddiy matn, markdown'siz. Senga butun o'quv "
-        "yili davomidagi baholar tarixi berilgan. FAQAT shu ma'lumotlardan foydalan — "
-        "agar yetarli bo'lmasa, ochiqcha ayt. Ohang — qo'llab-quvvatlovchi va aniq, "
-        "axloqsiz. Ma'lumotlarda bo'lmagan baho yoki fanlarni o'ylab topma. "
-        "Agar savol baholar mavzusiga oid bo'lmasa — yumshoq eslatib qo'y."
+        "yili davomidagi baholar tarixi VA bugungi sana berilgan. FAQAT shu "
+        "ma'lumotlardan foydalan. Agar ota-ona nisbiy iboralarni ishlatsa "
+        "(«oldingi oy», «bu hafta», «yaqinda», «yozda», «yil boshida») — ularni "
+        "bugungi sanadan hisoblab javob ber, qayta so'rama. Ohang — "
+        "qo'llab-quvvatlovchi va aniq, axloqsiz. Ma'lumotlarda bo'lmagan "
+        "baho yoki fanlarni o'ylab topma. Agar savol baholar mavzusiga oid "
+        "bo'lmasa — yumshoq eslatib qo'y."
     ),
     'en': (
         "You're helping a parent make sense of their child's grades. Be brief "
         "(2-4 sentences), plain text, no markdown. You have the full school-year "
-        "history of grades. Use ONLY this data — if it's insufficient, say so. "
-        "Tone: supportive and specific, no moralizing or generic platitudes. "
-        "Don't invent grades or subjects not in the data. If the parent asks "
-        "something off-topic, gently steer back to grades."
+        "history of grades AND today's date. Use ONLY this data. When the parent "
+        "uses relative expressions («last month», «this week», «recently», «over "
+        "summer», «at the start of year») — calculate them yourself from today's "
+        "date and answer directly, don't ask for clarification. Tone: supportive "
+        "and specific, no moralizing or generic platitudes. Don't invent grades "
+        "or subjects not in the data. If the parent asks something off-topic, "
+        "gently steer back to grades."
     ),
 }
+
+
+def _tashkent_today_str() -> str:
+    """Сегодняшняя дата (Tashkent TZ, UTC+5) в ISO формате — для prompt'а."""
+    return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
 
 
 def answer_parent_question(
@@ -510,6 +524,7 @@ def answer_parent_question(
             if m["role"] == "user" and not first_user_done:
                 # Вшиваем grade-контекст в первое user-сообщение
                 enriched = (
+                    f"Сегодня: {_tashkent_today_str()} (Tashkent TZ)\n"
                     f"Ученик: {student_name}\n"
                     f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
                     f"Вопрос родителя: {m['content']}"
@@ -523,6 +538,7 @@ def answer_parent_question(
     else:
         # Single-turn (старое поведение)
         user_message = (
+            f"Сегодня: {_tashkent_today_str()} (Tashkent TZ)\n"
             f"Ученик: {student_name}\n"
             f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
             f"Вопрос родителя: {question}"

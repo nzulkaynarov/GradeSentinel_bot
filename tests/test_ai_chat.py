@@ -17,7 +17,7 @@ os.environ.setdefault("BOT_TOKEN", "test-token")
 os.environ.setdefault("ADMIN_ID", "0")
 os.environ.setdefault("ADMIN_GROUP_ID", "0")
 
-from src.analytics_engine import _format_grades_context  # noqa: E402
+from src.analytics_engine import _format_grades_context, _tashkent_today_str  # noqa: E402
 
 
 # ─── Unit: формирование контекста для prompt'а ────────────────
@@ -53,6 +53,51 @@ def test_format_grades_context_handles_missing_grade_date():
                "date_added": "2026-05-15 14:30:00"}]
     out = _format_grades_context(grades)
     assert "2026-05-15" in out
+
+
+def test_tashkent_today_str_format():
+    """Регрессия: _tashkent_today_str возвращает ISO дату YYYY-MM-DD по UTC+5.
+
+    Это критично для AI prompt'а — без сегодняшней даты AI не понимает
+    relative expressions «прошлый месяц», «недавно» и т.д.
+    (см. инцидент когда AI на «Сравни с прошлым месяцем» отказался отвечать
+    с фразой «нет информации о прошлом месяце»)."""
+    import re
+    today = _tashkent_today_str()
+    assert re.match(r'^\d{4}-\d{2}-\d{2}$', today)
+
+
+def test_user_message_includes_today_date(monkeypatch):
+    """Регрессия: prompt начинается с «Сегодня: YYYY-MM-DD» чтобы AI мог
+    вычислять relative dates."""
+    from src.analytics_engine import answer_parent_question
+    captured = {}
+
+    class FakeMessage:
+        def __init__(self):
+            self.content = [type('obj', (), {'text': 'ok'})()]
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured['messages'] = kwargs.get('messages')
+                return FakeMessage()
+
+    monkeypatch.setattr("src.analytics_engine._get_client", lambda: FakeClient())
+
+    answer_parent_question(
+        student_id=1,
+        student_name="Test",
+        grades=[{"subject": "Алгебра", "grade_value": 5.0, "raw_text": "5",
+                  "grade_date": "2026-05-21"}],
+        question="Сравни с прошлым месяцем",
+        lang='ru',
+    )
+    assert 'messages' in captured
+    first_user = captured['messages'][0]['content']
+    assert "Сегодня:" in first_user
+    assert _tashkent_today_str() in first_user
 
 
 # ─── Integration: rate limit endpoint ─────────────────────────
