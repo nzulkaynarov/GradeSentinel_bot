@@ -69,8 +69,11 @@ from src.monitor_engine import start_polling
 # должны обходиться pyTelegramBotAPI'ом раньше generic-обработчиков из других
 # модулей. Регистрация в порядке import.
 import src.handlers.state_flows  # noqa: F401
-# ai_chat РЯДОМ со state_flows — он тоже использует state-based message_handler
-# (`ai_chat_mode`), который должен срабатывать раньше generic catch-all.
+# navigation handlers для постоянной reply-keyboard {Чат, Дашборд, Меню}
+# регистрируются ПЕРЕД ai_chat — точное совпадение с label-кнопкой
+# должно перехватываться здесь, а не уходить как вопрос в AI (PR_F).
+import src.handlers.navigation  # noqa: F401
+# ai_chat — message_handler по state ai_chat_mode, ловит вопросы родителя.
 import src.handlers.ai_chat  # noqa: F401
 import src.handlers.admin
 import src.handlers.family
@@ -144,7 +147,12 @@ def send_welcome(message):
             send_menu_safe(user_id, t("auth_not_linked", lang, btn_support=t("btn_support", lang)))
             return
 
-        send_menu_safe(user_id, t("auth_already", lang))
+        # PR_F: авторизованный юзер с детьми/семьёй → СРАЗУ в AI-чат,
+        # не в меню. Чат это default mode для daily use.
+        if has_children_for_grades(user_id):
+            _enter_default_chat(user_id)
+        else:
+            _show_user_panel(user_id)
         return
 
     # Для неавторизованных — показываем выбор языка, затем авторизацию
@@ -291,8 +299,45 @@ def contact_handler(message):
 
 
 # ═══════════════════════════════════════════
-#  Пользовательская панель (единая точка входа)
+#  Пользовательская панель + AI-first navigation (PR_F)
 # ═══════════════════════════════════════════
+
+def _build_reply_keyboard(lang: str, with_webapp: bool = True) -> types.ReplyKeyboardMarkup:
+    """Постоянная reply-keyboard внизу экрана: {Чат, Дашборд, Меню}.
+
+    PR_F: 3 кнопки в 2 строки — это весь permanent UI для родителя.
+    Никакого «Меню» как inline-панели с 9 кнопками, никакого «Выйти из чата».
+    «Чат» — переключает в ai_chat_mode. «Дашборд» — открывает WebApp.
+    «Меню» — показывает inline-панель с family/subscription/settings/support.
+
+    `with_webapp=False` если WEBAPP_URL не задан — тогда {Чат, Меню}."""
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
+    webapp_url = os.environ.get("WEBAPP_URL") if with_webapp else None
+    if webapp_url:
+        markup.row(
+            types.KeyboardButton(t("nav_chat", lang)),
+            types.KeyboardButton(
+                t("nav_dashboard", lang),
+                web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
+            ),
+        )
+    else:
+        markup.add(types.KeyboardButton(t("nav_chat", lang)))
+    markup.add(types.KeyboardButton(t("nav_menu", lang)))
+    return markup
+
+
+def _enter_default_chat(chat_id: int):
+    """Стартует AI-чат как default mode для авторизованного юзера с детьми и
+    активной подпиской.
+
+    PR_F: чат — главный mode. Reply-keyboard {Чат, Дашборд, Меню} ставится
+    через ОДНО welcome-сообщение от ai_chat.py, потом юзер пишет вопросы.
+    Чтобы установить reply-keyboard, помечаем её на welcome-message самого
+    чата — отдельного «пустого» сообщения не шлём (Telegram не примет)."""
+    from src.handlers.ai_chat import start_ai_chat_with_keyboard
+    start_ai_chat_with_keyboard(chat_id, _build_reply_keyboard(get_user_lang(chat_id)))
+
 
 def cmd_user_menu(message):
     """Главная пользовательская панель с inline-кнопками."""
@@ -301,7 +346,12 @@ def cmd_user_menu(message):
 
 
 def _show_user_panel(chat_id: int, message_id: int = None):
-    """Показывает пользовательскую панель."""
+    """Показывает inline-меню (Family / Subscription / Settings / Support).
+
+    PR_F: меню больше НЕ содержит «Чат» и «Дашборд» — они в постоянной
+    reply-keyboard внизу. Это убирает дублирование. Меню — только для
+    редких actions (family management, subscription, settings, support).
+    Empty state — отдельная ветка с CTA «создать семью» / «инвайт»."""
     lang = get_user_lang(chat_id)
     panel = _get_panel_data(chat_id)
     is_head = panel['is_head']
@@ -317,10 +367,10 @@ def _show_user_panel(chat_id: int, message_id: int = None):
             status = "❌"
         fam_lines.append(f"🏠 <b>{fs['family_name']}</b> — {status}")
 
-    # Пустое состояние — пользователь без семьи и без детей.
-    # Раньше показывали "Свяжитесь с админом" — тупик. Теперь даём
-    # actionable выбор: создать свою семью или подождать инвайт-ссылку.
     if not families and not has_kids and not is_head:
+        # Empty state: новый юзер без семьи и без детей.
+        # CTA — создать семью ИЛИ инвайт (на твоё усмотрение PR_F: оставил
+        # обе — это разные intent'ы, не сливаются).
         text = t("user_panel_empty", lang)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
@@ -329,10 +379,9 @@ def _show_user_panel(chat_id: int, message_id: int = None):
         markup.add(types.InlineKeyboardButton(
             t("btn_have_invite", lang), callback_data="up_have_invite"
         ))
-        markup.row(
-            types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
-            types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"),
-        )
+        markup.add(types.InlineKeyboardButton(
+            t("user_panel_support", lang), callback_data="up_support"
+        ))
     else:
         if fam_lines:
             fam_text = "\n".join(fam_lines)
@@ -340,41 +389,15 @@ def _show_user_panel(chat_id: int, message_id: int = None):
             fam_text = t("sub_no_family", lang)
 
         text = t("user_panel_title", lang, families_info=fam_text)
-
         markup = types.InlineKeyboardMarkup(row_width=2)
 
-        # AI-first navigation (PR_A 21.05.2026). «Спросить AI» — primary entry
-        # point: открывает chat-mode прямо в Telegram, родитель пишет вопрос,
-        # AI отвечает с контекстом 30 дней оценок. Раньше AI был похоронен в
-        # WebApp в самом конце — никто не находил.
-        if has_kids:
-            markup.add(types.InlineKeyboardButton(
-                t("user_panel_ai_chat", lang), callback_data="up_ai_chat"
-            ))
-
-        # WebApp дашборд — secondary, тоже отдельной строкой.
-        if has_kids:
-            webapp_url = os.environ.get("WEBAPP_URL")
-            if webapp_url:
-                markup.add(types.InlineKeyboardButton(
-                    t("btn_webapp", lang),
-                    web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
-                ))
-
-        if has_kids:
-            markup.row(
-                types.InlineKeyboardButton(t("user_panel_grades", lang), callback_data="up_grades"),
-                types.InlineKeyboardButton(t("user_panel_ai", lang), callback_data="up_ai"),
-            )
-
-        # «🧒 Добавить ребёнка» — primary CTA для head у которого ещё нет детей
-        # (self-serve путь): зарегался → создал семью → теперь добавить Sheets URL.
-        # PR_C: дискаваримость + одно касание до flow вместо «My Family → Add child».
+        # CTA «Добавить ребёнка» — primary action для head без детей.
         if is_head and not has_kids:
             markup.add(types.InlineKeyboardButton(
                 t("user_panel_add_child", lang), callback_data="up_add_child"
             ))
 
+        # Family + Subscription
         if is_head:
             markup.row(
                 types.InlineKeyboardButton(t("user_panel_family", lang), callback_data="up_family"),
@@ -384,11 +407,11 @@ def _show_user_panel(chat_id: int, message_id: int = None):
             markup.add(types.InlineKeyboardButton(
                 t("user_panel_subscription", lang), callback_data="up_subscription"))
 
+        # Settings (язык + уведомления в одном экране) + Support
         markup.row(
+            types.InlineKeyboardButton(t("user_panel_settings", lang), callback_data="up_settings"),
             types.InlineKeyboardButton(t("user_panel_support", lang), callback_data="up_support"),
-            types.InlineKeyboardButton(t("btn_notifications", lang), callback_data="up_notifications"),
         )
-        markup.add(types.InlineKeyboardButton(t("user_panel_lang", lang), callback_data="up_lang"))
 
     if message_id:
         try:
@@ -498,64 +521,26 @@ def callback_up_have_invite(call):
 # ═══════════════════════════════════════════
 
 def _start_onboarding(chat_id: int, user_name: str):
-    """Запускает 3-экранный визард приветствия. Можно skip на любом шаге."""
+    """Короткое welcome (1 экран вместо 3): что бот делает + 1 CTA.
+    Если у юзера уже есть дети — переходим в чат. Иначе — кнопка «Добавить ребёнка»."""
     lang = get_user_lang(chat_id)
+    has_kids = has_children_for_grades(chat_id)
+    is_head = is_head_of_any_family(chat_id)
+
+    if has_kids:
+        # Уже есть ребёнок → сразу в чат с AI
+        bot.send_message(chat_id, t("onboard_done", lang, name=user_name), parse_mode='HTML')
+        _enter_default_chat(chat_id)
+        return
+
+    # Head без детей или новый юзер: показываем CTA «Добавить ребёнка»
     markup = types.InlineKeyboardMarkup()
-    markup.row(
-        types.InlineKeyboardButton(t("btn_next", lang), callback_data="onb_2"),
-        types.InlineKeyboardButton(t("btn_skip", lang), callback_data="onb_skip"),
-    )
-    bot.send_message(
-        chat_id, t("onboard_step1", lang, name=user_name),
-        reply_markup=markup, parse_mode='HTML'
-    )
-
-
-@bot.callback_query_handler(func=lambda call: call.data in ("onb_2", "onb_3", "onb_done", "onb_skip"))
-def callback_onboarding(call):
-    bot.answer_callback_query(call.id)
-    lang = get_user_lang(call.from_user.id)
-    chat_id = call.message.chat.id
-    msg_id = call.message.message_id
-
-    if call.data == "onb_skip":
-        try:
-            bot.delete_message(chat_id, msg_id)
-        except Exception:
-            pass
-        _show_user_panel(chat_id)
-        return
-
-    if call.data == "onb_2":
-        markup = types.InlineKeyboardMarkup()
-        markup.row(
-            types.InlineKeyboardButton(t("btn_next", lang), callback_data="onb_3"),
-            types.InlineKeyboardButton(t("btn_skip", lang), callback_data="onb_skip"),
-        )
-        try:
-            bot.edit_message_text(t("onboard_step2", lang), chat_id, msg_id,
-                                   reply_markup=markup, parse_mode='HTML')
-        except Exception as e:
-            logger.debug(f"onb_2 edit failed: {e}")
-        return
-
-    if call.data == "onb_3":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(t("btn_done", lang), callback_data="onb_done"))
-        try:
-            bot.edit_message_text(t("onboard_step3", lang), chat_id, msg_id,
-                                   reply_markup=markup, parse_mode='HTML')
-        except Exception as e:
-            logger.debug(f"onb_3 edit failed: {e}")
-        return
-
-    if call.data == "onb_done":
-        try:
-            bot.edit_message_text(t("onboard_done", lang), chat_id, msg_id, parse_mode='HTML')
-        except Exception:
-            pass
-        _show_user_panel(chat_id)
-        return
+    if is_head:
+        markup.add(types.InlineKeyboardButton(
+            t("user_panel_add_child", lang), callback_data="up_add_child"
+        ))
+    bot.send_message(chat_id, t("onboard_short", lang, name=user_name),
+                      reply_markup=markup, parse_mode='HTML')
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_grades')
@@ -667,6 +652,32 @@ def callback_up_support(call):
     except Exception as e:
         logger.debug(f"Could not delete panel message for support: {e}")
     support_started(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'up_settings')
+def callback_up_settings(call):
+    """Объединённый экран настроек (PR_F): язык + уведомления вместо двух
+    отдельных кнопок в user_panel."""
+    bot.answer_callback_query(call.id)
+    lang = get_user_lang(call.from_user.id)
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        t("settings_lang", lang), callback_data="up_lang"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        t("settings_notifications", lang), callback_data="up_notifications"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        t("user_panel_back", lang), callback_data="up_back"
+    ))
+    try:
+        bot.edit_message_text(
+            t("settings_title", lang),
+            chat_id=call.message.chat.id, message_id=call.message.message_id,
+            reply_markup=markup, parse_mode='HTML'
+        )
+    except Exception as e:
+        logger.debug(f"Could not edit settings panel: {e}")
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_notifications')
