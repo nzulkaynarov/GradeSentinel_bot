@@ -366,6 +366,7 @@
   "ai_chat_error": "Couldn't get a response right now. Try again shortly.",
   "ai_chat_too_long": "Question too long. Keep it under 500 characters.",
   "chat_feedback_thanks": "Thanks for the rating!",
+  "ai_chat_thinking": "💭 Thinking…",
   "ai_chat_session_lost": "Chat session expired, tap «💬 Ask AI» in the menu.",
   "ai_chat_exit": "Menu",
   "ai_suggested_summer": "What to work on over summer",

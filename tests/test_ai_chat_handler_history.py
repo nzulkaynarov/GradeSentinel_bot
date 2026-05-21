@@ -119,8 +119,14 @@ def test_ask_ai_does_not_save_assistant_when_ai_returns_none(monkeypatch):
     # Только user message сохранён, assistant нет
     assert len(captured['save_calls']) == 1
     assert captured['save_calls'][0][2] == 'user'
-    # Bot отправил error message
-    assert len(captured['bot_sends']) == 1
+    # Bot отправил: placeholder (PR_H4 streaming UX) затем error fallback
+    # т.к. mock send_message возвращает None — handler НЕ может edit'нуть
+    # placeholder, fallback'ает на send_message с ошибкой.
+    # Итого 1-2 sends допустимо.
+    assert 1 <= len(captured['bot_sends']) <= 2
+    # Последний send — ошибка
+    last_text = captured['bot_sends'][-1][0][1]
+    assert 'не получилось' in last_text.lower() or 'error' in last_text.lower()
 
 
 def test_ask_ai_does_not_save_assistant_when_ai_raises(monkeypatch):

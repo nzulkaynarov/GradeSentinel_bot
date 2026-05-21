@@ -487,6 +487,7 @@ def answer_parent_question(
     question: str,
     lang: str = 'ru',
     prev_messages: Optional[list] = None,
+    stream_callback: Optional[callable] = None,
 ) -> Optional[str]:
     """Отвечает на вопрос родителя про оценки ученика с контекстом из БД.
 
@@ -494,6 +495,13 @@ def answer_parent_question(
     role/content из ai_chat_messages), история включается в Anthropic API
     messages array — Claude видит предыдущие вопросы и свои ответы, что
     позволяет follow-up без перезаписи контекста.
+
+    Streaming (PR_H4): если передан `stream_callback`, используется
+    Anthropic streaming API. Callback получает накопленный текст после
+    каждого delta. Возвращает полный финальный текст (как и без streaming).
+    Callback должен быть быстрым (вызовы throttle'ить должен сам callback —
+    например, bot handler ограничивает edit_message_text до 1 раза в 1.5с
+    чтобы не упереться в telegram rate limit).
 
     Не кэширует ответ (каждый turn уникальный). Безопасно деградирует."""
     client = _get_client()
@@ -546,13 +554,33 @@ def answer_parent_question(
         messages_array = [{"role": "user", "content": user_message}]
 
     try:
-        message = client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=_CHAT_MAX_TOKENS,
-            system=system_prompt,
-            messages=messages_array,
-        )
-        text = message.content[0].text.strip()
+        if stream_callback is not None:
+            # PR_H4: streaming path. text_stream даёт только text deltas
+            # (tool_use deltas игнорятся — этот PR streaming для текстовых
+            # ответов, tool_use loop работает без streaming в E2).
+            accumulated = ""
+            with client.messages.stream(
+                model="claude-haiku-4-5",
+                max_tokens=_CHAT_MAX_TOKENS,
+                system=system_prompt,
+                messages=messages_array,
+            ) as stream:
+                for chunk in stream.text_stream:
+                    accumulated += chunk
+                    try:
+                        stream_callback(accumulated)
+                    except Exception as e:
+                        # Callback не должен ломать stream
+                        logger.debug(f"stream_callback failed: {e}")
+            text = accumulated.strip()
+        else:
+            message = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=_CHAT_MAX_TOKENS,
+                system=system_prompt,
+                messages=messages_array,
+            )
+            text = message.content[0].text.strip()
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1].strip()
         return text or None
