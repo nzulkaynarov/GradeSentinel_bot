@@ -671,14 +671,30 @@ def api_dashboard_pdf(student_id):
         lang=lang,
     )
 
-    safe_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
-    filename = f"GradeSentinel_{safe_name}_{today_tashkent.isoformat()}.pdf"
+    # Content-Disposition filename должен быть ASCII (RFC 7230 — gunicorn
+    # rejects headers с кириллицей с 400 Invalid HTTP Header). Используем
+    # двойной filename: ASCII-fallback (filename=) + URL-encoded UTF-8
+    # (filename*=) по RFC 6266 — современные браузеры берут UTF-8 версию.
+    from urllib.parse import quote
+
+    ascii_name = ''.join(
+        c if (c.isascii() and (c.isalnum() or c in '-_')) else '_'
+        for c in student_name
+    ) or 'student'
+    ascii_filename = f"GradeSentinel_{ascii_name}_{today_tashkent.isoformat()}.pdf"
+
+    full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
+    utf8_filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}.pdf"
+    utf8_encoded = quote(utf8_filename)
 
     return Response(
         pdf_bytes,
         mimetype='application/pdf',
         headers={
-            'Content-Disposition': f'attachment; filename="{filename}"',
+            'Content-Disposition': (
+                f'attachment; filename="{ascii_filename}"; '
+                f"filename*=UTF-8''{utf8_encoded}"
+            ),
             'Content-Length': str(len(pdf_bytes)),
             'Cache-Control': 'private, no-store',
         },
