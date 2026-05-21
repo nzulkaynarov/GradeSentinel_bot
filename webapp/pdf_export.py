@@ -289,26 +289,30 @@ def _hero_table(summary: Dict[str, Any], lang: str, styles: Dict[str, Any]) -> T
         delta_text = f"{_localize('delta_down', lang)} {abs(delta):.1f}"
 
     hex_color = _grade_color(current_avg).hexval()
-    # .hexval() возвращает '0xRRGGBB' — берём только 6 hex-цифр + #
     color_attr = '#' + hex_color[-6:]
+    # Reduced font 36→28 + wider first column 40→55mm + reduced padding
+    # 12→6 чтобы «4.3» (или «3.7») точно влезало без overlap с border'ом.
+    # User feedback: «рамка вокруг среднего балла съехала и наезжает на текст».
     avg_para = Paragraph(
-        f'<font name="{_FONT_BOLD}" size="36" color="{color_attr}">{avg_text}</font>',
+        f'<para align="center"><font name="{_FONT_BOLD}" size="28" color="{color_attr}">{avg_text}</font></para>',
         styles['body'],
     )
     label_para = Paragraph(
-        f'<font size="10">{_localize("avg", lang)}</font><br/>'
-        f'<font size="9" color="#64748B">{delta_text}</font>',
+        f'<font size="11" name="{_FONT_BOLD}">{_localize("avg", lang)}</font><br/>'
+        f'<font size="10" color="#64748B">{delta_text}</font>',
         styles['body'],
     )
 
-    tbl = Table([[avg_para, label_para]], colWidths=[40 * mm, 110 * mm])
+    tbl = Table([[avg_para, label_para]], colWidths=[55 * mm, 115 * mm])
     tbl.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#E2E8F0')),
-        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('LINEAFTER', (0, 0), (0, 0), 0.5, colors.HexColor('#E2E8F0')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
         ('RIGHTPADDING', (0, 0), (-1, -1), 12),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
     ]))
     return tbl
 

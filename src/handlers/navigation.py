@@ -32,6 +32,32 @@ def _on_nav_chat(message):
     start_ai_chat(message.chat.id)
 
 
+@bot.message_handler(func=lambda m: _matches_label(m, "nav_dashboard"))
+def _on_nav_dashboard(message):
+    """«📊 Дашборд» — открыть Mini App. Из-за Telegram API quirk
+    reply-keyboard WebApp button НЕ передаёт initData → дашборд получает
+    401. Workaround: тап reply-кнопки → шлём inline message с
+    InlineKeyboardButton.web_app (передаёт initData) → юзер тапает её →
+    открывается Mini App с auth.
+
+    2 тапа вместо 1, но reply-кнопка всегда видна (parent-mode {Чат /
+    Дашборд / Меню}) — лучше чем «inline в меню» (3+ тапа всегда)."""
+    import os
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+    webapp_url = os.environ.get("WEBAPP_URL")
+    if not webapp_url:
+        bot.send_message(user_id, t("dashboard_unavailable", lang))
+        return
+    from telebot import types as _types
+    markup = _types.InlineKeyboardMarkup()
+    markup.add(_types.InlineKeyboardButton(
+        t("dashboard_open_btn", lang),
+        web_app=_types.WebAppInfo(url=f"{webapp_url}/webapp"),
+    ))
+    bot.send_message(user_id, t("dashboard_intro", lang), reply_markup=markup)
+
+
 @bot.message_handler(func=lambda m: _matches_label(m, "nav_menu"))
 def _on_nav_menu(message):
     """«⚙️ Меню» — открывает inline-панель: family / subscription / settings /

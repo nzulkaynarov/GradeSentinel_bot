@@ -597,14 +597,23 @@ def compute_year_report(grades):
 #  ROUTES — основные
 # ════════════════════════════════════════════════════════════
 
+_BUILD_ID = str(int(datetime.now().timestamp()))
+
+
 @app.route("/webapp")
 def dashboard():
     """Serves the main dashboard HTML page.
 
-    Embed bot_username в HTML чтобы JS не зависел от /api/dashboard/init
-    race condition. AI deep-link был ломан когда state.botUsername=null
-    из-за rapsace или stale cache."""
-    return render_template("dashboard.html", bot_username=_get_bot_username() or "")
+    Embed bot_username в HTML чтобы JS не зависел от /api/dashboard/init.
+    build_id (= webapp boot timestamp) добавляется в URL'ы app.js/style.css/
+    locales для cache-busting — Telegram WebView aggressively cache'ит
+    статику, после deploy юзер получал старый JS без новых ключей/handler'ов
+    (AI кнопка молчала)."""
+    return render_template(
+        "dashboard.html",
+        bot_username=_get_bot_username() or "",
+        build_id=_BUILD_ID,
+    )
 
 
 def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:

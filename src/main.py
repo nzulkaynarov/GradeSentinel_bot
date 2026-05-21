@@ -374,8 +374,13 @@ def _build_reply_keyboard(lang: str, mode: str = 'parent', is_admin: bool = Fals
             types.KeyboardButton(t("nav_as_parent", lang)),
         )
     else:  # parent mode
+        # 3 кнопки: Чат / Дашборд / Меню. «📊 Дашборд» добавлен по user
+        # feedback — нужен постоянный 1-tap (2 на самом деле — reply-button
+        # → inline message → WebApp т.к. reply-keyboard.WebApp не передаёт
+        # initData по Telegram API constraint).
         markup.row(
             types.KeyboardButton(t("nav_chat", lang)),
+            types.KeyboardButton(t("nav_dashboard", lang)),
             types.KeyboardButton(t("nav_menu", lang)),
         )
         if is_admin:
