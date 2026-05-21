@@ -419,13 +419,15 @@ def compute_year_insight(student_id: int, report: dict, lang: str = 'ru') -> Opt
 # ════════════════════════════════════════════════════════════
 
 _CHAT_MAX_TOKENS = 600
-_CHAT_MAX_GRADES_IN_CONTEXT = 60
+# 600 = достаточно для года (типичная нагрузка ~400-500 оценок/год для
+# одного ученика). Claude Haiku 200K context съест без проблем.
+_CHAT_MAX_GRADES_IN_CONTEXT = 600
 
 
 def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CONTEXT) -> str:
     """Компактное представление оценок для prompt'а. По убыванию даты."""
     if not grades:
-        return "(пусто — оценок за последние 30 дней нет)"
+        return "(пусто — оценок в БД пока нет)"
     lines = []
     for g in grades[:max_count]:
         date_str = g.get("grade_date") or (g.get("date_added") or "")[:10]
@@ -438,26 +440,28 @@ def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CO
 _CHAT_SYSTEM_PROMPTS = {
     'ru': (
         "Ты помогаешь родителю разобраться в оценках его/её ребёнка. Отвечай коротко "
-        "(2-4 предложения), на русском, обычным текстом без markdown. Опирайся "
-        "ТОЛЬКО на данные ниже — если их недостаточно, скажи об этом прямо. Тон — "
+        "(2-4 предложения), на русском, обычным текстом без markdown. Тебе дана "
+        "вся история оценок за учебный год. Опирайся ТОЛЬКО на эти данные — "
+        "если их недостаточно для ответа, скажи об этом прямо. Тон — "
         "поддерживающий и конкретный, без морализаторства и общих фраз. Не выдумывай "
         "оценки или предметы которых нет в данных. Если родитель спросил что-то не "
         "по теме оценок — мягко напомни что ты помощник по дневнику."
     ),
     'uz': (
         "Ota-onaga farzandining baholarini tushunishga yordam berasan. Qisqa javob "
-        "ber (2-4 jumla), o'zbekcha, oddiy matn, markdown'siz. FAQAT quyidagi "
-        "ma'lumotlardan foydalan — agar yetarli bo'lmasa, ochiqcha ayt. Ohang — "
-        "qo'llab-quvvatlovchi va aniq, axloqsiz. Ma'lumotlarda bo'lmagan baho yoki "
-        "fanlarni o'ylab topma. Agar savol baholar mavzusiga oid bo'lmasa — yumshoq "
-        "eslatib qo'y."
+        "ber (2-4 jumla), o'zbekcha, oddiy matn, markdown'siz. Senga butun o'quv "
+        "yili davomidagi baholar tarixi berilgan. FAQAT shu ma'lumotlardan foydalan — "
+        "agar yetarli bo'lmasa, ochiqcha ayt. Ohang — qo'llab-quvvatlovchi va aniq, "
+        "axloqsiz. Ma'lumotlarda bo'lmagan baho yoki fanlarni o'ylab topma. "
+        "Agar savol baholar mavzusiga oid bo'lmasa — yumshoq eslatib qo'y."
     ),
     'en': (
         "You're helping a parent make sense of their child's grades. Be brief "
-        "(2-4 sentences), plain text, no markdown. Use ONLY the data below — if "
-        "it's insufficient, say so. Tone: supportive and specific, no moralizing "
-        "or generic platitudes. Don't invent grades or subjects not in the data. "
-        "If the parent asks something off-topic, gently steer back to grades."
+        "(2-4 sentences), plain text, no markdown. You have the full school-year "
+        "history of grades. Use ONLY this data — if it's insufficient, say so. "
+        "Tone: supportive and specific, no moralizing or generic platitudes. "
+        "Don't invent grades or subjects not in the data. If the parent asks "
+        "something off-topic, gently steer back to grades."
     ),
 }
 
@@ -507,7 +511,7 @@ def answer_parent_question(
                 # Вшиваем grade-контекст в первое user-сообщение
                 enriched = (
                     f"Ученик: {student_name}\n"
-                    f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
+                    f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
                     f"Вопрос родителя: {m['content']}"
                 )
                 messages_array.append({"role": "user", "content": enriched})
@@ -520,7 +524,7 @@ def answer_parent_question(
         # Single-turn (старое поведение)
         user_message = (
             f"Ученик: {student_name}\n"
-            f"Оценки за последние 30 дней (от новых к старым):\n{context}\n\n"
+            f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
             f"Вопрос родителя: {question}"
         )
         messages_array = [{"role": "user", "content": user_message}]
