@@ -287,7 +287,28 @@ def init_db():
             'ON ai_chat_messages(telegram_id, student_id, created_at)'
         )
 
-        # 10c. Proactive AI alerts (PR_H5). Dedup log — чтобы не отправлять
+        # 10c. AI feedback (PR_H3). 👍/👎 на каждый assistant ответ.
+        # message_id UNIQUE — один feedback на сообщение (UPSERT при смене).
+        # telegram_id дублируется для analytics-запросов без JOIN.
+        # rating: 1 (👍) или -1 (👎). comment — резерв для free-form.
+        # FK + ON DELETE CASCADE: при clear_chat_history feedback тоже чистится.
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ai_chat_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL UNIQUE,
+            telegram_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(message_id) REFERENCES ai_chat_messages(id) ON DELETE CASCADE
+        )
+        ''')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ai_feedback_tg_created '
+            'ON ai_chat_feedback(telegram_id, created_at)'
+        )
+
+        # 10d. Proactive AI alerts (PR_H5). Dedup log — чтобы не отправлять
         # один и тот же тип alert'а по одному ребёнку чаще раза в 48 часов.
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS proactive_alerts (

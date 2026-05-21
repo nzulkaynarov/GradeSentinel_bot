@@ -25,17 +25,29 @@ os.environ.setdefault("ADMIN_GROUP_ID", "0")
 
 # ─── analytics_engine.answer_parent_question streaming ────────
 
+class _FakeFinalMessage:
+    """Эмулирует ответ stream.get_final_message() — нужен после tool_use loop'а
+    в PR_E2 (analytics_engine проверяет stop_reason для continue/return)."""
+    def __init__(self, text):
+        self.stop_reason = 'end_turn'
+        self.content = [type('TextBlock', (), {'type': 'text', 'text': text})()]
+
+
 class _FakeStream:
     """Эмулирует Anthropic stream context manager."""
     def __init__(self, chunks):
         self._chunks = chunks
         self.text_stream = iter(chunks)
+        self._joined = "".join(chunks)
 
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
         return False
+
+    def get_final_message(self):
+        return _FakeFinalMessage(self._joined)
 
 
 def test_stream_callback_called_with_accumulated_text(monkeypatch):
