@@ -887,8 +887,7 @@ body {
     gap: var(--space-2);
 }
 
-.ai-quick-btn,
-.chat-suggested-btn {
+.ai-quick-btn {
     padding: 6px 12px;
     background: var(--tg-bg);
     border: 1px solid rgba(99, 102, 241, 0.30);
@@ -899,17 +898,9 @@ body {
     transition: background 0.15s, border-color 0.15s;
 }
 
-.ai-quick-btn:hover,
-.chat-suggested-btn:hover {
+.ai-quick-btn:hover {
     background: rgba(99, 102, 241, 0.08);
     border-color: #6366F1;
-}
-
-.chat-suggested {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-bottom: var(--space-3);
 }
 
 .chat-clear-btn {

@@ -78,6 +78,9 @@
   "chat_clear_btn": "↻ Qaytadan boshlash",
   "chat_clear_confirm": "Suhbat tarixini butunlay oʻchirilsinmi?",
   "chat_history_loading": "Tarix yuklanmoqda…",
+  "chat_feedback_up_label": "Foydali javob",
+  "chat_feedback_down_label": "Foydasiz javob",
+  "chat_feedback_thanks": "Baholaganingiz uchun rahmat",
 
   "ai_summary_label": "AI-koʻrik",
   "ai_quick_questions": "💡 Tezkor savollar:",
