@@ -77,8 +77,9 @@
   "admin_panel_stats": "📊 Statistics",
 
   "user_panel_title": "📱 <b>Main Menu</b>\n\n{families_info}\n\n➖➖➖➖➖➖➖➖➖➖\nChoose an action:",
+  "user_panel_ai_chat": "💬 Ask AI",
   "user_panel_grades": "📈 Grades",
-  "user_panel_ai": "🤖 AI Analysis",
+  "user_panel_ai": "📊 AI Report",
   "user_panel_family": "🏠 My Family",
   "user_panel_subscription": "💳 Subscription",
   "user_panel_support": "💬 Support",
@@ -343,5 +344,18 @@
 
   "help_parent": "📖 <b>GradeSentinel — how to use</b>\n\n<b>What the bot does</b>\nI watch your child's grades in the Google sheet diary. New grade — instant message.\n\n<b>What you do</b>\n• Nothing :) Notifications come automatically\n• Want to check yourself — 📈 <b>Grades</b> button\n• 📊 <b>Grades Dashboard</b> — tap the button after /grades. Visual summary opens: average, daily trend, problem subjects, quarters\n• Want analysis — 🤖 <b>AI Analysis</b> (subscription)\n• Notifications too frequent — 🔔 <b>Notifications</b>\n\n<b>What I do automatically</b>\n🌙 22:00–07:00 — quiet, summary in the morning\n🌆 19:00 — evening digest\n📊 Sun 19:00 — weekly AI report\n\n<b>Commands</b>\n/start — main menu\n/grades — today's grades\n/help — this help\n\n💬 Confused? Tap Support.",
   "help_head": "\n\n👑 <b>You are the family head</b>\n\n🏠 <b>My Family</b> → you can:\n• 🧒 Add a child (Google Sheet link)\n• 🔗 Invite a relative — one-time link\n• 📋 Remove someone\n\n💡 <b>Bot in a family chat</b>\nAdd me to a group → pick a family → grades will arrive there too. Supergroup with topics — send the topic link or /set_thread &lt;link&gt;.",
-  "help_admin": "\n\n<b>Administration:</b>\n🛠 <b>Admin Panel</b> — centralized admin panel:\n  • 🏠 Families — view and manage\n  • ➕ New Family — create\n  • 💰 Pricing — change prices\n  • 🎁 Promo Codes — create and manage\n  • 👑 Grant / ❌ Cancel subscription\n  • 📢 Broadcast — message to all\n  • 📊 System statistics"
+  "help_admin": "\n\n<b>Administration:</b>\n🛠 <b>Admin Panel</b> — centralized admin panel:\n  • 🏠 Families — view and manage\n  • ➕ New Family — create\n  • 💰 Pricing — change prices\n  • 🎁 Promo Codes — create and manage\n  • 👑 Grant / ❌ Cancel subscription\n  • 📢 Broadcast — message to all\n  • 📊 System statistics",
+
+  "ai_chat_welcome": "💬 <b>Ready to answer about {name}</b>\n\nAsk in plain words — I know the last 30 days of grades. For example:\n• What to work on over summer?\n• Why did math drop?\n• Compare with last month\n\nOr tap a suggestion below.",
+  "ai_chat_pick_student": "👨‍👩‍👧 Which child do you want to ask about?",
+  "ai_chat_no_students": "ℹ️ You don't have any students with an active subscription.",
+  "ai_chat_bye": "See you! To ask again, tap «💬 Ask AI» in the menu.",
+  "ai_chat_error": "Couldn't get a response right now. Try again shortly.",
+  "ai_chat_too_long": "Question too long. Keep it under 500 characters.",
+  "ai_chat_session_lost": "Chat session expired, tap «💬 Ask AI» in the menu.",
+  "ai_chat_exit": "❌ Exit chat",
+  "ai_suggested_summer": "🌞 What to work on over summer?",
+  "ai_suggested_compare": "📊 Compare with last month",
+  "ai_suggested_concern": "⚠️ Where are there concerns?",
+  "subscription_inactive": "💳 Subscription is not active. Subscribe to use the AI chat."
 }
