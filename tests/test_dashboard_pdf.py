@@ -123,6 +123,38 @@ def test_pdf_endpoint_filename_contains_student_name(client, seeded_student):
     assert 'Kid' in cd or 'PDF' in cd
 
 
+def test_pdf_endpoint_filename_ascii_only_in_header(client, temp_db):
+    """RFC 7230: HTTP headers должны быть ASCII. gunicorn отвергает
+    Content-Disposition с кириллицей с 400. Hotfix: ascii-fallback
+    в filename= + URL-encoded UTF-8 в filename*= (RFC 6266)."""
+    # Создаём ученика с кириллическим именем
+    import src.database_manager as dbm
+    head_id = dbm.add_parent("Mom", "998900000555", role='senior')
+    dbm.update_parent_telegram_id("998900000555", 555555)
+    fam_id = dbm.add_family("F-cyr")
+    dbm.set_family_head(fam_id, head_id)
+    dbm.link_parent_to_family(fam_id, head_id)
+    sid = dbm.add_student("Зулькайнаров Заур (8 Orion)", "ss-cyr")
+    dbm.link_student_to_family(fam_id, sid)
+    from datetime import datetime, timedelta, timezone
+    future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
+    with dbm.get_db_connection() as conn:
+        conn.cursor().execute(
+            "UPDATE families SET subscription_end = ? WHERE id = ?", (future, fam_id),
+        )
+
+    with patch("webapp.app._authorize_student_access", return_value=555555):
+        resp = client.get(f"/api/dashboard/{sid}/pdf")
+
+    assert resp.status_code == 200
+    cd = resp.headers.get('Content-Disposition', '')
+    # Header сам должен быть ASCII-only (никакой кириллицы)
+    assert cd.encode('ascii', errors='strict')  # raises UnicodeEncodeError если non-ascii
+    # Должны быть оба filename и filename*
+    assert 'filename=' in cd
+    assert "filename*=UTF-8''" in cd
+
+
 def test_pdf_endpoint_404_for_other_student(client, seeded_student, temp_db):
     """Foreign student → 403 (auth_student_access защищает)."""
     info = seeded_student
