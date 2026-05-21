@@ -240,9 +240,13 @@ function renderDashboard() {
 
     renderKpis(d.kpis || {}, d.summary || {});
     renderStatusLine(d.summary || {});
-    renderQuartersBlock(d.quarters_with_forecast || []);
-    // Sparklines встроены в subjects table — большой trend chart удалён
-    renderSubjectsTable(d.by_subject || [], d.trend_by_subject || []);
+    // Quarter cards enriched: current-period avg+count+sparkline для каждого
+    // предмета. Это единственный listing — старая «Все предметы» удалена.
+    renderQuartersBlock(
+        d.quarters_with_forecast || [],
+        d.by_subject || [],
+        d.trend_by_subject || [],
+    );
     renderAllGrades(d.recent_grades || []);
 
     // Mark студента как просмотренного — для подсветки "новое" в следующий заход
@@ -367,13 +371,27 @@ function renderStatusLine(summary) {
 // удалены. AI-фичи (insight + suggested prompts + chat) теперь только в
 // боте — webapp дашборд только данные + Share/PDF.
 
-// ═════════ QUARTERS BLOCK (mobile cards вместо widescroll-таблицы) ═════════
-function renderQuartersBlock(quarters) {
+// ═════════ QUARTERS BLOCK — enriched cards (единственный subject listing) ═════════
+function renderQuartersBlock(quarters, bySubject, trendBySubject) {
     const wrap = document.getElementById("quarters-table-wrap");
     const empty = document.getElementById("quarters-empty");
     if (!wrap) return;
 
-    if (!quarters || quarters.length === 0) {
+    // Карты: subject → current period stats (avg, count) и sparkline points
+    const statsMap = new Map();
+    (bySubject || []).forEach(s => statsMap.set(s.name, s));
+    const trendMap = new Map();
+    (trendBySubject || []).forEach(line => trendMap.set(line.subject, line.points));
+
+    // Cards: сначала квартирные subjects, потом current-only (новые предметы
+    // у которых есть текущие оценки но нет четвертных)
+    const quarterSubjects = new Set((quarters || []).map(q => q.subject));
+    const currentOnly = (bySubject || [])
+        .filter(s => !quarterSubjects.has(s.name))
+        .map(s => ({ subject: s.name, _no_quarters: true }));
+    const allCards = [...(quarters || []), ...currentOnly];
+
+    if (allCards.length === 0) {
         wrap.innerHTML = "";
         if (empty) empty.classList.remove("hidden");
         return;
@@ -386,29 +404,55 @@ function renderQuartersBlock(quarters) {
         return `<span class="${cls}">${escapeHtml(String(val))}</span>`;
     };
 
-    const cards = quarters.map(q => {
+    const cards = allCards.map(q => {
+        const stats = statsMap.get(q.subject);
+        const sparkPoints = trendMap.get(q.subject);
         const trendSym = q.trend === 'up' ? '↑' : q.trend === 'down' ? '↓' : '→';
         const trendCls = q.trend === 'up' ? 'trend-up' : q.trend === 'down' ? 'trend-down' : 'trend-flat';
         const yearVal = q.year || '—';
         const yearCls = q.year_is_forecast ? 'qc-year-value forecast' : 'qc-year-value';
         const yearColorCls = q.year_value != null ? gradeColorClass(q.year_value) : '';
+
+        // Quarter cells (если нет четвертных — empty placeholders)
+        const quartersHtml = q._no_quarters
+            ? `<div class="qc-quarters qc-quarters-empty">
+                 <span class="muted small">${escapeHtml(t("quarters_no_data") || "Нет четвертных оценок")}</span>
+               </div>`
+            : `<div class="qc-quarters">
+                 <div class="qc-q"><span class="qc-q-label">1ч</span>${cell(q.q1)}</div>
+                 <div class="qc-q"><span class="qc-q-label">2ч</span>${cell(q.q2)}</div>
+                 <div class="qc-q"><span class="qc-q-label">3ч</span>${cell(q.q3)}</div>
+                 <div class="qc-q"><span class="qc-q-label">4ч</span>${cell(q.q4)}</div>
+               </div>`;
+
+        // Year column — only if quarter has it
+        const yearHtml = q._no_quarters ? '' : `<div class="qc-year">
+            <span class="qc-year-label">${escapeHtml(t("col_year") || "Год")}</span>
+            <span class="${yearCls} ${yearColorCls}">${escapeHtml(yearVal)}</span>
+        </div>`;
+
+        // Footer: current-period stats + sparkline
+        let footerHtml = '';
+        if (stats || sparkPoints) {
+            const sparkSvg = sparkPoints ? _sparklineSvg(sparkPoints, 80, 22) : '';
+            const statsAvg = stats ? `<span class="qc-stat-avg ${gradeColorClass(stats.avg)}">${stats.avg.toFixed(2)}</span>` : '';
+            const statsCount = stats ? `<span class="qc-stat-count">${stats.count} ${t("qc_stat_count_label") || "за период"}</span>` : '';
+            footerHtml = `<div class="qc-footer">
+                <div class="qc-footer-stats">${statsAvg}${statsCount}</div>
+                <div class="qc-footer-spark ${trendCls}">${sparkSvg}</div>
+            </div>`;
+        }
+
         return `<div class="quarter-card" data-subject="${escapeHtml(q.subject)}">
             <div class="qc-header">
                 <span class="qc-subject">${escapeHtml(q.subject)}</span>
                 <span class="qc-trend ${trendCls}">${trendSym}</span>
             </div>
             <div class="qc-body">
-                <div class="qc-quarters">
-                    <div class="qc-q"><span class="qc-q-label">1ч</span>${cell(q.q1)}</div>
-                    <div class="qc-q"><span class="qc-q-label">2ч</span>${cell(q.q2)}</div>
-                    <div class="qc-q"><span class="qc-q-label">3ч</span>${cell(q.q3)}</div>
-                    <div class="qc-q"><span class="qc-q-label">4ч</span>${cell(q.q4)}</div>
-                </div>
-                <div class="qc-year">
-                    <span class="qc-year-label">${escapeHtml(t("col_year") || "Год")}</span>
-                    <span class="${yearCls} ${yearColorCls}">${escapeHtml(yearVal)}</span>
-                </div>
+                ${quartersHtml}
+                ${yearHtml}
             </div>
+            ${footerHtml}
         </div>`;
     }).join("");
 
@@ -438,81 +482,6 @@ function _sparklineSvg(points, width, height) {
     return `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-hidden="true">
         <path d="${pts}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
-}
-
-function renderSubjectsTable(subjects, trendBySubject) {
-    const wrap = document.getElementById("subjects-table-wrap");
-    if (!wrap) return;
-    if (!subjects || subjects.length === 0) {
-        wrap.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
-        return;
-    }
-
-    // Map subject → trend points (для sparkline в строке)
-    const trendMap = new Map();
-    (trendBySubject || []).forEach(line => trendMap.set(line.subject, line.points));
-
-    state._subjectsSort = state._subjectsSort || { key: 'avg', dir: 'desc' };
-    const sortKey = state._subjectsSort.key;
-    const sortDir = state._subjectsSort.dir;
-    const sorted = subjects.slice().sort((a, b) => {
-        let av = a[sortKey], bv = b[sortKey];
-        if (typeof av === 'string') av = av.toLocaleLowerCase();
-        if (typeof bv === 'string') bv = bv.toLocaleLowerCase();
-        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-        return sortDir === 'desc' ? -cmp : cmp;
-    });
-
-    const headers = [
-        { key: 'name', label: t("col_subject") || "Предмет" },
-        { key: 'avg', label: t("col_avg") || "Средний" },
-        { key: 'count', label: '#', noSort: true, narrow: true },
-        { key: 'trend', label: t("col_trend") || "Тренд", noSort: true },
-    ];
-
-    const ths = headers.map(h => {
-        const arrow = (h.key === sortKey) ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
-        const cls = [h.noSort ? '' : 'sortable', h.narrow ? 'narrow' : ''].filter(Boolean).join(' ');
-        return `<th data-sort="${h.noSort ? '' : h.key}" class="${cls}">${escapeHtml(h.label)}${arrow}</th>`;
-    }).join("");
-
-    const rows = sorted.map(s => {
-        const avgCls = gradeColorClass(s.avg);
-        const trendCls = s.trend === 'up' ? 'trend-up' : s.trend === 'down' ? 'trend-down' : 'trend-flat';
-        const trendSym = s.trend === 'up' ? '↑' : s.trend === 'down' ? '↓' : '→';
-        const sparklinePoints = trendMap.get(s.name);
-        const sparkline = sparklinePoints ? _sparklineSvg(sparklinePoints, 60, 20) : '';
-        return `<tr class="subj-table-row" data-subject="${escapeHtml(s.name)}">
-            <td class="subj-cell-name">
-                <div class="subj-name-line">${escapeHtml(s.name)}</div>
-                <div class="subj-spark ${trendCls}">${sparkline}</div>
-            </td>
-            <td class="${avgCls}">${s.avg.toFixed(2)}</td>
-            <td class="narrow">${s.count}</td>
-            <td class="${trendCls}">${trendSym}</td>
-        </tr>`;
-    }).join("");
-
-    wrap.innerHTML = `<table class="subj-table">
-        <thead><tr>${ths}</tr></thead>
-        <tbody>${rows}</tbody>
-    </table>`;
-
-    wrap.querySelectorAll("th.sortable").forEach(th => {
-        th.addEventListener("click", () => {
-            const k = th.dataset.sort;
-            if (state._subjectsSort.key === k) {
-                state._subjectsSort.dir = state._subjectsSort.dir === 'desc' ? 'asc' : 'desc';
-            } else {
-                state._subjectsSort.key = k;
-                state._subjectsSort.dir = 'desc';
-            }
-            renderSubjectsTable(subjects, trendBySubject);
-        });
-    });
-    wrap.querySelectorAll(".subj-table-row").forEach(tr => {
-        tr.addEventListener("click", () => openDrilldown(tr.dataset.subject));
-    });
 }
 
 // ═════════ ALL GRADES (grouped by date + subject filter + "show more") ═════════
@@ -713,14 +682,15 @@ function _handleHashChange() {
 
 function _openBotChatWithQuestion(question) {
     // Real deep-link через t.me/<bot>?start=ai_<base64(question)>.
-    // Bot handler /start ai_X декодирует и сразу шлёт question в AI
-    // (см. handlers/ai_chat.handle_ai_deeplink). Юзер видит ответ
-    // мгновенно, без необходимости что-то набирать.
+    // Bot handler /start ai_X декодирует и сразу шлёт question в AI.
+    // bot_username priority: server-injected window.GS_BOT_USERNAME (всегда
+    // current при reload) → state.botUsername (cached из /api/init).
+    // Раньше state.botUsername мог быть null из-за init race → fallback
+    // popup без deep-link → AI "не работала".
     const tg = window.Telegram && window.Telegram.WebApp;
-    const botUsername = state.botUsername;
+    const botUsername = window.GS_BOT_USERNAME || state.botUsername;
 
-    if (!tg || !botUsername) {
-        // Fallback: если bot_username не пришёл — просто закрываем с подсказкой
+    if (!botUsername) {
         const hint = t("ai_popup_general") || "Откройте бот и нажмите 💬 Чат";
         if (tg && typeof tg.showAlert === "function") {
             tg.showAlert(hint, () => { if (tg.close) tg.close(); });
@@ -730,16 +700,14 @@ function _openBotChatWithQuestion(question) {
         return;
     }
 
-    // URL-safe base64 без padding — компактно для start param (Telegram
-    // ограничивает start param до 64 символов; пустой question = '').
     const payload = question
         ? btoa(unescape(encodeURIComponent(question)))
             .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
         : '';
     const url = `https://t.me/${botUsername}?start=ai_${payload}`;
 
-    if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-    if (typeof tg.openTelegramLink === "function") {
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    if (tg && typeof tg.openTelegramLink === "function") {
         tg.openTelegramLink(url);
     } else {
         window.open(url, "_blank");

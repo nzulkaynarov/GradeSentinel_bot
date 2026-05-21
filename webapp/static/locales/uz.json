@@ -135,5 +135,7 @@
   "pdf_type_teacher_hint": "Muammoli fanlarga e'tibor",
   "btn_cancel": "Bekor qilish",
   "btn_generate": "Yaratish",
+  "qc_stat_count_label": "davr uchun",
+  "quarters_no_data": "Chorak baholari yo'q",
   "dashboard_ai_hint": "💬 Savollar qoldimi? Bot chatidagi AI'ga so'rang."
 }

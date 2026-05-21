@@ -1213,6 +1213,43 @@ body {
     margin-top: 8px;
 }
 
+/* Enriched quarter card footer (current period stats + sparkline) */
+.qc-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(127,127,127,0.10);
+}
+.qc-footer-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.qc-stat-avg {
+    font-size: 18px;
+    font-weight: 700;
+}
+.qc-stat-count {
+    font-size: 11px;
+    color: var(--tg-hint);
+}
+.qc-footer-spark {
+    height: 22px;
+    line-height: 0;
+}
+.qc-footer-spark.trend-up { color: #10B981; }
+.qc-footer-spark.trend-down { color: #EF4444; }
+.qc-footer-spark.trend-flat { color: var(--tg-hint); }
+.qc-quarters-empty {
+    color: var(--tg-hint);
+    font-size: 12px;
+    font-style: italic;
+    flex: 1;
+}
+
 /* Sparkline в subjects table (заменил большой trend chart) */
 .sparkline {
     display: block;

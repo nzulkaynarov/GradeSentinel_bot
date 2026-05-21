@@ -599,8 +599,12 @@ def compute_year_report(grades):
 
 @app.route("/webapp")
 def dashboard():
-    """Serves the main dashboard HTML page."""
-    return render_template("dashboard.html")
+    """Serves the main dashboard HTML page.
+
+    Embed bot_username в HTML чтобы JS не зависел от /api/dashboard/init
+    race condition. AI deep-link был ломан когда state.botUsername=null
+    из-за rapsace или stale cache."""
+    return render_template("dashboard.html", bot_username=_get_bot_username() or "")
 
 
 def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:

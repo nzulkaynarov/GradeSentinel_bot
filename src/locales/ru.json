@@ -375,6 +375,7 @@
   "ai_chat_too_long": "Слишком длинный вопрос. Сократите до 500 символов.",
   "chat_feedback_thanks": "Спасибо за оценку!",
   "ai_chat_thinking": "💭 Думаю…",
+  "menu_btn_dashboard": "📊 Дашборд",
   "ai_chat_session_lost": "Сессия чата истекла, нажмите «💬 Спросить AI» в меню.",
   "ai_chat_exit": "Меню",
   "ai_suggested_summer": "Что подтянуть летом",

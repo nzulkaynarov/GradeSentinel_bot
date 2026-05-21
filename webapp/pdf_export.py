@@ -22,7 +22,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable,
-    KeepTogether,
+    KeepTogether, PageBreak,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,28 +86,45 @@ def _styles():
     return {
         'title': ParagraphStyle(
             'title', parent=base['Title'],
-            fontName=_FONT_BOLD, fontSize=18, leading=22,
-            spaceAfter=8, textColor=colors.HexColor('#0F172A'),
+            fontName=_FONT_BOLD, fontSize=26, leading=32,
+            spaceAfter=4, alignment=1,  # 1 = center
+            textColor=colors.HexColor('#0F172A'),
         ),
         'subtitle': ParagraphStyle(
             'subtitle', parent=base['Normal'],
-            fontName=_FONT_NAME, fontSize=11, leading=14,
-            spaceAfter=16, textColor=colors.HexColor('#64748B'),
+            fontName=_FONT_NAME, fontSize=12, leading=16,
+            spaceAfter=20, alignment=1,
+            textColor=colors.HexColor('#64748B'),
         ),
         'section': ParagraphStyle(
             'section', parent=base['Heading2'],
-            fontName=_FONT_BOLD, fontSize=13, leading=16,
-            spaceBefore=10, spaceAfter=6, textColor=colors.HexColor('#1E293B'),
+            fontName=_FONT_BOLD, fontSize=16, leading=20,
+            spaceBefore=18, spaceAfter=10,
+            textColor=colors.HexColor('#0F172A'),
+            borderPadding=(4, 0, 6, 0),
+        ),
+        'sub_section': ParagraphStyle(
+            'sub_section', parent=base['Normal'],
+            fontName=_FONT_BOLD, fontSize=12, leading=16,
+            spaceBefore=10, spaceAfter=4,
+            textColor=colors.HexColor('#1E293B'),
         ),
         'body': ParagraphStyle(
             'body', parent=base['Normal'],
-            fontName=_FONT_NAME, fontSize=10, leading=13,
+            fontName=_FONT_NAME, fontSize=11, leading=14,
+            spaceAfter=4,
             textColor=colors.HexColor('#0F172A'),
         ),
         'muted': ParagraphStyle(
             'muted', parent=base['Normal'],
             fontName=_FONT_NAME, fontSize=9, leading=12,
             textColor=colors.HexColor('#94A3B8'),
+        ),
+        'muted_italic': ParagraphStyle(
+            'muted_italic', parent=base['Normal'],
+            fontName=_FONT_NAME, fontSize=9, leading=12,
+            textColor=colors.HexColor('#94A3B8'),
+            fontStyle='italic',
         ),
     }
 
@@ -463,6 +480,39 @@ def _full_history_table(grades: List[Dict[str, Any]], lang: str,
     return tbl
 
 
+def _make_footer_callback(student_name, generated_str):
+    """Footer callback для каждой страницы: page number + generated info.
+    onPage в SimpleDocTemplate.build."""
+    def _draw_footer(canvas, doc):
+        canvas.saveState()
+        # Тонкая горизонтальная линия
+        canvas.setStrokeColor(colors.HexColor('#E2E8F0'))
+        canvas.setLineWidth(0.4)
+        canvas.line(20 * mm, 14 * mm, A4[0] - 20 * mm, 14 * mm)
+        # Левая часть: имя ученика + источник
+        canvas.setFont(_FONT_NAME, 8)
+        canvas.setFillColor(colors.HexColor('#94A3B8'))
+        canvas.drawString(
+            20 * mm, 9 * mm,
+            f"GradeSentinel · {student_name[:50]}",
+        )
+        # Правая часть: timestamp
+        canvas.drawRightString(
+            A4[0] - 20 * mm, 9 * mm,
+            generated_str,
+        )
+        # Центр: номер страницы
+        page_num = canvas.getPageNumber()
+        canvas.setFont(_FONT_BOLD, 9)
+        canvas.setFillColor(colors.HexColor('#64748B'))
+        canvas.drawCentredString(
+            A4[0] / 2, 9 * mm,
+            f"— {page_num} —",
+        )
+        canvas.restoreState()
+    return _draw_footer
+
+
 def build_dashboard_pdf(
     student_name: str,
     summary: Dict[str, Any],
@@ -475,62 +525,75 @@ def build_dashboard_pdf(
     period_start: str = '',
     period_end: str = '',
 ) -> bytes:
-    """Главная точка входа. Возвращает PDF как bytes — caller обёрнёт
-    в Flask Response с правильными headers.
+    """Главная точка входа. Возвращает PDF как bytes.
 
-    Dashboard refactor: PDF теперь полный proof-документ из 4 разделов.
-    Используется для разрешения споров с учителем/школой. quarters +
-    student_class + period_start/end — новые параметры (optional для
-    обратной совместимости с тестами)."""
+    PDF redesign: professional document structure с page numbers, footer,
+    page breaks для major sections, типографикой H1>H2>body, proper
+    spacing. РАЗДЕЛ 4 (полная история) — всегда на отдельной странице
+    т.к. длинный, удобнее печатать/прикладывать отдельно."""
     _ensure_font()
     styles = _styles()
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=18 * mm, rightMargin=18 * mm,
-        topMargin=16 * mm, bottomMargin=16 * mm,
+        leftMargin=20 * mm, rightMargin=20 * mm,
+        topMargin=20 * mm, bottomMargin=22 * mm,  # bottom больше под footer
         title=f"GradeSentinel — {student_name}",
         author='GradeSentinel',
     )
 
     story = []
+    generated_str = datetime.now().strftime('%d.%m.%Y %H:%M')
 
-    # ─── HEADER ──────────────────────────────────────────
+    # ═══ COVER / HEADER (centered title + metadata) ═══
+    story.append(Spacer(1, 8))
     story.append(Paragraph(_localize('title', lang), styles['title']))
+    story.append(Paragraph(
+        student_name + (f", {student_class}" if student_class else ''),
+        styles['subtitle'],
+    ))
+    # Decorative line под subtitle
+    story.append(HRFlowable(
+        width="40%", thickness=1.5, color=colors.HexColor('#6366F1'),
+        spaceBefore=4, spaceAfter=16, hAlign='CENTER',
+    ))
 
-    # Метаданные документа — таблица 2-колонки label/value, чёткая структура
+    # Метаданные — оформленный block
+    period_str = (f"{period_start} — {period_end}" if period_start else period_label)
     meta_rows = [
-        [_localize('student', lang) + ':', student_name or '—'],
+        [_localize('period', lang), period_str],
+        [_localize('generated', lang),
+         datetime.now().strftime('%d.%m.%Y %H:%M (Asia/Tashkent)')],
+        [_localize('source', lang), _localize('source_value', lang)],
     ]
-    if student_class:
-        meta_rows.append([_localize('class', lang) + ':', student_class])
-    meta_rows.append([_localize('period', lang) + ':',
-                       f"{period_start} — {period_end}" if period_start else period_label])
-    meta_rows.append([_localize('generated', lang) + ':',
-                       datetime.now().strftime('%d.%m.%Y %H:%M (Asia/Tashkent)')])
-    meta_rows.append([_localize('source', lang) + ':',
-                       _localize('source_value', lang)])
-    meta_table = Table(meta_rows, colWidths=[40 * mm, 134 * mm])
+    meta_table = Table(meta_rows, colWidths=[40 * mm, 130 * mm])
     meta_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), _FONT_BOLD),
         ('FONTNAME', (1, 0), (1, -1), _FONT_NAME),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
         ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#64748B')),
         ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor('#0F172A')),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.3, colors.HexColor('#E2E8F0')),
     ]))
     story.append(meta_table)
-    story.append(Spacer(1, 4))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#0F172A')))
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 20))
 
-    # ─── РАЗДЕЛ 1: СВОДКА ─────────────────────────────────
+    # ═══ РАЗДЕЛ 1: СВОДКА ═══
     story.append(Paragraph(_localize('sec1', lang), styles['section']))
+    story.append(HRFlowable(
+        width="100%", thickness=2, color=colors.HexColor('#6366F1'),
+        spaceBefore=2, spaceAfter=12,
+    ))
     story.append(_hero_table(summary, lang, styles))
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 10))
 
     status_key = f"status_{summary.get('status', 'stable')}"
     status_text = _localize(status_key, lang)
@@ -540,56 +603,57 @@ def build_dashboard_pdf(
         len(recent)
     )
     story.append(Paragraph(
-        f"{status_text} · {_localize('grades_count', lang)}: <b>{grades_count}</b>",
+        f"{status_text} &nbsp;·&nbsp; {_localize('grades_count', lang)}: <b>{grades_count}</b>",
         styles['body'],
     ))
-    story.append(Spacer(1, 14))
 
-    # ─── РАЗДЕЛ 2: ЧЕТВЕРТНЫЕ ОЦЕНКИ ─────────────────────
+    # ═══ РАЗДЕЛ 2: ЧЕТВЕРТНЫЕ ═══
     if quarters:
+        story.append(PageBreak())
         story.append(Paragraph(_localize('sec2', lang), styles['section']))
-        story.append(_quarters_table(quarters, lang, styles))
-        # Note про прогноз если есть forecast
-        has_forecast = any(q.get('year_is_forecast') for q in quarters)
-        if has_forecast:
-            story.append(Spacer(1, 4))
-            story.append(Paragraph(
-                f"<i>{_localize('forecast_note', lang)}</i>",
-                styles['muted'],
-            ))
-        story.append(Spacer(1, 14))
-
-    # ─── РАЗДЕЛ 3: ПО ПРЕДМЕТАМ ──────────────────────────
-    if by_subject:
-        story.append(Paragraph(_localize('sec3', lang), styles['section']))
-        story.append(_subjects_table(by_subject, lang, styles))
-        story.append(Spacer(1, 14))
-
-    # ─── РАЗДЕЛ 4: ПОЛНАЯ ИСТОРИЯ ────────────────────────
-    if recent:
-        story.append(Paragraph(_localize('sec4', lang), styles['section']))
-        story.append(Paragraph(
-            f"<i>{_localize('sec4_note', lang)}</i>",
-            styles['muted'],
+        story.append(HRFlowable(
+            width="100%", thickness=2, color=colors.HexColor('#6366F1'),
+            spaceBefore=2, spaceAfter=12,
         ))
-        story.append(Spacer(1, 4))
+        story.append(_quarters_table(quarters, lang, styles))
+        if any(q.get('year_is_forecast') for q in quarters):
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(
+                _localize('forecast_note', lang), styles['muted'],
+            ))
+
+    # ═══ РАЗДЕЛ 3: ПО ПРЕДМЕТАМ ═══
+    if by_subject:
+        story.append(PageBreak())
+        story.append(Paragraph(_localize('sec3', lang), styles['section']))
+        story.append(HRFlowable(
+            width="100%", thickness=2, color=colors.HexColor('#6366F1'),
+            spaceBefore=2, spaceAfter=12,
+        ))
+        story.append(_subjects_table(by_subject, lang, styles))
+
+    # ═══ РАЗДЕЛ 4: ПОЛНАЯ ИСТОРИЯ (всегда новая страница — главный proof) ═══
+    if recent:
+        story.append(PageBreak())
+        story.append(Paragraph(_localize('sec4', lang), styles['section']))
+        story.append(HRFlowable(
+            width="100%", thickness=2, color=colors.HexColor('#6366F1'),
+            spaceBefore=2, spaceAfter=12,
+        ))
+        story.append(Paragraph(_localize('sec4_note', lang), styles['muted']))
+        story.append(Spacer(1, 8))
         story.append(_full_history_table(recent, lang, styles))
 
-    # ─── FOOTER ──────────────────────────────────────────
-    story.append(Spacer(1, 14))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1')))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(
-        _localize('footer_proof', lang),
-        styles['muted'],
+    # ═══ FINAL FOOTER (на последней странице) ═══
+    story.append(Spacer(1, 18))
+    story.append(HRFlowable(
+        width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1'),
+        spaceBefore=4, spaceAfter=6,
     ))
-    story.append(Spacer(1, 2))
-    story.append(Paragraph(
-        _localize('footer', lang).format(date=datetime.now().strftime('%d.%m.%Y %H:%M')),
-        styles['muted'],
-    ))
+    story.append(Paragraph(_localize('footer_proof', lang), styles['muted']))
 
-    doc.build(story)
+    footer_cb = _make_footer_callback(student_name, generated_str)
+    doc.build(story, onFirstPage=footer_cb, onLaterPages=footer_cb)
     pdf_bytes = buf.getvalue()
     buf.close()
     return pdf_bytes
