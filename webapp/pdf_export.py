@@ -117,14 +117,24 @@ def _localize(key: str, lang: str) -> str:
     не тащить I/O при каждом запросе."""
     labels = {
         'ru': {
-            'title': 'Дневник GradeSentinel',
+            'title': 'Отчёт об успеваемости',
+            'student': 'Ученик',
+            'class': 'Класс',
+            'period': 'Период',
+            'generated': 'Сгенерирован',
+            'source': 'Источник',
+            'source_value': 'Google Sheets школы (через GradeSentinel bot)',
             'avg': 'Средний балл',
             'delta_up': 'выше прошлого периода на',
             'delta_down': 'ниже прошлого периода на',
             'delta_same': 'без изменений',
             'grades_count': 'Всего оценок за период',
-            'period': 'Период',
             'no_data': 'Нет данных',
+            'sec1': 'РАЗДЕЛ 1. СВОДКА',
+            'sec2': 'РАЗДЕЛ 2. ЧЕТВЕРТНЫЕ ОЦЕНКИ',
+            'sec3': 'РАЗДЕЛ 3. СВОДКА ПО ПРЕДМЕТАМ',
+            'sec4': 'РАЗДЕЛ 4. ПОЛНАЯ ИСТОРИЯ ОЦЕНОК',
+            'sec4_note': 'Все оценки за указанный период в хронологическом порядке. Этот раздел — основной для разрешения вопросов о точности данных.',
             'sec_problems': '⚠️ Проблемные предметы',
             'sec_top': '✨ Сильные предметы',
             'sec_subjects': 'По предметам',
@@ -134,45 +144,81 @@ def _localize(key: str, lang: str) -> str:
             'col_count': 'Кол-во',
             'col_date': 'Дата',
             'col_grade': 'Оценка',
-            'footer': 'Сгенерировано GradeSentinel · {date}',
+            'col_last': 'Последняя',
+            'col_trend': 'Тренд',
+            'col_q1': '1ч', 'col_q2': '2ч', 'col_q3': '3ч', 'col_q4': '4ч',
+            'col_year': 'Год',
+            'forecast_note': 'Значения с префиксом ~ — прогноз годовой оценки на основе текущих четвертных.',
+            'trend_up': '↑',
+            'trend_down': '↓',
+            'trend_flat': '→',
+            'footer': 'Документ автоматически сгенерирован GradeSentinel · {date}',
+            'footer_proof': 'Этот документ содержит все оценки полученные из Google Sheets школы за указанный период. Использовать для предметного разговора с учителем или администрацией.',
             'status_concern': '⚠️ Есть на что обратить внимание',
             'status_improving': '📈 Тенденция улучшается',
             'status_declining': '📉 Снижение по сравнению с прошлым периодом',
             'status_stable': '✅ Всё стабильно',
         },
         'uz': {
-            'title': "GradeSentinel kundalik",
+            'title': "O'qish hisoboti",
+            'student': "O'quvchi",
+            'class': 'Sinf',
+            'period': 'Davr',
+            'generated': 'Yaratildi',
+            'source': 'Manba',
+            'source_value': "Maktab Google Sheets'i (GradeSentinel bot orqali)",
             'avg': "O'rtacha baho",
             'delta_up': "oldingi davrdan",
             'delta_down': "oldingi davrdan kam",
             'delta_same': "o'zgarishsiz",
             'grades_count': 'Davr davomida baholar',
-            'period': 'Davr',
             'no_data': "Ma'lumot yo'q",
+            'sec1': "1-BO'LIM. UMUMIY KO'RSATKICHLAR",
+            'sec2': "2-BO'LIM. CHORAK BAHOLARI",
+            'sec3': "3-BO'LIM. FANLAR BO'YICHA XULOSA",
+            'sec4': "4-BO'LIM. BAHOLARNING TO'LIQ TARIXI",
+            'sec4_note': "Belgilangan davr uchun barcha baholar xronologik tartibda. Bu bo'lim ma'lumotlarning aniqligini tasdiqlash uchun asosiy.",
             'sec_problems': "⚠️ Muammoli fanlar",
             'sec_top': '✨ Kuchli fanlar',
-            'sec_subjects': 'Fanlar bo\'yicha',
+            'sec_subjects': "Fanlar bo'yicha",
             'sec_recent': 'Yangi baholar',
             'col_subject': 'Fan',
             'col_avg': "O'rtacha",
             'col_count': 'Soni',
             'col_date': 'Sana',
             'col_grade': 'Baho',
-            'footer': "GradeSentinel orqali yaratildi · {date}",
+            'col_last': "Oxirgi",
+            'col_trend': 'Trend',
+            'col_q1': '1ch', 'col_q2': '2ch', 'col_q3': '3ch', 'col_q4': '4ch',
+            'col_year': 'Yil',
+            'forecast_note': "~ belgisi bilan — joriy chorak baholaridan yillik baho prognozi.",
+            'trend_up': '↑', 'trend_down': '↓', 'trend_flat': '→',
+            'footer': "Hujjat GradeSentinel tomonidan avtomatik yaratildi · {date}",
+            'footer_proof': "Bu hujjat maktab Google Sheets'idan olingan barcha baholarni o'z ichiga oladi. O'qituvchi yoki ma'muriyat bilan aniq suhbat uchun foydalaning.",
             'status_concern': "⚠️ E'tibor berishga arziydi",
             'status_improving': '📈 Tendentsiya yaxshilanmoqda',
             'status_declining': '📉 Oldingi davrga nisbatan pasayish',
             'status_stable': "✅ Hammasi barqaror",
         },
         'en': {
-            'title': 'GradeSentinel diary',
+            'title': 'Academic performance report',
+            'student': 'Student',
+            'class': 'Class',
+            'period': 'Period',
+            'generated': 'Generated',
+            'source': 'Source',
+            'source_value': "School's Google Sheets (via GradeSentinel bot)",
             'avg': 'Average',
             'delta_up': 'higher than previous by',
             'delta_down': 'lower than previous by',
             'delta_same': 'unchanged',
             'grades_count': 'Total grades for period',
-            'period': 'Period',
             'no_data': 'No data',
+            'sec1': 'SECTION 1. SUMMARY',
+            'sec2': 'SECTION 2. QUARTERLY GRADES',
+            'sec3': 'SECTION 3. BY-SUBJECT BREAKDOWN',
+            'sec4': 'SECTION 4. FULL GRADE HISTORY',
+            'sec4_note': 'All grades for the specified period in chronological order. Primary section for resolving questions about data accuracy.',
             'sec_problems': '⚠️ Problem subjects',
             'sec_top': '✨ Strong subjects',
             'sec_subjects': 'By subject',
@@ -182,7 +228,14 @@ def _localize(key: str, lang: str) -> str:
             'col_count': 'Count',
             'col_date': 'Date',
             'col_grade': 'Grade',
-            'footer': 'Generated by GradeSentinel · {date}',
+            'col_last': 'Last',
+            'col_trend': 'Trend',
+            'col_q1': 'Q1', 'col_q2': 'Q2', 'col_q3': 'Q3', 'col_q4': 'Q4',
+            'col_year': 'Year',
+            'forecast_note': 'Values with ~ prefix — forecast of year grade based on current quarterly grades.',
+            'trend_up': '↑', 'trend_down': '↓', 'trend_flat': '→',
+            'footer': 'Document automatically generated by GradeSentinel · {date}',
+            'footer_proof': "This document contains all grades from the school's Google Sheets for the specified period. Use for substantive conversation with teacher or administration.",
             'status_concern': '⚠️ Worth attention',
             'status_improving': '📈 Trend improving',
             'status_declining': '📉 Decline vs previous period',
@@ -328,6 +381,88 @@ def _short_list(items: List[Dict[str, Any]], styles: Dict[str, Any],
     return out
 
 
+def _quarters_table(quarters: List[Dict[str, Any]], lang: str,
+                    styles: Dict[str, Any]) -> Table:
+    """Таблица четвертных оценок: предмет × 1ч-4ч + год (или прогноз)."""
+    header = [
+        _localize('col_subject', lang),
+        _localize('col_q1', lang),
+        _localize('col_q2', lang),
+        _localize('col_q3', lang),
+        _localize('col_q4', lang),
+        _localize('col_year', lang),
+        _localize('col_trend', lang),
+    ]
+    rows = [header]
+    for q in quarters:
+        trend_sym = _localize(f"trend_{q.get('trend', 'flat')}", lang)
+        rows.append([
+            q.get('subject', '?'),
+            q.get('q1') or '—',
+            q.get('q2') or '—',
+            q.get('q3') or '—',
+            q.get('q4') or '—',
+            q.get('year') or '—',
+            trend_sym,
+        ])
+    tbl = Table(rows, colWidths=[60 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 22 * mm, 16 * mm])
+    tbl.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
+        ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+        ('FONTNAME', (0, 1), (-1, -1), _FONT_NAME),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#CBD5E1')),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    return tbl
+
+
+def _full_history_table(grades: List[Dict[str, Any]], lang: str,
+                         styles: Dict[str, Any]) -> Table:
+    """РАЗДЕЛ 4 PDF — полная история оценок за период. Хронологически,
+    БЕЗ лимита (главный proof-документ). На многостраничных report'ах
+    Platypus автоматически разбивает на страницы."""
+    header = [
+        _localize('col_date', lang),
+        _localize('col_subject', lang),
+        _localize('col_grade', lang),
+    ]
+    # ASC по дате — для чтения сверху-вниз как timeline
+    sorted_grades = sorted(grades, key=lambda g: g.get('grade_date') or
+                            (g.get('date_added') or '')[:10])
+    rows = [header]
+    for g in sorted_grades:
+        date_str = g.get('grade_date') or (g.get('date_added') or '')[:10]
+        rows.append([
+            date_str,
+            g.get('subject', '?'),
+            str(g.get('raw_text', '?')),
+        ])
+
+    tbl = Table(rows, colWidths=[30 * mm, 100 * mm, 30 * mm], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
+        ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+        ('FONTNAME', (0, 1), (-1, -1), _FONT_NAME),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#CBD5E1')),
+        ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    return tbl
+
+
 def build_dashboard_pdf(
     student_name: str,
     summary: Dict[str, Any],
@@ -335,37 +470,68 @@ def build_dashboard_pdf(
     recent: List[Dict[str, Any]],
     period_label: str,
     lang: str = 'ru',
+    student_class: str = '',
+    quarters: Optional[List[Dict[str, Any]]] = None,
+    period_start: str = '',
+    period_end: str = '',
 ) -> bytes:
     """Главная точка входа. Возвращает PDF как bytes — caller обёрнёт
-    в Flask Response с правильными headers."""
+    в Flask Response с правильными headers.
+
+    Dashboard refactor: PDF теперь полный proof-документ из 4 разделов.
+    Используется для разрешения споров с учителем/школой. quarters +
+    student_class + period_start/end — новые параметры (optional для
+    обратной совместимости с тестами)."""
     _ensure_font()
     styles = _styles()
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=20 * mm, rightMargin=20 * mm,
-        topMargin=18 * mm, bottomMargin=18 * mm,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=16 * mm, bottomMargin=16 * mm,
         title=f"GradeSentinel — {student_name}",
         author='GradeSentinel',
     )
 
     story = []
 
-    # Header
-    story.append(Paragraph(student_name, styles['title']))
-    story.append(Paragraph(
-        f"{_localize('title', lang)} · {_localize('period', lang)}: {period_label}",
-        styles['subtitle'],
-    ))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#E2E8F0')))
-    story.append(Spacer(1, 8))
+    # ─── HEADER ──────────────────────────────────────────
+    story.append(Paragraph(_localize('title', lang), styles['title']))
 
-    # Hero
+    # Метаданные документа — таблица 2-колонки label/value, чёткая структура
+    meta_rows = [
+        [_localize('student', lang) + ':', student_name or '—'],
+    ]
+    if student_class:
+        meta_rows.append([_localize('class', lang) + ':', student_class])
+    meta_rows.append([_localize('period', lang) + ':',
+                       f"{period_start} — {period_end}" if period_start else period_label])
+    meta_rows.append([_localize('generated', lang) + ':',
+                       datetime.now().strftime('%d.%m.%Y %H:%M (Asia/Tashkent)')])
+    meta_rows.append([_localize('source', lang) + ':',
+                       _localize('source_value', lang)])
+    meta_table = Table(meta_rows, colWidths=[40 * mm, 134 * mm])
+    meta_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), _FONT_BOLD),
+        ('FONTNAME', (1, 0), (1, -1), _FONT_NAME),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#64748B')),
+        ('TEXTCOLOR', (1, 0), (1, -1), colors.HexColor('#0F172A')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 4))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#0F172A')))
+    story.append(Spacer(1, 10))
+
+    # ─── РАЗДЕЛ 1: СВОДКА ─────────────────────────────────
+    story.append(Paragraph(_localize('sec1', lang), styles['section']))
     story.append(_hero_table(summary, lang, styles))
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 6))
 
-    # Status line + grades count
     status_key = f"status_{summary.get('status', 'stable')}"
     status_text = _localize(status_key, lang)
     grades_count = (
@@ -374,37 +540,50 @@ def build_dashboard_pdf(
         len(recent)
     )
     story.append(Paragraph(
-        f"{status_text} · {_localize('grades_count', lang)}: {grades_count}",
+        f"{status_text} · {_localize('grades_count', lang)}: <b>{grades_count}</b>",
         styles['body'],
     ))
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 14))
 
-    # Problems / Top — compact section
-    problems = summary.get('problem_subjects') or []
-    tops = summary.get('top_subjects') or []
-    if problems:
-        story.append(Paragraph(_localize('sec_problems', lang), styles['section']))
-        story.extend(_short_list(problems, styles, lang))
-        story.append(Spacer(1, 8))
-    if tops:
-        story.append(Paragraph(_localize('sec_top', lang), styles['section']))
-        story.extend(_short_list(tops, styles, lang))
-        story.append(Spacer(1, 8))
+    # ─── РАЗДЕЛ 2: ЧЕТВЕРТНЫЕ ОЦЕНКИ ─────────────────────
+    if quarters:
+        story.append(Paragraph(_localize('sec2', lang), styles['section']))
+        story.append(_quarters_table(quarters, lang, styles))
+        # Note про прогноз если есть forecast
+        has_forecast = any(q.get('year_is_forecast') for q in quarters)
+        if has_forecast:
+            story.append(Spacer(1, 4))
+            story.append(Paragraph(
+                f"<i>{_localize('forecast_note', lang)}</i>",
+                styles['muted'],
+            ))
+        story.append(Spacer(1, 14))
 
-    # By subject table
+    # ─── РАЗДЕЛ 3: ПО ПРЕДМЕТАМ ──────────────────────────
     if by_subject:
-        story.append(Paragraph(_localize('sec_subjects', lang), styles['section']))
+        story.append(Paragraph(_localize('sec3', lang), styles['section']))
         story.append(_subjects_table(by_subject, lang, styles))
-        story.append(Spacer(1, 12))
+        story.append(Spacer(1, 14))
 
-    # Recent grades
+    # ─── РАЗДЕЛ 4: ПОЛНАЯ ИСТОРИЯ ────────────────────────
     if recent:
-        story.append(Paragraph(_localize('sec_recent', lang), styles['section']))
-        story.append(_recent_table(recent, lang, styles))
+        story.append(Paragraph(_localize('sec4', lang), styles['section']))
+        story.append(Paragraph(
+            f"<i>{_localize('sec4_note', lang)}</i>",
+            styles['muted'],
+        ))
+        story.append(Spacer(1, 4))
+        story.append(_full_history_table(recent, lang, styles))
 
-    # Footer
-    story.append(Spacer(1, 18))
-    story.append(HRFlowable(width="100%", thickness=0.3, color=colors.HexColor('#E2E8F0')))
+    # ─── FOOTER ──────────────────────────────────────────
+    story.append(Spacer(1, 14))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#CBD5E1')))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+        _localize('footer_proof', lang),
+        styles['muted'],
+    ))
+    story.append(Spacer(1, 2))
     story.append(Paragraph(
         _localize('footer', lang).format(date=datetime.now().strftime('%d.%m.%Y %H:%M')),
         styles['muted'],

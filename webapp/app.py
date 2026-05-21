@@ -284,24 +284,184 @@ def compute_trend_by_day(grades, period_days):
 
 
 def compute_by_subject(grades):
-    """Разбивка по предметам, отсортированная по среднему DESC."""
+    """Разбивка по предметам, отсортированная по среднему DESC.
+
+    Dashboard refactor: enriched данные — last grade (с датой), тренд
+    (delta vs first-half period vs second-half), и raw values для UI.
+    """
     by_subj = defaultdict(list)
     for g in grades:
         if g.get("grade_value") is None:
             continue
-        by_subj[g["subject"]].append(g["grade_value"])
+        by_subj[g["subject"]].append({
+            'value': g["grade_value"],
+            'raw_text': g.get("raw_text", ""),
+            'date': _grade_date_str(g),
+        })
 
-    return sorted(
-        [
-            {
-                "name": subj,
+    out = []
+    for subj, entries in by_subj.items():
+        # Sort by date ASC for trend computation
+        entries_sorted = sorted(entries, key=lambda e: e['date'])
+        values = [e['value'] for e in entries_sorted]
+        avg = round(sum(values) / len(values), 2)
+        last = entries_sorted[-1]
+
+        # Trend: средний первой половины vs второй половины. Если перепад
+        # ≥ 0.3 — показываем стрелку. Это устойчивее чем «последняя оценка».
+        trend = 'flat'
+        if len(values) >= 4:
+            half = len(values) // 2
+            avg_early = sum(values[:half]) / half
+            avg_late = sum(values[half:]) / (len(values) - half)
+            if avg_late - avg_early >= 0.3:
+                trend = 'up'
+            elif avg_early - avg_late >= 0.3:
+                trend = 'down'
+
+        out.append({
+            "name": subj,
+            "avg": avg,
+            "count": len(values),
+            "last_grade": last['raw_text'],
+            "last_date": last['date'],
+            "trend": trend,
+        })
+    return sorted(out, key=lambda s: -s["avg"])
+
+
+def compute_trend_by_subject(grades, period_days, max_subjects=8):
+    """Multi-line chart данные: по неделе для каждого предмета.
+
+    Dashboard refactor: заменяет старый compute_trend_by_day (который был
+    шумом — «средний по всем предметам за день»). Теперь видно «физика
+    проседает», «литература стабильна».
+
+    Группировка по неделе (а не дню) — снижает шум, читаемее.
+    Top N предметов по кол-ву оценок чтобы не перегрузить chart.
+    """
+    by_subj = defaultdict(lambda: defaultdict(list))
+    for g in grades:
+        if g.get("grade_value") is None:
+            continue
+        date_str = _grade_date_str(g)
+        if not date_str:
+            continue
+        try:
+            d = datetime.fromisoformat(date_str).date()
+        except (ValueError, TypeError):
+            continue
+        # Week bucket — понедельник этой недели (ISO weekday)
+        week_start = (d - timedelta(days=d.weekday())).isoformat()
+        by_subj[g["subject"]][week_start].append(g["grade_value"])
+
+    # Топ N предметов по кол-ву оценок (то что чаще встречается)
+    top_subjects = sorted(
+        by_subj.items(),
+        key=lambda kv: -sum(len(v) for v in kv[1].values()),
+    )[:max_subjects]
+
+    result = []
+    for subj, weeks in top_subjects:
+        points = []
+        for week, vals in sorted(weeks.items()):
+            points.append({
+                "week": week,
                 "avg": round(sum(vals) / len(vals), 2),
                 "count": len(vals),
-            }
-            for subj, vals in by_subj.items()
-        ],
-        key=lambda s: -s["avg"],
-    )
+            })
+        result.append({"subject": subj, "points": points})
+    return result
+
+
+def compute_quarters_with_forecast(quarter_grades):
+    """Группировка четвертных по предмету + прогноз годовой.
+
+    Dashboard refactor: в БД quarter=5 = годовая (см. CLAUDE.md schema).
+    Если строка q=5 есть для предмета — используем её. Если нет — простой
+    forecast = среднее имеющихся четвертей (с weight на более свежие если
+    хватит данных).
+
+    Возвращает [{subject, q1, q2, q3, q4, year, year_is_forecast, trend}]
+    отсортировано по подходу: проблемные сверху если year < 4.
+    """
+    by_subj = defaultdict(dict)
+    for qg in quarter_grades:
+        subj = qg.get("subject", "?")
+        q = qg.get("quarter")
+        if q not in (1, 2, 3, 4, 5):
+            continue
+        by_subj[subj][q] = {
+            "raw": qg.get("raw_text", ""),
+            "value": qg.get("grade_value"),
+        }
+
+    result = []
+    for subj, quarters in by_subj.items():
+        row = {
+            "subject": subj,
+            "q1": quarters.get(1, {}).get("raw"),
+            "q2": quarters.get(2, {}).get("raw"),
+            "q3": quarters.get(3, {}).get("raw"),
+            "q4": quarters.get(4, {}).get("raw"),
+            "year": None,
+            "year_is_forecast": False,
+            "year_value": None,
+        }
+        # Year — либо явная (q=5), либо прогноз
+        if 5 in quarters and quarters[5].get("value") is not None:
+            row["year"] = quarters[5]["raw"]
+            row["year_value"] = quarters[5]["value"]
+        else:
+            # Прогноз: среднее ненулевых четвертных. Если есть только 1-2
+            # четверти — указываем low confidence через is_forecast=True.
+            numeric_quarters = [
+                quarters[q]["value"] for q in (1, 2, 3, 4)
+                if q in quarters and quarters[q].get("value") is not None
+            ]
+            if numeric_quarters:
+                forecast = sum(numeric_quarters) / len(numeric_quarters)
+                row["year"] = f"~{forecast:.1f}"
+                row["year_value"] = round(forecast, 2)
+                row["year_is_forecast"] = True
+
+        # Trend: q1 → q4 (или последняя имеющаяся)
+        ordered = [
+            quarters[q]["value"] for q in (1, 2, 3, 4)
+            if q in quarters and quarters[q].get("value") is not None
+        ]
+        if len(ordered) >= 2:
+            if ordered[-1] - ordered[0] >= 0.5:
+                row["trend"] = "up"
+            elif ordered[0] - ordered[-1] >= 0.5:
+                row["trend"] = "down"
+            else:
+                row["trend"] = "flat"
+        else:
+            row["trend"] = "flat"
+
+        result.append(row)
+
+    # Сортировка: проблемные сверху (year_value < 4 или is_forecast и low),
+    # внутри группы — alphabet
+    def sort_key(r):
+        is_problem = r["year_value"] is not None and r["year_value"] < 4
+        return (not is_problem, r["subject"])
+    return sorted(result, key=sort_key)
+
+
+def compute_dashboard_kpis(summary, by_subject, total_grades_count):
+    """4 KPI cards для верха дашборда. Простой derive из summary +
+    by_subject (которые уже есть). Один экран — все главные числа."""
+    top = (by_subject[0] if by_subject else None)
+    worst = (by_subject[-1] if by_subject else None)
+    return {
+        "current_avg": summary.get("current_avg"),
+        "delta": summary.get("delta"),
+        "total_grades": total_grades_count,
+        "top_subject": {"name": top["name"], "avg": top["avg"]} if top else None,
+        "worst_subject": {"name": worst["name"], "avg": worst["avg"]} if worst else None,
+    }
 
 
 _RU_MONTH_NAMES = {
@@ -528,8 +688,19 @@ def api_dashboard(student_id):
     grades_previous = [g for g in all_grades if _grade_date(g) < cutoff_date]
 
     summary = compute_summary(grades_current, grades_previous, days)
-    trend_by_day = compute_trend_by_day(grades_current, days)
     by_subject = compute_by_subject(grades_current)
+    # Dashboard refactor: trend by SUBJECT (multi-line) вместо trend by DAY
+    # (был просто шум — средний по всем предметам за день).
+    trend_by_subject = compute_trend_by_subject(grades_current, days)
+    # KPI cards — derived из summary + by_subject (без extra queries).
+    kpis = compute_dashboard_kpis(summary, by_subject, len(grades_current))
+    # Четвертные с прогнозом годовой — primary блок (не collapsible).
+    from src.database_manager import get_quarter_grades
+    quarter_grades = get_quarter_grades(student_id)
+    quarters_with_forecast = compute_quarters_with_forecast(quarter_grades)
+    # Backward compat: оставляем trend_by_day для случая если фронт ещё
+    # старый кэшированный (быстро уберём через 1-2 дня после deploy).
+    trend_by_day = compute_trend_by_day(grades_current, days)
 
     # User info — для приветствия и определения языка.
     # telegram_first_name пишется в parents при /start — приоритетнее, чем fio
@@ -548,9 +719,12 @@ def api_dashboard(student_id):
 
     response_data = {
         "summary": summary,
-        "trend_by_day": trend_by_day,
+        "kpis": kpis,
+        "trend_by_subject": trend_by_subject,
+        "trend_by_day": trend_by_day,  # backward compat — uberём после фронт-deploy
         "by_subject": by_subject,
-        "recent_grades": grades_current[:50],
+        "quarters_with_forecast": quarters_with_forecast,
+        "recent_grades": grades_current[:100],  # был 50 — теперь 100 для drill-down фильтра
         "user": {
             "lang": lang,
             "first_name": first_name,
@@ -617,8 +791,12 @@ def api_dashboard_init():
 
 def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     """Общая логика: собирает данные и генерит PDF bytes + filename.
-    Используется обоими endpoint'ами (GET download + POST send-to-bot)."""
+    Используется обоими endpoint'ами (GET download + POST send-to-bot).
+
+    Dashboard refactor: PDF теперь полный proof-документ — quarters +
+    student class + period range + full history."""
     from webapp.pdf_export import build_dashboard_pdf
+    from src.database_manager import get_quarter_grades
 
     days = max(1, min(days, 365))
     students = get_students_for_parent(telegram_id)
@@ -626,6 +804,14 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     if not student:
         abort(403)
     student_name = student.get("display_name") or student.get("fio") or "ученик"
+    # Класс — часто часть display_name типа "Заур (8 Orion)" — для PDF
+    # вытаскиваем в отдельное поле если можем; иначе пусто.
+    student_class = ''
+    if '(' in student_name and ')' in student_name:
+        try:
+            student_class = student_name[student_name.find('(') + 1:student_name.rfind(')')]
+        except Exception:
+            student_class = ''
     lang = get_user_lang(telegram_id)
 
     all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
@@ -639,6 +825,8 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     grades_previous = [g for g in all_grades if _gd(g) < cutoff_date]
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
+    quarter_grades = get_quarter_grades(student_id)
+    quarters = compute_quarters_with_forecast(quarter_grades)
 
     period_labels = {
         'ru': {7: 'неделя', 14: '2 недели', 30: 'месяц', 90: 'квартал', 365: 'год'},
@@ -650,6 +838,10 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int):
     pdf_bytes = build_dashboard_pdf(
         student_name=student_name, summary=summary, by_subject=by_subject,
         recent=grades_current, period_label=period_label, lang=lang,
+        student_class=student_class,
+        quarters=quarters,
+        period_start=cutoff_date,
+        period_end=today_tashkent.isoformat(),
     )
 
     full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)

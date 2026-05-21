@@ -6,130 +6,140 @@
     <meta name="theme-color" content="#0e1621">
     <title data-i18n="app_title">Дневник</title>
 
-    <!-- Telegram WebApp SDK — обязательно первым -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
-    <!-- Chart.js bundled локально — без CDN, быстрее, не зависит от внешних сетей -->
     <script src="/static/vendor/chart.umd.min.js" defer></script>
 
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preload" href="/static/app.js" as="script">
 </head>
 <body>
-    <!-- ═════════════ SKELETON (показывается до загрузки данных) ═════════════ -->
+    <!-- SKELETON -->
     <div id="skeleton" class="screen">
         <div class="skel-greeting"></div>
-        <div class="skel-hero">
-            <div class="skel-line skel-line-big"></div>
-            <div class="skel-line skel-line-small"></div>
-        </div>
+        <div class="skel-hero"></div>
         <div class="skel-card"></div>
         <div class="skel-card"></div>
     </div>
 
-    <!-- ═════════════ ERROR STATE ═════════════ -->
+    <!-- ERROR STATE -->
     <div id="error" class="screen hidden">
         <div class="error-icon">⚠️</div>
         <p id="error-text" class="error-text" data-i18n="error_generic">Не удалось загрузить</p>
         <button id="error-retry" class="btn-primary" data-i18n="error_retry">Попробовать ещё раз</button>
     </div>
 
-    <!-- ═════════════ MAIN CONTENT ═════════════ -->
+    <!-- ════════════ MAIN CONTENT — Analytical Dashboard ════════════ -->
     <div id="content" class="screen hidden">
 
-        <!-- Greeting + student switcher -->
+        <!-- Header: greeting + student switcher + period toggle -->
         <header class="header">
             <div class="greeting">
                 <span id="greeting-text" data-i18n="greeting_no_name">Дневник</span>
             </div>
-            <div id="student-tabs" class="student-tabs hidden"><!-- табы детей если >1 --></div>
+            <div id="student-tabs" class="student-tabs hidden"></div>
         </header>
 
-        <!-- HERO: средний балл + дельта + статус (primary после dashboard refresh).
-             AI-обзор удалён — все AI-фичи переехали в чат (бот). -->
-        <!-- HERO: средний балл + дельта + статус -->
-        <section class="hero hero-compact" id="hero">
-            <div class="hero-main">
-                <div class="hero-avg" id="hero-avg">—</div>
-                <div class="hero-delta hidden" id="hero-delta">
-                    <span class="delta-arrow"></span>
-                    <span class="delta-value"></span>
-                </div>
-            </div>
-            <div class="hero-meta">
-                <span class="hero-label" data-i18n="hero_average">средний балл</span>
-                <span class="hero-period" id="hero-period"></span>
-            </div>
-            <div class="hero-status" id="hero-status"></div>
-        </section>
-
-        <!-- Period toggle -->
-        <div class="period-toggle" id="period-toggle">
-            <button class="period-btn active" data-days="7" data-i18n="period_week">Неделя</button>
+        <!-- Period toggle — primary control (default = current quarter) -->
+        <div class="period-toggle" id="period-toggle" role="tablist">
+            <button class="period-btn" data-days="7" data-i18n="period_week">Неделя</button>
             <button class="period-btn" data-days="30" data-i18n="period_month">Месяц</button>
+            <button class="period-btn active" data-days="90" data-i18n="period_quarter">Четверть</button>
             <button class="period-btn" data-days="365" data-i18n="period_year">Год</button>
         </div>
 
-        <!-- Тренд по дням -->
-        <section class="card" id="trend-section">
-            <h2 class="card-title" data-i18n="chart_trend_title">Динамика</h2>
-            <div class="chart-wrap">
-                <canvas id="trendChart"></canvas>
+        <!-- KPI row — 4 numerical cards, all visible at a glance (best practice) -->
+        <section class="kpi-row" id="kpi-row">
+            <div class="kpi-card kpi-primary">
+                <div class="kpi-value" id="kpi-avg">—</div>
+                <div class="kpi-label" data-i18n="kpi_avg">Средний</div>
+                <div class="kpi-delta hidden" id="kpi-delta"></div>
             </div>
-            <p id="trend-empty" class="empty-hint hidden" data-i18n="chart_trend_empty"></p>
-        </section>
-
-        <!-- Проблемные предметы (показывается только если есть) -->
-        <section class="card card-warning hidden" id="problems-section">
-            <h2 class="card-title" data-i18n="section_problems">Обратите внимание</h2>
-            <p class="card-subtitle" data-i18n="section_problems_subtitle"></p>
-            <div id="problems-list" class="subjects-list"></div>
-        </section>
-
-        <!-- Топ предметы (если есть) -->
-        <section class="card card-success hidden" id="top-section">
-            <h2 class="card-title" data-i18n="section_top">Сильные стороны</h2>
-            <div id="top-list" class="subjects-list"></div>
-        </section>
-
-        <!-- По предметам — все -->
-        <section class="card collapsible" id="subjects-section">
-            <header class="card-header">
-                <h2 class="card-title" data-i18n="section_subjects">По предметам</h2>
-                <button class="toggle-btn" aria-expanded="false">▾</button>
-            </header>
-            <div class="card-body">
-                <div id="subjects-list" class="subjects-list"></div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-count">—</div>
+                <div class="kpi-label" data-i18n="kpi_grades_count">Оценок за период</div>
+            </div>
+            <div class="kpi-card kpi-good">
+                <div class="kpi-value-small" id="kpi-top-name">—</div>
+                <div class="kpi-value-secondary" id="kpi-top-avg"></div>
+                <div class="kpi-label" data-i18n="kpi_top">Лучший предмет</div>
+            </div>
+            <div class="kpi-card kpi-bad">
+                <div class="kpi-value-small" id="kpi-worst-name">—</div>
+                <div class="kpi-value-secondary" id="kpi-worst-avg"></div>
+                <div class="kpi-label" data-i18n="kpi_worst">Слабее всего</div>
             </div>
         </section>
 
-        <!-- Новое за период (recent grades) -->
-        <section class="card collapsible" id="recent-section">
+        <!-- Status line: одна строка summary вместо traffic light -->
+        <p class="status-line" id="status-line"></p>
+
+        <!-- РАЗДЕЛ: Четвертные с прогнозом годовой (primary, не collapsible) -->
+        <section class="card" id="quarters-section">
             <header class="card-header">
                 <h2 class="card-title">
-                    <span data-i18n="section_recent">Новое за период</span>
-                    <span id="recent-count" class="count-badge"></span>
+                    <span data-i18n="section_quarters">Четвертные оценки</span>
                 </h2>
-                <button class="toggle-btn" aria-expanded="false">▾</button>
+                <p class="card-subtitle" data-i18n="section_quarters_subtitle">с прогнозом годовой</p>
             </header>
             <div class="card-body">
+                <div id="quarters-table-wrap"></div>
+                <p class="empty-hint hidden" id="quarters-empty" data-i18n="quarters_empty">
+                    Четвертных оценок пока нет
+                </p>
+            </div>
+        </section>
+
+        <!-- РАЗДЕЛ: Динамика по предметам (multi-line chart с фильтром) -->
+        <section class="card" id="trend-section">
+            <header class="card-header">
+                <h2 class="card-title" data-i18n="section_trend_by_subject">Динамика по предметам</h2>
+                <p class="card-subtitle" data-i18n="section_trend_subtitle">по неделям</p>
+            </header>
+            <div class="card-body">
+                <div class="chart-wrap">
+                    <canvas id="trendChart"></canvas>
+                </div>
+                <div id="trend-filters" class="trend-filters"></div>
+                <p id="trend-empty" class="empty-hint hidden" data-i18n="chart_trend_empty">
+                    Недостаточно данных
+                </p>
+            </div>
+        </section>
+
+        <!-- РАЗДЕЛ: Все предметы (sortable, clickable for drill-down) -->
+        <section class="card" id="subjects-section">
+            <header class="card-header">
+                <h2 class="card-title" data-i18n="section_all_subjects">Все предметы</h2>
+                <p class="card-subtitle" data-i18n="section_all_subjects_hint">
+                    Тапните строку чтобы посмотреть подробнее
+                </p>
+            </header>
+            <div class="card-body">
+                <div id="subjects-table-wrap"></div>
+            </div>
+        </section>
+
+        <!-- РАЗДЕЛ: Все оценки за период с фильтром -->
+        <section class="card" id="recent-section">
+            <header class="card-header">
+                <h2 class="card-title">
+                    <span data-i18n="section_all_grades">Все оценки за период</span>
+                    <span id="recent-count" class="count-badge"></span>
+                </h2>
+            </header>
+            <div class="card-body">
+                <div class="recent-filter">
+                    <label for="recent-filter" data-i18n="filter_by_subject">Фильтр:</label>
+                    <select id="recent-filter">
+                        <option value="" data-i18n="filter_all_subjects">Все предметы</option>
+                    </select>
+                </div>
                 <div id="recent-list" class="recent-list"></div>
             </div>
         </section>
 
-        <!-- Четверти (lazy-loaded) -->
-        <section class="card collapsible" id="quarters-section">
-            <header class="card-header">
-                <h2 class="card-title" data-i18n="section_quarters">Четвертные</h2>
-                <button class="toggle-btn" aria-expanded="false">▾</button>
-            </header>
-            <div class="card-body">
-                <div id="quarters-table"></div>
-            </div>
-        </section>
-
-        <!-- Итоги учебного года (lazy-loaded по клику) -->
-        <section class="card collapsible card-year-report" id="year-section">
+        <!-- РАЗДЕЛ: Итоги учебного года (collapsible, auto-open в апреле-июне) -->
+        <section class="card collapsible" id="year-section">
             <header class="card-header">
                 <h2 class="card-title">
                     🎓 <span data-i18n="section_year_report">Итоги учебного года</span>
@@ -137,8 +147,8 @@
                 <button class="toggle-btn" aria-expanded="false">▾</button>
             </header>
             <div class="card-body">
-                <div id="year-loading" class="hidden" data-i18n="year_loading">Загружаю итоги года…</div>
-                <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
+                <div id="year-loading" class="hidden" data-i18n="year_loading">Загружаю…</div>
+                <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных</div>
                 <div id="year-content" class="hidden">
                     <div class="year-hero">
                         <div class="year-avg" id="year-avg">—</div>
@@ -154,11 +164,11 @@
                         </div>
                         <div class="year-stat">
                             <div class="year-stat-value" id="year-growth">—</div>
-                            <div class="year-stat-label" data-i18n="year_growth_label">динамика года</div>
+                            <div class="year-stat-label" data-i18n="year_growth_label">динамика</div>
                         </div>
                         <div class="year-stat">
                             <div class="year-stat-value" id="year-streak">—</div>
-                            <div class="year-stat-label" data-i18n="year_streak_label">лучшая серия 5</div>
+                            <div class="year-stat-label" data-i18n="year_streak_label">серия 5</div>
                         </div>
                     </div>
                     <div class="year-best-worst">
@@ -171,30 +181,60 @@
                             <span class="year-month-name" id="year-worst-month">—</span>
                         </div>
                     </div>
-                    <div class="year-subjects">
-                        <h3 data-i18n="year_top_subjects">Сильные предметы</h3>
-                        <div id="year-top-subjects" class="subjects-list"></div>
-                    </div>
-                    <div class="year-subjects year-subjects-problem hidden" id="year-problem-wrap">
-                        <h3 data-i18n="year_problem_subjects">Над чем работать летом</h3>
-                        <div id="year-problem-subjects" class="subjects-list"></div>
-                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Action bar: Поделиться + Экспорт PDF.
-             AI-чат удалён — переехал в бота (Telegram) после dashboard refresh. -->
+        <!-- Action bar — только PDF (Share убран) + переход в AI чат -->
         <section class="action-bar" id="action-bar">
-            <button id="btn-share" class="btn-action" type="button"
-                    data-i18n="action_share">📤 Поделиться</button>
-            <button id="btn-export-pdf" class="btn-action" type="button"
-                    data-i18n="action_export_pdf">📄 PDF</button>
+            <button id="btn-export-pdf" class="btn-action btn-action-primary" type="button"
+                    data-i18n="action_export_pdf">📄 Экспорт PDF</button>
+            <button id="btn-open-ai" class="btn-action" type="button"
+                    data-i18n="action_open_ai">💬 Спросить AI</button>
         </section>
 
-        <!-- Hint: если непонятно — задай вопрос AI в боте -->
         <p class="dashboard-footer-hint" data-i18n="dashboard_ai_hint"></p>
 
+    </div>
+
+    <!-- ════════════ DRILL-DOWN SCREEN (по предмету) ════════════ -->
+    <div id="drilldown" class="screen hidden">
+        <header class="header drilldown-header">
+            <button id="drilldown-back" class="btn-back" type="button">←</button>
+            <div class="drilldown-title" id="drilldown-title">Предмет</div>
+        </header>
+
+        <section class="kpi-row">
+            <div class="kpi-card kpi-primary">
+                <div class="kpi-value" id="dd-avg">—</div>
+                <div class="kpi-label" data-i18n="kpi_avg">Средний</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="dd-count">—</div>
+                <div class="kpi-label" data-i18n="kpi_grades_count">Оценок</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="dd-trend">—</div>
+                <div class="kpi-label" data-i18n="kpi_trend">Тренд</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <header class="card-header">
+                <h2 class="card-title" data-i18n="dd_history">История оценок</h2>
+            </header>
+            <div class="card-body">
+                <div class="chart-wrap chart-wrap-small">
+                    <canvas id="ddChart"></canvas>
+                </div>
+                <div id="dd-grades-list" class="recent-list"></div>
+            </div>
+        </section>
+
+        <section class="action-bar">
+            <button id="dd-btn-ask-ai" class="btn-action btn-action-primary" type="button"
+                    data-i18n="action_ask_ai_subject">💬 Спросить AI про этот предмет</button>
+        </section>
     </div>
 
     <script src="/static/app.js"></script>

@@ -94,12 +94,20 @@ async function boot() {
             boot();
         });
 
-        // Dashboard refresh: action bar (Поделиться + PDF)
+        // Dashboard refresh: action bar (PDF + AI deep-link). Share убран.
         setupActionBar();
+
+        // Drill-down hash router (#subject/<name>) + back button
+        window.addEventListener("hashchange", _handleHashChange);
+        const ddBack = document.getElementById("drilldown-back");
+        if (ddBack) ddBack.addEventListener("click", closeDrilldown);
 
         // Показать контент, скрыть скелетон
         hide("skeleton");
         show("content");
+
+        // Если открыт URL с hash — сразу показать drill-down
+        if (window.location.hash) _handleHashChange();
     } catch (e) {
         console.error("Boot failed", e);
         showError(t("error_generic") + ": " + e.message);
@@ -214,188 +222,346 @@ function renderStudentTabs(students) {
 }
 
 function renderDashboard() {
+    // Radical refactor: analytical dashboard structure.
+    // 1) KPIs row (4 cards) — заменил hero
+    // 2) Status line — одна строка
+    // 3) Quarters primary (data из основного response, не lazy)
+    // 4) Multi-line trend by subject (заменил trend by day)
+    // 5) All-subjects sortable table (click → drill-down)
+    // 6) All-grades с фильтром по предмету
+    // 7) Year report остаётся (auto-expand в апреле-июне)
     const d = state.dashboard;
     if (!d) return;
 
-    renderHero(d.summary);
-    renderTrend(d.trend_by_day);
-    renderProblems(d.summary.problem_subjects);
-    renderTop(d.summary.top_subjects);
-    renderSubjects(d.by_subject);
-    renderRecent(d.recent_grades);
+    renderKpis(d.kpis || {}, d.summary || {});
+    renderStatusLine(d.summary || {});
+    renderQuartersBlock(d.quarters_with_forecast || []);
+    renderTrendBySubject(d.trend_by_subject || []);
+    renderSubjectsTable(d.by_subject || []);
+    renderAllGrades(d.recent_grades || []);
 
     // Mark студента как просмотренного — для подсветки "новое" в следующий заход
     localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
 
-    // Quarters: lazy при раскрытии секции
-    setupQuartersLazy();
-    // Year report: lazy при раскрытии секции
+    // Year report: lazy + auto-expand в конце учебного года (апрель-июнь)
     setupYearReportLazy();
-    // Dashboard refresh: chat-section и AI-обзор удалены. Action bar
-    // (Поделиться + PDF) монтируется отдельно при init (см. setupActionBar).
+    _maybeAutoExpandYearReport();
 }
 
-function renderHero(summary) {
-    const avgEl = document.getElementById("hero-avg");
-    const deltaEl = document.getElementById("hero-delta");
-    const periodEl = document.getElementById("hero-period");
-    const statusEl = document.getElementById("hero-status");
+function _maybeAutoExpandYearReport() {
+    const month = new Date().getMonth() + 1;  // 1-12
+    if (month >= 4 && month <= 6) {
+        const section = document.getElementById("year-section");
+        if (section && !section.classList.contains("open")) {
+            toggleSection(section);
+        }
+    }
+}
 
-    if (summary.current_avg === null) {
+// ═════════ KPI ROW (4 cards) ═════════
+function renderKpis(kpis, summary) {
+    const avgEl = document.getElementById("kpi-avg");
+    const deltaEl = document.getElementById("kpi-delta");
+    const countEl = document.getElementById("kpi-count");
+    const topNameEl = document.getElementById("kpi-top-name");
+    const topAvgEl = document.getElementById("kpi-top-avg");
+    const worstNameEl = document.getElementById("kpi-worst-name");
+    const worstAvgEl = document.getElementById("kpi-worst-avg");
+
+    // Avg
+    const avg = kpis.current_avg ?? summary.current_avg;
+    if (avg == null) {
         avgEl.textContent = "—";
-        avgEl.classList.add("muted");
+        avgEl.className = "kpi-value muted";
         deltaEl.classList.add("hidden");
-        periodEl.textContent = t("hero_no_grades");
-        statusEl.textContent = t("hero_no_grades_hint");
-        statusEl.className = "hero-status";
+    } else {
+        avgEl.textContent = avg.toFixed(2);
+        avgEl.className = "kpi-value " + gradeColorClass(avg);
+        const delta = kpis.delta ?? summary.delta;
+        if (delta != null && Math.abs(delta) >= 0.05) {
+            deltaEl.classList.remove("hidden");
+            deltaEl.classList.toggle("delta-up", delta > 0);
+            deltaEl.classList.toggle("delta-down", delta < 0);
+            deltaEl.textContent = `${delta > 0 ? "↑+" : "↓"}${Math.abs(delta).toFixed(2)}`;
+        } else {
+            deltaEl.classList.add("hidden");
+        }
+    }
+
+    // Count
+    countEl.textContent = kpis.total_grades ?? "—";
+
+    // Top
+    if (kpis.top_subject) {
+        topNameEl.textContent = kpis.top_subject.name;
+        topAvgEl.textContent = kpis.top_subject.avg.toFixed(2);
+    } else {
+        topNameEl.textContent = "—";
+        topAvgEl.textContent = "";
+    }
+
+    // Worst
+    if (kpis.worst_subject) {
+        worstNameEl.textContent = kpis.worst_subject.name;
+        worstAvgEl.textContent = kpis.worst_subject.avg.toFixed(2);
+        worstAvgEl.className = "kpi-value-secondary " + gradeColorClass(kpis.worst_subject.avg);
+    } else {
+        worstNameEl.textContent = "—";
+        worstAvgEl.textContent = "";
+    }
+}
+
+function renderStatusLine(summary) {
+    const el = document.getElementById("status-line");
+    if (!el) return;
+    if (summary.current_avg == null) {
+        el.textContent = t("hero_no_grades_hint") || "";
+        el.className = "status-line";
         return;
     }
-
-    avgEl.textContent = summary.current_avg.toFixed(1);
-    avgEl.classList.remove("muted");
-
-    // Цвет hero по среднему
-    avgEl.className = "hero-avg " + gradeColorClass(summary.current_avg);
-
-    // Дельта
-    if (summary.delta !== null && Math.abs(summary.delta) >= 0.05) {
-        deltaEl.classList.remove("hidden");
-        deltaEl.classList.toggle("delta-up", summary.delta > 0);
-        deltaEl.classList.toggle("delta-down", summary.delta < 0);
-        deltaEl.querySelector(".delta-arrow").textContent = summary.delta > 0 ? "↑" : "↓";
-        deltaEl.querySelector(".delta-value").textContent =
-            `${summary.delta > 0 ? "+" : ""}${summary.delta.toFixed(1)}`;
-    } else {
-        deltaEl.classList.add("hidden");
-    }
-
-    periodEl.textContent = formatPeriod(summary.period_start, summary.period_end);
-
-    // Status строка
-    statusEl.textContent = t(`status_${summary.status}`);
-    statusEl.className = "hero-status status-" + summary.status;
+    el.textContent = t(`status_${summary.status}`) || "";
+    el.className = "status-line status-" + (summary.status || "stable");
 }
 
 // Dashboard refresh: SUGGESTED_PROMPTS, renderInsight, _openChatWithPrompt
 // удалены. AI-фичи (insight + suggested prompts + chat) теперь только в
 // боте — webapp дашборд только данные + Share/PDF.
 
-function renderTrend(trendData) {
+// Multi-line trend BY SUBJECT (заменил старый trend by day — был шумом).
+// Каждая линия = один предмет, точки по неделям. Фильтр-чекбоксы под графиком.
+const _TREND_PALETTE = [
+    "#6366F1", "#10B981", "#F59E0B", "#EF4444", "#0EA5E9",
+    "#8B5CF6", "#EC4899", "#14B8A6",
+];
+
+function renderTrendBySubject(trendBySubject) {
     const ctx = document.getElementById("trendChart")?.getContext("2d");
     const emptyHint = document.getElementById("trend-empty");
-    const trendSection = document.getElementById("trend-section");
+    const filtersEl = document.getElementById("trend-filters");
     if (!ctx) return;
 
-    if (state.trendChart) {
-        state.trendChart.destroy();
-        state.trendChart = null;
-    }
+    if (state.trendChart) { state.trendChart.destroy(); state.trendChart = null; }
 
-    if (!trendData || trendData.length < 2) {
+    if (!trendBySubject || trendBySubject.length === 0) {
         emptyHint.classList.remove("hidden");
         ctx.canvas.classList.add("hidden");
+        if (filtersEl) filtersEl.innerHTML = "";
         return;
     }
     emptyHint.classList.add("hidden");
     ctx.canvas.classList.remove("hidden");
 
-    const themeColor = getThemeColor("--tg-theme-button-color", "#2481cc");
-    const labels = trendData.map(d => formatDateShort(d.date));
-    const values = trendData.map(d => d.avg);
+    // Собираем union всех week-точек чтобы Chart.js мог их align'нуть
+    const weekSet = new Set();
+    trendBySubject.forEach(line => line.points.forEach(p => weekSet.add(p.week)));
+    const weeks = Array.from(weekSet).sort();
+    const labels = weeks.map(w => formatDateShort(w));
+
+    state._trendSubjectsState = state._trendSubjectsState || {};
+    const datasets = trendBySubject.map((line, i) => {
+        const color = _TREND_PALETTE[i % _TREND_PALETTE.length];
+        // По умолчанию все видны; per-subject hide через filter buttons
+        const hidden = state._trendSubjectsState[line.subject] === false;
+        const valuesByWeek = Object.fromEntries(line.points.map(p => [p.week, p.avg]));
+        return {
+            label: line.subject,
+            data: weeks.map(w => valuesByWeek[w] ?? null),
+            borderColor: color,
+            backgroundColor: hexToRgba(color, 0.1),
+            tension: 0.25,
+            spanGaps: true,
+            pointRadius: 3,
+            hidden,
+        };
+    });
 
     state.trendChart = new Chart(ctx, {
         type: "line",
-        data: {
-            labels,
-            datasets: [{
-                data: values,
-                borderColor: themeColor,
-                backgroundColor: hexToRgba(themeColor, 0.12),
-                fill: true,
-                tension: 0.35,
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                pointBackgroundColor: themeColor,
-                pointBorderColor: "#fff",
-                pointBorderWidth: 2,
-                borderWidth: 2.5,
-            }]
-        },
+        data: { labels, datasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 600, easing: "easeOutQuart" },
-            scales: {
-                y: { min: 1, max: 5, ticks: { stepSize: 1, color: getThemeColor("--tg-theme-hint-color", "#aaa") }, grid: { color: hexToRgba(getThemeColor("--tg-theme-hint-color", "#aaa"), 0.1) } },
-                x: { ticks: { color: getThemeColor("--tg-theme-hint-color", "#aaa"), maxRotation: 0, autoSkip: true, maxTicksLimit: 7 }, grid: { display: false } }
-            },
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
             plugins: {
-                legend: { display: false },
+                legend: { display: false },  // у нас свои filter-кнопки
                 tooltip: {
-                    backgroundColor: getThemeColor("--tg-theme-bg-color", "#000"),
-                    titleColor: getThemeColor("--tg-theme-text-color", "#fff"),
-                    bodyColor: getThemeColor("--tg-theme-text-color", "#fff"),
-                    borderColor: themeColor,
-                    borderWidth: 1,
-                }
-            }
-        }
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(2) ?? "—"}`,
+                    },
+                },
+            },
+            scales: {
+                y: { min: 1, max: 5, ticks: { stepSize: 1 } },
+                x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } },
+            },
+        },
+    });
+
+    // Filter кнопки — toggle visibility per subject
+    if (filtersEl) {
+        filtersEl.innerHTML = trendBySubject.map((line, i) => {
+            const color = _TREND_PALETTE[i % _TREND_PALETTE.length];
+            const isOff = state._trendSubjectsState[line.subject] === false;
+            return `<button class="trend-filter-btn ${isOff ? "off" : ""}"
+                            data-subject="${escapeHtml(line.subject)}"
+                            style="--dot:${color}">
+                        <span class="trend-dot"></span>${escapeHtml(line.subject)}
+                    </button>`;
+        }).join("");
+        filtersEl.querySelectorAll(".trend-filter-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const subj = btn.dataset.subject;
+                const wasOff = state._trendSubjectsState[subj] === false;
+                state._trendSubjectsState[subj] = wasOff;  // toggle
+                renderTrendBySubject(trendBySubject);
+            });
+        });
+    }
+
+}
+
+// ═════════ QUARTERS BLOCK (primary) ═════════
+function renderQuartersBlock(quarters) {
+    const wrap = document.getElementById("quarters-table-wrap");
+    const empty = document.getElementById("quarters-empty");
+    if (!wrap) return;
+
+    if (!quarters || quarters.length === 0) {
+        wrap.innerHTML = "";
+        if (empty) empty.classList.remove("hidden");
+        return;
+    }
+    if (empty) empty.classList.add("hidden");
+
+    const headers = [
+        t("col_subject") || "Предмет",
+        "1ч", "2ч", "3ч", "4ч",
+        t("col_year") || "Год",
+        t("col_trend") || "Тренд",
+    ];
+
+    const rows = quarters.map(q => {
+        const cell = (val, isForecast) => {
+            if (val == null || val === '') return `<td class="qr-cell muted">—</td>`;
+            const cls = isForecast ? "qr-cell qr-forecast" : "qr-cell";
+            return `<td class="${cls}">${escapeHtml(String(val))}</td>`;
+        };
+        const trendSym = q.trend === 'up' ? '↑' : q.trend === 'down' ? '↓' : '→';
+        const trendCls = q.trend === 'up' ? 'trend-up' : q.trend === 'down' ? 'trend-down' : 'trend-flat';
+        return `<tr class="qr-row" data-subject="${escapeHtml(q.subject)}">
+            <td class="qr-subject">${escapeHtml(q.subject)}</td>
+            ${cell(q.q1)}${cell(q.q2)}${cell(q.q3)}${cell(q.q4)}
+            ${cell(q.year, q.year_is_forecast)}
+            <td class="qr-trend ${trendCls}">${trendSym}</td>
+        </tr>`;
+    }).join("");
+
+    wrap.innerHTML = `<table class="qr-table">
+        <thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+        <tbody>${rows}</tbody>
+    </table>
+    <p class="qr-note muted">${escapeHtml(t("quarters_forecast_note") || "")}</p>`;
+
+    // Click row → drill-down
+    wrap.querySelectorAll(".qr-row").forEach(tr => {
+        tr.addEventListener("click", () => openDrilldown(tr.dataset.subject));
     });
 }
 
-function renderProblems(problems) {
-    const section = document.getElementById("problems-section");
-    const list = document.getElementById("problems-list");
-    if (!problems || problems.length === 0) {
-        section.classList.add("hidden");
-        return;
-    }
-    section.classList.remove("hidden");
-    list.innerHTML = problems.map(s => subjectRow(s, "warning")).join("");
-}
-
-function renderTop(top) {
-    const section = document.getElementById("top-section");
-    const list = document.getElementById("top-list");
-    if (!top || top.length === 0) {
-        section.classList.add("hidden");
-        return;
-    }
-    section.classList.remove("hidden");
-    list.innerHTML = top.map(s => subjectRow(s, "success")).join("");
-}
-
-function renderSubjects(subjects) {
-    const list = document.getElementById("subjects-list");
+// ═════════ ALL SUBJECTS TABLE (sortable + clickable) ═════════
+function renderSubjectsTable(subjects) {
+    const wrap = document.getElementById("subjects-table-wrap");
+    if (!wrap) return;
     if (!subjects || subjects.length === 0) {
-        list.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
+        wrap.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
         return;
     }
-    list.innerHTML = subjects.map(s => subjectRow(s, "neutral")).join("");
+
+    state._subjectsSort = state._subjectsSort || { key: 'avg', dir: 'desc' };
+    const sortKey = state._subjectsSort.key;
+    const sortDir = state._subjectsSort.dir;
+    const sorted = subjects.slice().sort((a, b) => {
+        let av = a[sortKey], bv = b[sortKey];
+        if (typeof av === 'string') av = av.toLocaleLowerCase();
+        if (typeof bv === 'string') bv = bv.toLocaleLowerCase();
+        const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+        return sortDir === 'desc' ? -cmp : cmp;
+    });
+
+    const headers = [
+        { key: 'name', label: t("col_subject") || "Предмет" },
+        { key: 'avg', label: t("col_avg") || "Средний" },
+        { key: 'count', label: t("col_count") || "Кол-во" },
+        { key: 'last_grade', label: t("col_last") || "Последняя", noSort: true },
+        { key: 'trend', label: t("col_trend") || "Тренд", noSort: true },
+    ];
+
+    const ths = headers.map(h => {
+        const arrow = (h.key === sortKey) ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
+        return `<th data-sort="${h.noSort ? '' : h.key}" class="${h.noSort ? '' : 'sortable'}">${escapeHtml(h.label)}${arrow}</th>`;
+    }).join("");
+
+    const rows = sorted.map(s => {
+        const avgCls = gradeColorClass(s.avg);
+        const trendSym = s.trend === 'up' ? '↑' : s.trend === 'down' ? '↓' : '→';
+        const trendCls = s.trend === 'up' ? 'trend-up' : s.trend === 'down' ? 'trend-down' : 'trend-flat';
+        const lastDate = s.last_date ? `<span class="muted small">${escapeHtml(s.last_date.slice(5))}</span>` : '';
+        return `<tr class="subj-table-row" data-subject="${escapeHtml(s.name)}">
+            <td>${escapeHtml(s.name)}</td>
+            <td class="${avgCls}">${s.avg.toFixed(2)}</td>
+            <td>${s.count}</td>
+            <td>${escapeHtml(s.last_grade || '—')} ${lastDate}</td>
+            <td class="${trendCls}">${trendSym}</td>
+        </tr>`;
+    }).join("");
+
+    wrap.innerHTML = `<table class="subj-table">
+        <thead><tr>${ths}</tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+
+    // Sort handlers
+    wrap.querySelectorAll("th.sortable").forEach(th => {
+        th.addEventListener("click", () => {
+            const k = th.dataset.sort;
+            if (state._subjectsSort.key === k) {
+                state._subjectsSort.dir = state._subjectsSort.dir === 'desc' ? 'asc' : 'desc';
+            } else {
+                state._subjectsSort.key = k;
+                state._subjectsSort.dir = 'desc';
+            }
+            renderSubjectsTable(subjects);
+        });
+    });
+    // Drill-down on row click
+    wrap.querySelectorAll(".subj-table-row").forEach(tr => {
+        tr.addEventListener("click", () => openDrilldown(tr.dataset.subject));
+    });
 }
 
-function subjectRow(subj, _accent) {
-    const colorClass = gradeColorClass(subj.avg);
-    const deltaHtml = subj.delta !== null && subj.delta !== undefined && Math.abs(subj.delta) >= 0.1
-        ? `<span class="subj-delta ${subj.delta > 0 ? "up" : "down"}">${subj.delta > 0 ? "↑" : "↓"} ${Math.abs(subj.delta).toFixed(1)}</span>`
-        : "";
-    return `
-        <div class="subj-row">
-            <span class="subj-name">${escapeHtml(subj.name)}</span>
-            <span class="subj-meta">
-                ${deltaHtml}
-                <span class="subj-avg ${colorClass}">${subj.avg.toFixed(1)}</span>
-            </span>
-        </div>
-    `;
-}
-
-function renderRecent(grades) {
+// ═════════ ALL GRADES (with subject filter) ═════════
+function renderAllGrades(grades) {
     const list = document.getElementById("recent-list");
     const countBadge = document.getElementById("recent-count");
+    const filter = document.getElementById("recent-filter");
+    if (!list) return;
+
     countBadge.textContent = `(${grades.length})`;
 
-    if (!grades || grades.length === 0) {
+    // Populate filter dropdown
+    if (filter && filter.options.length <= 1) {
+        const subjects = Array.from(new Set(grades.map(g => g.subject))).sort();
+        subjects.forEach(s => {
+            const opt = document.createElement("option");
+            opt.value = s; opt.textContent = s;
+            filter.appendChild(opt);
+        });
+        filter.addEventListener("change", () => renderAllGrades(grades));
+    }
+
+    const selected = filter ? filter.value : "";
+    const filtered = selected ? grades.filter(g => g.subject === selected) : grades;
+
+    if (filtered.length === 0) {
         list.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
         return;
     }
@@ -403,82 +569,128 @@ function renderRecent(grades) {
     const lastSeenStr = localStorage.getItem(LAST_SEEN_KEY(state.currentStudentId));
     const lastSeen = lastSeenStr ? new Date(lastSeenStr) : new Date(0);
 
-    list.innerHTML = grades.map(g => {
-        const isNew = new Date(g.date_added) > lastSeen;
+    list.innerHTML = filtered.map(g => {
+        const isNew = g.date_added && new Date(g.date_added) > lastSeen;
         const colorClass = g.grade_value !== null ? gradeColorClass(g.grade_value) : "grade-text";
         const value = g.raw_text || (g.grade_value !== null ? g.grade_value : "—");
-        const newBadge = isNew ? `<span class="badge-new">${t("badge_new")}</span>` : "";
-        return `
-            <div class="recent-row ${isNew ? "is-new" : ""}">
-                <span class="recent-date">${formatDateShort(g.date_added)}</span>
-                <span class="recent-subject">${escapeHtml(g.subject)}${newBadge}</span>
-                <span class="recent-grade ${colorClass}">${escapeHtml(String(value))}</span>
-            </div>
-        `;
+        const newBadge = isNew ? `<span class="badge-new">${t("badge_new") || "новое"}</span>` : "";
+        const date = g.grade_date || (g.date_added ? g.date_added.slice(0, 10) : '');
+        return `<div class="recent-row ${isNew ? "is-new" : ""}">
+            <span class="recent-date">${escapeHtml(date)}</span>
+            <span class="recent-subject">${escapeHtml(g.subject)}${newBadge}</span>
+            <span class="recent-grade ${colorClass}">${escapeHtml(String(value))}</span>
+        </div>`;
     }).join("");
 }
 
-// ============ QUARTERS — LAZY ============
-
-function setupQuartersLazy() {
-    const section = document.getElementById("quarters-section");
-    const body = section.querySelector(".card-body");
-    const toggleBtn = section.querySelector(".toggle-btn");
-
-    // Если уже загружено и UI открыт — рендерим. Иначе — ждём первого раскрытия.
-    section.addEventListener("toggle:open", async () => {
-        if (state.quarters !== null || state.quartersLoading) return;
-        state.quartersLoading = true;
-        try {
-            state.quarters = await fetchJSON(`/api/quarters/${state.currentStudentId}`);
-            renderQuartersTable();
-        } catch (e) {
-            console.warn("Quarters load failed", e);
-            body.innerHTML = `<p class="empty-hint">${t("error_generic")}</p>`;
-        } finally {
-            state.quartersLoading = false;
-        }
-    }, { once: true });
+// ═════════ DRILL-DOWN by SUBJECT ═════════
+function openDrilldown(subject) {
+    if (!subject) return;
+    window.location.hash = `subject/${encodeURIComponent(subject)}`;
 }
 
-function renderQuartersTable() {
-    const container = document.getElementById("quarters-table");
-    const quarters = state.quarters;
-    if (!quarters || quarters.length === 0) {
-        container.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
-        return;
+function renderDrilldown(subject) {
+    const d = state.dashboard;
+    if (!d) return;
+
+    const grades = (d.recent_grades || []).filter(g => g.subject === subject);
+    const subj = (d.by_subject || []).find(s => s.name === subject);
+
+    document.getElementById("drilldown-title").textContent = subject;
+    document.getElementById("dd-avg").textContent = subj ? subj.avg.toFixed(2) : "—";
+    document.getElementById("dd-avg").className = "kpi-value " + (subj ? gradeColorClass(subj.avg) : "muted");
+    document.getElementById("dd-count").textContent = subj ? subj.count : grades.length;
+    const trendEl = document.getElementById("dd-trend");
+    if (subj) {
+        trendEl.textContent = subj.trend === 'up' ? '↑' : subj.trend === 'down' ? '↓' : '→';
+        trendEl.className = "kpi-value " + (subj.trend === 'up' ? 'trend-up' : subj.trend === 'down' ? 'trend-down' : 'trend-flat');
+    } else {
+        trendEl.textContent = "—";
     }
 
-    const qNames = {
-        1: t("quarter_1"), 2: t("quarter_2"), 3: t("quarter_3"),
-        4: t("quarter_4"), 5: t("quarter_year"),
-    };
-
-    const bySubject = {};
-    quarters.forEach(q => {
-        if (!bySubject[q.subject]) bySubject[q.subject] = {};
-        bySubject[q.subject][q.quarter] = q;
-    });
-
-    let html = `<div class="quarter-grid"><div class="qr-header"><span></span>`;
-    for (let i = 1; i <= 5; i++) html += `<span>${qNames[i]}</span>`;
-    html += `</div>`;
-
-    for (const [subject, qmap] of Object.entries(bySubject)) {
-        html += `<div class="qr-row"><span class="qr-subject">${escapeHtml(subject)}</span>`;
-        for (let i = 1; i <= 5; i++) {
-            const q = qmap[i];
-            if (q && q.raw_text) {
-                const cls = q.grade_value !== null ? gradeColorClass(q.grade_value) : "grade-text";
-                html += `<span class="${cls}">${escapeHtml(q.raw_text)}</span>`;
-            } else {
-                html += `<span class="muted">—</span>`;
-            }
-        }
-        html += `</div>`;
+    // Chart по этому предмету (line)
+    const ctx = document.getElementById("ddChart")?.getContext("2d");
+    if (state.ddChart) { state.ddChart.destroy(); state.ddChart = null; }
+    if (ctx && grades.length > 1) {
+        const sorted = grades.slice().sort((a, b) => {
+            const da = a.grade_date || a.date_added || '';
+            const db = b.grade_date || b.date_added || '';
+            return da < db ? -1 : da > db ? 1 : 0;
+        });
+        state.ddChart = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: sorted.map(g => (g.grade_date || g.date_added || '').slice(5, 10)),
+                datasets: [{
+                    label: subject,
+                    data: sorted.map(g => g.grade_value),
+                    borderColor: "#6366F1",
+                    backgroundColor: "rgba(99,102,241,0.12)",
+                    fill: true, tension: 0.3, pointRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { y: { min: 1, max: 5, ticks: { stepSize: 1 } } },
+            },
+        });
     }
-    html += `</div>`;
-    container.innerHTML = html;
+
+    // List all grades (chronological DESC)
+    const listEl = document.getElementById("dd-grades-list");
+    if (listEl) {
+        listEl.innerHTML = grades.slice().sort((a, b) => {
+            const da = a.grade_date || a.date_added || '';
+            const db = b.grade_date || b.date_added || '';
+            return db < da ? -1 : db > da ? 1 : 0;
+        }).map(g => {
+            const colorClass = g.grade_value !== null ? gradeColorClass(g.grade_value) : "grade-text";
+            const value = g.raw_text || g.grade_value || '—';
+            const date = g.grade_date || (g.date_added ? g.date_added.slice(0, 10) : '');
+            return `<div class="recent-row">
+                <span class="recent-date">${escapeHtml(date)}</span>
+                <span class="recent-subject">${escapeHtml(subject)}</span>
+                <span class="recent-grade ${colorClass}">${escapeHtml(String(value))}</span>
+            </div>`;
+        }).join("");
+    }
+
+    // AI deep-link with pre-filled question про этот предмет
+    const askBtn = document.getElementById("dd-btn-ask-ai");
+    if (askBtn) {
+        askBtn.onclick = () => _openBotChatWithQuestion(`Расскажи про ${subject}`);
+    }
+}
+
+function closeDrilldown() {
+    window.location.hash = '';
+}
+
+function _handleHashChange() {
+    const hash = window.location.hash.slice(1);
+    if (hash.startsWith('subject/')) {
+        const subject = decodeURIComponent(hash.slice('subject/'.length));
+        hide("content");
+        show("drilldown");
+        renderDrilldown(subject);
+    } else {
+        hide("drilldown");
+        show("content");
+    }
+}
+
+function _openBotChatWithQuestion(question) {
+    // Открыть бот-чат с pre-filled вопросом. Telegram WebApp:
+    // tg.close() + bot отправит сообщение с suggestion?
+    // Простейший вариант: t.me/<bot_username>?start=ask_<encoded_question>
+    // Но bot_username нам не передан в frontend.
+    // MVP: просто tg.close() — юзер увидит бота, может задать вопрос сам.
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg) {
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+        if (tg.close) tg.close();
+    }
 }
 
 // ============ YEAR REPORT — LAZY ============
@@ -641,57 +853,17 @@ function escapeHtml(text) {
 // ============ ACTION BAR (Dashboard refresh) ============
 
 function setupActionBar() {
-    const shareBtn = document.getElementById("btn-share");
+    // Radical refactor: Share убран (use case слабый). Остались PDF
+    // (полный proof-документ через bot) + AI deep-link.
     const pdfBtn = document.getElementById("btn-export-pdf");
-    if (shareBtn) shareBtn.addEventListener("click", handleShare);
     if (pdfBtn) pdfBtn.addEventListener("click", handleExportPdf);
+    const aiBtn = document.getElementById("btn-open-ai");
+    if (aiBtn) aiBtn.addEventListener("click", () => _openBotChatWithQuestion(""));
 }
 
-function _buildShareText() {
-    // Краткая текстовая выжимка дашборда — для Telegram share. Собираем
-    // только из state.dashboard (уже загружено).
-    const d = state.dashboard;
-    if (!d) return "";
-
-    const student = state.students.find(s => s.id === state.currentStudentId);
-    const name = student ? (student.display_name || student.fio) : "Ученик";
-    const summary = d.summary || {};
-    const lines = [];
-
-    lines.push(`📊 ${name}`);
-    if (summary.current_avg != null) {
-        const delta = summary.delta;
-        let deltaStr = "";
-        if (delta != null && Math.abs(delta) >= 0.05) {
-            deltaStr = ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)})`;
-        }
-        lines.push(`${t("hero_average")}: ${summary.current_avg.toFixed(1)}${deltaStr}`);
-    }
-    const tops = (summary.top_subjects || []).slice(0, 2).map(s => s.name).join(", ");
-    if (tops) lines.push(`✨ ${t("section_top")}: ${tops}`);
-    const problems = (summary.problem_subjects || []).slice(0, 2).map(s => s.name).join(", ");
-    if (problems) lines.push(`⚠️ ${t("section_problems")}: ${problems}`);
-
-    lines.push("");
-    lines.push("— GradeSentinel");
-    return lines.join("\n");
-}
-
-function handleShare() {
-    const text = _buildShareText();
-    if (!text) return;
-    // Telegram t.me/share/url — стандартный share-link, открывает диалог
-    // выбора чата. url оставляем пустым (нет публичного permalink),
-    // text передаём через query.
-    const shareUrl = `https://t.me/share/url?url=&text=${encodeURIComponent(text)}`;
-    const tg = window.Telegram && window.Telegram.WebApp;
-    if (tg && typeof tg.openTelegramLink === "function") {
-        tg.openTelegramLink(shareUrl);
-        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-    } else {
-        window.open(shareUrl, "_blank");
-    }
-}
+// Dashboard refactor: _buildShareText / handleShare удалены — Share use case
+// слабый (см. user feedback). PDF (через bot) теперь основной way делиться
+// данными.
 
 async function handleExportPdf() {
     // Стратегия: POST /pdf/send → backend генерит PDF и шлёт его как
