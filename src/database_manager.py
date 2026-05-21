@@ -287,6 +287,26 @@ def init_db():
             'ON ai_chat_messages(telegram_id, student_id, created_at)'
         )
 
+        # 10c. AI feedback (PR_H3). 👍/👎 на каждый assistant ответ.
+        # message_id UNIQUE — один feedback на сообщение (UPSERT при смене).
+        # telegram_id дублируется для analytics-запросов без JOIN.
+        # rating: 1 (👍) или -1 (👎). comment — резерв для free-form.
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ai_chat_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL UNIQUE,
+            telegram_id INTEGER NOT NULL,
+            rating INTEGER NOT NULL,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(message_id) REFERENCES ai_chat_messages(id) ON DELETE CASCADE
+        )
+        ''')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_ai_feedback_tg_created '
+            'ON ai_chat_feedback(telegram_id, created_at)'
+        )
+
         # 11. Миграция: колонка lang для мультиязычности
         if _table_exists(cursor, 'parents'):
             cursor.execute("PRAGMA table_info(parents)")
@@ -565,6 +585,9 @@ from src.db.ai_chat import (  # noqa: E402, F401
     save_chat_message,
     get_recent_chat_history,
     clear_chat_history,
+    save_feedback,
+    get_feedback_for_message,
+    get_message_owner,
     MAX_HISTORY_FOR_AI,
 )
 

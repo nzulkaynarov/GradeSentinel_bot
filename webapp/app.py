@@ -745,16 +745,21 @@ def api_chat():
     if not answer:
         return jsonify({"answer": None, "error": "no_response"}), 503
 
-    # Сохраняем assistant message в history (для follow-up turn'ов)
-    save_chat_message(telegram_id, student_id, 'assistant', answer)
+    # Сохраняем assistant message в history (для follow-up turn'ов).
+    # PR_H3: возвращаем id чтобы UI мог привязать 👍/👎 feedback к нему.
+    assistant_msg_id = save_chat_message(telegram_id, student_id, 'assistant', answer)
 
-    return jsonify({"answer": answer})
+    # PR_H2: возвращаем id для UI history рендера тоже (тогда render'нем
+    # уже сохранённый ответ с привязанным id для feedback).
+    return jsonify({"answer": answer, "message_id": assistant_msg_id})
 
 
 @app.route("/api/chat/history/<int:student_id>")
 def api_chat_history(student_id):
     """Возвращает последние chat-сообщения для ученика — UI рендерит при
-    открытии chat-section, чтобы родитель видел контекст прошлой беседы."""
+    открытии chat-section, чтобы родитель видел контекст прошлой беседы.
+
+    PR_H3: для assistant-сообщений добавляем id (нужен для feedback)."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_recent_chat_history
     history = get_recent_chat_history(telegram_id, student_id)
@@ -767,6 +772,42 @@ def api_chat_clear(student_id):
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import clear_chat_history
     clear_chat_history(telegram_id, student_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/chat/feedback", methods=["POST"])
+def api_chat_feedback():
+    """PR_H3: 👍/👎 на конкретный AI ответ.
+
+    Body: {message_id: int, rating: 1 | -1, comment?: str}
+    Авторизация: message должно принадлежать вызывающему telegram_id.
+    UPSERT — повторный POST с другим rating заменяет предыдущий."""
+    auth = _get_authenticated_user()
+    telegram_id = auth["telegram_id"]
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        message_id = int(payload.get("message_id"))
+        rating = int(payload.get("rating"))
+    except (TypeError, ValueError):
+        abort(400)
+    comment = payload.get("comment")
+    if comment is not None and not isinstance(comment, str):
+        abort(400)
+    if comment and len(comment) > 500:
+        abort(400)
+    if rating not in (1, -1):
+        abort(400)
+
+    from src.database_manager import get_message_owner, save_feedback
+    owner = get_message_owner(message_id)
+    if owner is None:
+        abort(404)
+    if owner != telegram_id:
+        # Не палим разницу 403/404 чтобы не утечка существования чужих msg_id
+        abort(404)
+
+    save_feedback(message_id, telegram_id, rating, comment)
     return jsonify({"ok": True})
 
 
