@@ -991,28 +991,20 @@ def _register_bot_commands():
     - в группе: /set_thread /unlink_group (управление привязкой к семье).
     Без scope-разделения в группе подсказывались бы /grades и /status, которые там не работают."""
     try:
-        # NAV-008: добавлены /ai_report и /subscription — раньше они были
-        # доступны как handler'ы, но не отображались в BotFather menu (кнопка «/»).
-        # Default scope — на случай если новый scope-API не поддержан
-        bot.set_my_commands([
-            types.BotCommand("start", "Начать / авторизоваться"),
-            types.BotCommand("help", "Справка по боту"),
+        # Commands cleanup: оставили минимум полезных. Раньше показывали
+        # 6 команд (включая /status и /ai_report), родители путались.
+        # Now: только то что родитель реально использует. /status (admin
+        # stats) и /ai_report (можно из дашборда / AI чата) — убраны из
+        # меню, продолжают работать как handler'ы для тех кто знает.
+        user_commands = [
+            types.BotCommand("start", "Главное меню"),
+            types.BotCommand("help", "Как пользоваться"),
             types.BotCommand("grades", "Оценки за сегодня"),
-            types.BotCommand("ai_report", "AI-анализ за 2 недели"),
             types.BotCommand("subscription", "Подписка"),
-            types.BotCommand("status", "Статус и статистика"),
-        ])
-
-        # Private chats — пользовательские команды
+        ]
+        bot.set_my_commands(user_commands)
         bot.set_my_commands(
-            [
-                types.BotCommand("start", "Начать / авторизоваться"),
-                types.BotCommand("help", "Справка по боту"),
-                types.BotCommand("grades", "Оценки за сегодня"),
-                types.BotCommand("ai_report", "AI-анализ за 2 недели"),
-                types.BotCommand("subscription", "Подписка"),
-                types.BotCommand("status", "Статус и статистика"),
-            ],
+            user_commands,
             scope=types.BotCommandScopeAllPrivateChats(),
         )
 

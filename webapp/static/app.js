@@ -658,8 +658,9 @@ function renderDrilldown(subject) {
 
     // AI deep-link with pre-filled question про этот предмет
     const askBtn = document.getElementById("dd-btn-ask-ai");
+    // askAiAboutSubject — закрывает drill-down + pre-fills+sends в inline chat
     if (askBtn) {
-        askBtn.onclick = () => _openBotChatWithQuestion(`Расскажи про ${subject}`);
+        askBtn.onclick = () => askAiAboutSubject(subject);
     }
 }
 
@@ -838,12 +839,136 @@ function escapeHtml(text) {
 // ============ ACTION BAR (Dashboard refresh) ============
 
 function setupActionBar() {
-    // Radical refactor: Share убран (use case слабый). Остались PDF
-    // (полный proof-документ через bot) + AI deep-link.
     const pdfBtn = document.getElementById("btn-export-pdf");
     if (pdfBtn) pdfBtn.addEventListener("click", handleExportPdf);
+    // AI кнопка теперь scroll'ит к inline chat-section + focus input.
+    // Раньше deep-link к bot — не работало на mobile.
     const aiBtn = document.getElementById("btn-open-ai");
-    if (aiBtn) aiBtn.addEventListener("click", () => _openBotChatWithQuestion(""));
+    if (aiBtn) aiBtn.addEventListener("click", _scrollToChat);
+    setupInlineChat();
+}
+
+function _scrollToChat() {
+    const section = document.getElementById("chat-section");
+    if (!section) return;
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    const input = document.getElementById("chat-input");
+    if (input) setTimeout(() => input.focus(), 400);
+}
+
+// ═════════ INLINE AI CHAT (revert удаления — теперь в Mini App) ═════════
+function setupInlineChat() {
+    const input = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("chat-send");
+    const clearBtn = document.getElementById("chat-clear");
+    if (!input || !sendBtn) return;
+
+    document.getElementById("chat-history").innerHTML = "";
+    state.chatHistoryLoaded = false;
+    if (clearBtn) clearBtn.classList.add("hidden");
+
+    const send = () => _sendChatMessage(input.value.trim());
+    sendBtn.onclick = send;
+    input.onkeydown = (e) => { if (e.key === "Enter") send(); };
+
+    if (clearBtn) clearBtn.onclick = _clearChatHistory;
+
+    _loadChatHistory();
+}
+
+async function _loadChatHistory() {
+    if (state.chatHistoryLoaded) return;
+    state.chatHistoryLoaded = true;
+    try {
+        const data = await fetchJSON(`/api/chat/history/${state.currentStudentId}`);
+        const messages = data.messages || [];
+        if (messages.length === 0) return;
+        messages.forEach(m => {
+            const role = m.role === "user" ? "user" : "ai";
+            _appendChatMessage(role, m.content);
+        });
+        _markChatHasHistory();
+    } catch (e) {
+        console.warn("Chat history load failed", e);
+    }
+}
+
+function _appendChatMessage(role, text) {
+    const container = document.getElementById("chat-history");
+    if (!container) return null;
+    const div = document.createElement("div");
+    div.className = `chat-msg chat-msg-${role}`;
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function _markChatHasHistory() {
+    const clearBtn = document.getElementById("chat-clear");
+    if (clearBtn) clearBtn.classList.remove("hidden");
+}
+
+async function _sendChatMessage(question) {
+    if (!question) return;
+    const input = document.getElementById("chat-input");
+    if (input) input.value = "";
+    _appendChatMessage("user", question);
+    const thinking = _appendChatMessage("ai", t("chat_thinking") || "AI думает…");
+    if (thinking) thinking.classList.add("chat-thinking");
+
+    try {
+        const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...API_HEADERS },
+            body: JSON.stringify({ student_id: state.currentStudentId, question }),
+        });
+        if (res.status === 429) {
+            if (thinking) {
+                thinking.textContent = t("chat_rate_limited") || "Слишком много запросов";
+                thinking.classList.remove("chat-thinking");
+                thinking.classList.add("chat-error-msg");
+            }
+            return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (thinking) {
+            thinking.textContent = data.answer || (t("chat_error") || "Ошибка");
+            thinking.classList.remove("chat-thinking");
+            if (!data.answer) thinking.classList.add("chat-error-msg");
+        }
+        _markChatHasHistory();
+    } catch (e) {
+        console.warn("Chat failed", e);
+        if (thinking) {
+            thinking.textContent = t("chat_error") || "Ошибка соединения";
+            thinking.classList.remove("chat-thinking");
+            thinking.classList.add("chat-error-msg");
+        }
+    }
+}
+
+async function _clearChatHistory() {
+    if (!window.confirm(t("chat_clear_confirm") || "Очистить историю?")) return;
+    try {
+        await fetch(`/api/chat/clear/${state.currentStudentId}`,
+                    { method: "POST", headers: API_HEADERS });
+    } catch (e) { console.warn("Clear failed", e); return; }
+    document.getElementById("chat-history").innerHTML = "";
+    const clearBtn = document.getElementById("chat-clear");
+    if (clearBtn) clearBtn.classList.add("hidden");
+}
+
+// Внешний API для drill-down «спросить про предмет»
+function askAiAboutSubject(subject) {
+    closeDrilldown();
+    setTimeout(() => {
+        _scrollToChat();
+        const input = document.getElementById("chat-input");
+        if (input) input.value = `Расскажи про ${subject}`;
+        setTimeout(() => _sendChatMessage(`Расскажи про ${subject}`), 300);
+    }, 200);
 }
 
 // Dashboard refactor: _buildShareText / handleShare удалены — Share use case
