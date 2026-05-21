@@ -131,24 +131,38 @@ def send_welcome(message):
         handle_invite_deeplink(message, invite_code)
         return
 
-    # Автоматическая авторизация админа
+    # Автоматическая авторизация админа.
+    # PR_F-hotfix: admin НЕ попадает в AI-чат как default — он работает с
+    # admin panel. Чистим ai_chat_mode state если случайно туда зашёл,
+    # шлём приветствие + кнопку «🛠 Управление».
     if admin_id_env and str(user_id) == str(admin_id_env):
         update_parent_telegram_id(f"admin_{user_id}", user_id)
         update_parent_first_name(user_id, message.from_user.first_name)
-        send_menu_safe(user_id, t("auth_admin_welcome", lang))
+        _show_admin_welcome(user_id, lang)
         return
 
     # Check if user is already saved
-    from src.database_manager import is_head_of_any_family, has_children_for_grades
+    from src.database_manager import is_head_of_any_family, has_children_for_grades, clear_user_state, get_user_state
     role = get_parent_role(user_id)
     if role:
         update_parent_first_name(user_id, message.from_user.first_name)
-        if role != 'admin' and not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
+
+        # PR_F-hotfix: admin в БД (не env) тоже идёт в admin panel, не в AI-чат.
+        if role == 'admin':
+            _show_admin_welcome(user_id, lang)
+            return
+
+        # /start всегда чистит ai_chat_mode для не-админов — escape hatch
+        # если юзер застрял в чате.
+        st = get_user_state(user_id)
+        if st and st.get('state') == 'ai_chat_mode':
+            clear_user_state(user_id)
+
+        if not is_head_of_any_family(user_id) and not has_children_for_grades(user_id):
             send_menu_safe(user_id, t("auth_not_linked", lang, btn_support=t("btn_support", lang)))
             return
 
-        # PR_F: авторизованный юзер с детьми/семьёй → СРАЗУ в AI-чат,
-        # не в меню. Чат это default mode для daily use.
+        # PR_F: авторизованный юзер с детьми → СРАЗУ в AI-чат, не в меню.
         if has_children_for_grades(user_id):
             _enter_default_chat(user_id)
         else:
@@ -327,6 +341,27 @@ def _build_reply_keyboard(lang: str, with_webapp: bool = True) -> types.ReplyKey
     return markup
 
 
+def _show_admin_welcome(chat_id: int, lang: str):
+    """Приветствие админа: текст + inline-кнопка «🛠 Открыть управление».
+
+    PR_F-hotfix: раньше admin получал только текст без кнопок — после `/start`
+    нужно было руками `/admin_panel`. Тупик особенно после PR_F (родители
+    идут в чат, admin без CTA остался без видимого следующего шага).
+
+    Также чистим ai_chat_mode state — admin не должен застрять в чате."""
+    from src.database_manager import clear_user_state, get_user_state
+    st = get_user_state(chat_id)
+    if st and st.get('state') == 'ai_chat_mode':
+        clear_user_state(chat_id)
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(
+        t("btn_admin_panel", lang), callback_data="open_admin_panel"
+    ))
+    bot.send_message(chat_id, t("auth_admin_welcome", lang),
+                      reply_markup=markup, parse_mode='HTML')
+
+
 def _enter_default_chat(chat_id: int):
     """Стартует AI-чат как default mode для авторизованного юзера с детьми и
     активной подпиской.
@@ -422,6 +457,17 @@ def _show_user_panel(chat_id: int, message_id: int = None):
             logger.debug(f"Could not edit user panel message: {e}")
 
     bot.send_message(chat_id, text, reply_markup=markup, parse_mode='HTML')
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'open_admin_panel')
+def callback_open_admin_panel(call):
+    """Inline-кнопка из admin welcome → открывает admin panel."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete admin welcome: {e}")
+    cmd_admin_panel(call.message)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_back')
