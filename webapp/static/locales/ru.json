@@ -135,5 +135,7 @@
   "pdf_type_teacher_hint": "Фокус на проблемных предметах",
   "btn_cancel": "Отмена",
   "btn_generate": "Сгенерировать",
+  "qc_stat_count_label": "за период",
+  "quarters_no_data": "Нет четвертных оценок",
   "dashboard_ai_hint": "💬 Остались вопросы? Спросите AI в чате бота."
 }

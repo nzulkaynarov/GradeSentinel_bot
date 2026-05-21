@@ -135,5 +135,7 @@
   "pdf_type_teacher_hint": "Focus on problem subjects",
   "btn_cancel": "Cancel",
   "btn_generate": "Generate",
+  "qc_stat_count_label": "for period",
+  "quarters_no_data": "No quarterly grades",
   "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat."
 }

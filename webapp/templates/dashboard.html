@@ -7,6 +7,10 @@
     <title data-i18n="app_title">Дневник</title>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- AI deep-link bullet-proof: bot_username embedded server-side через
+         render_template. JS читает window.GS_BOT_USERNAME — не зависит от
+         /api/dashboard/init race condition или JSON cache. -->
+    <script>window.GS_BOT_USERNAME = "{{ bot_username }}";</script>
     <script src="/static/vendor/chart.umd.min.js" defer></script>
 
     <link rel="stylesheet" href="/static/style.css">
@@ -98,20 +102,8 @@
             </div>
         </section>
 
-        <!-- Trend chart удалён — sparklines теперь в строках subjects table -->
-
-        <!-- РАЗДЕЛ: Все предметы (sortable, clickable for drill-down) -->
-        <section class="card" id="subjects-section">
-            <header class="card-header">
-                <h2 class="card-title" data-i18n="section_all_subjects">Все предметы</h2>
-                <p class="card-subtitle" data-i18n="section_all_subjects_hint">
-                    Тапните строку чтобы посмотреть подробнее
-                </p>
-            </header>
-            <div class="card-body">
-                <div id="subjects-table-wrap"></div>
-            </div>
-        </section>
+        <!-- «Все предметы» секция удалена — quarter cards теперь обогащены
+             current-period avg + count + sparkline. Один listing предметов. -->
 
         <!-- РАЗДЕЛ: Все оценки за период с фильтром -->
         <section class="card" id="recent-section">

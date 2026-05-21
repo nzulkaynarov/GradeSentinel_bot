@@ -169,12 +169,38 @@ def send_welcome(message):
             send_menu_safe(user_id, t("auth_not_linked", lang, btn_support=t("btn_support", lang)))
             return
 
+        # Pin Dashboard button: ставим chat menu button (слева от input)
+        # как «📊 Открыть дашборд» — постоянный доступ к WebApp.
+        # Только для родителей с детьми (admin'у не нужно).
+        if has_children_for_grades(user_id):
+            _set_dashboard_menu_button(user_id, lang)
+
         # PR_F: авторизованный юзер с детьми → СРАЗУ в AI-чат, не в меню.
         if has_children_for_grades(user_id):
             _enter_default_chat(user_id)
         else:
             _show_user_panel(user_id)
         return
+
+
+def _set_dashboard_menu_button(user_id: int, lang: str):
+    """Ставит chat menu button (слева от input) как WebApp button.
+    Telegram show'ит её всегда — родитель имеет постоянный 1-tap доступ к
+    дашборду. KeyboardButton.web_app не передаёт initData, поэтому используем
+    chat menu (передаёт)."""
+    webapp_url = os.environ.get("WEBAPP_URL")
+    if not webapp_url:
+        return
+    try:
+        bot.set_chat_menu_button(
+            chat_id=user_id,
+            menu_button=types.MenuButtonWebApp(
+                text=t("menu_btn_dashboard", lang),
+                web_app=types.WebAppInfo(url=f"{webapp_url}/webapp"),
+            ),
+        )
+    except Exception as e:
+        logger.debug(f"set_chat_menu_button failed for {user_id}: {e}")
 
     # Для неавторизованных — показываем выбор языка, затем авторизацию
     markup = types.InlineKeyboardMarkup()
