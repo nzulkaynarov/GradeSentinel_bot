@@ -116,5 +116,7 @@
   "quarters_forecast_note": "Values with ~ — year forecast from current quarter grades.",
   "dd_history": "Grade history by subject",
   "badge_new": "new",
+  "ai_popup_general": "Opening the bot. Tap «💬 Chat» below and ask about grades — AI knows the full history.",
+  "ai_popup_with_subject": "Opening the bot. Tap «💬 Chat» and ask about this subject — AI will filter to it.",
   "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat."
 }
