@@ -274,15 +274,57 @@ function renderHero(summary) {
     statusEl.className = "hero-status status-" + summary.status;
 }
 
+// Suggested prompts — i18n ключи в порядке отображения. Каждый ключ — текст
+// готового вопроса, который тапается и автоматически отправляется в AI.
+const SUGGESTED_PROMPTS = [
+    "ai_suggested_summer",   // «Что подтянуть летом?»
+    "ai_suggested_compare",  // «Сравни с прошлым месяцем»
+    "ai_suggested_concern",  // «Где поводы для беспокойства?»
+];
+
 function renderInsight(insightText) {
-    const section = document.getElementById("ai-insight");
+    // AI-first: insight теперь живёт в ai-summary-card (primary, top).
+    // Старая ai-insight секция удалена в PR_B (R3).
+    const card = document.getElementById("ai-summary-card");
     const textEl = document.getElementById("ai-insight-text");
+    if (!card || !textEl) return;
+
     if (!insightText || !insightText.trim()) {
-        section.classList.add("hidden");
+        card.classList.add("hidden");
         return;
     }
     textEl.textContent = insightText.trim();
-    section.classList.remove("hidden");
+    card.classList.remove("hidden");
+
+    // Quick buttons под AI summary — primary CTA для start chat.
+    const quickContainer = document.getElementById("ai-quick-buttons");
+    if (quickContainer) {
+        quickContainer.innerHTML = SUGGESTED_PROMPTS.map(key => {
+            const label = t(key);
+            return `<button class="ai-quick-btn" data-prompt-key="${key}">${escapeHtml(label)}</button>`;
+        }).join("");
+        quickContainer.querySelectorAll(".ai-quick-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const key = btn.dataset.promptKey;
+                _openChatWithPrompt(t(key));
+            });
+        });
+    }
+}
+
+function _openChatWithPrompt(question) {
+    // Раскрываем chat section если не открыт, ставим вопрос в input и шлём
+    const section = document.getElementById("chat-section");
+    if (section && !section.classList.contains("open")) {
+        toggleSection(section);
+    }
+    const input = document.getElementById("chat-input");
+    if (input) {
+        input.value = question;
+        const sendBtn = document.getElementById("chat-send");
+        if (sendBtn) sendBtn.click();
+    }
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderTrend(trendData) {
@@ -582,6 +624,22 @@ function setupChatUI() {
 
     // Чистим historу между переключениями студентов
     document.getElementById("chat-history").innerHTML = "";
+
+    // Suggested prompts — те же что в AI summary card. UX: видишь chat,
+    // не знаешь что спросить — тапаешь pill → авто-отправляется.
+    const suggestedEl = document.getElementById("chat-suggested");
+    if (suggestedEl) {
+        suggestedEl.innerHTML = SUGGESTED_PROMPTS.map(key => {
+            const label = t(key);
+            return `<button class="chat-suggested-btn" data-prompt-key="${key}">${escapeHtml(label)}</button>`;
+        }).join("");
+        suggestedEl.querySelectorAll(".chat-suggested-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                input.value = t(btn.dataset.promptKey);
+                sendBtn.click();
+            });
+        });
+    }
 
     const send = async () => {
         const question = input.value.trim();

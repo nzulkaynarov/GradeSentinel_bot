@@ -74,5 +74,11 @@
   "chat_send": "Ask",
   "chat_thinking": "AI is thinking…",
   "chat_error": "Couldn't get a response. Try again.",
-  "chat_rate_limited": "Too many questions — wait a minute"
+  "chat_rate_limited": "Too many questions — wait a minute",
+
+  "ai_summary_label": "AI overview",
+  "ai_quick_questions": "💡 Quick questions:",
+  "ai_suggested_summer": "🌞 What to work on over summer?",
+  "ai_suggested_compare": "📊 Compare with last month",
+  "ai_suggested_concern": "⚠️ Where are there concerns?"
 }

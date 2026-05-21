@@ -74,5 +74,11 @@
   "chat_send": "Soʻrash",
   "chat_thinking": "AI oʻylamoqda…",
   "chat_error": "Javob olinmadi. Yana urinib koʻring.",
-  "chat_rate_limited": "Juda koʻp savol — bir daqiqa kuting"
+  "chat_rate_limited": "Juda koʻp savol — bir daqiqa kuting",
+
+  "ai_summary_label": "AI-koʻrik",
+  "ai_quick_questions": "💡 Tezkor savollar:",
+  "ai_suggested_summer": "🌞 Yozda nimani tortib qoʻyish kerak?",
+  "ai_suggested_compare": "📊 Oldingi oy bilan solishtir",
+  "ai_suggested_concern": "⚠️ Qayerda muammo bor?"
 }
