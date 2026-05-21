@@ -342,11 +342,12 @@ def _build_reply_keyboard(lang: str, with_webapp: bool = True) -> types.ReplyKey
 
 
 def _show_admin_welcome(chat_id: int, lang: str):
-    """Приветствие админа: текст + inline-кнопка «🛠 Открыть управление».
+    """Приветствие админа: «🛠 Управление» + опционально «👨 Я родитель».
 
-    PR_F-hotfix: раньше admin получал только текст без кнопок — после `/start`
-    нужно было руками `/admin_panel`. Тупик особенно после PR_F (родители
-    идут в чат, admin без CTA остался без видимого следующего шага).
+    Если у админа есть свои дети (он же родитель в системе) — показываем
+    вторую кнопку для переключения в parent-режим (AI-чат + reply-keyboard).
+    Это для owner'а проекта, который хочет тестировать parent-UX без
+    второго аккаунта.
 
     Также чистим ai_chat_mode state — admin не должен застрять в чате."""
     from src.database_manager import clear_user_state, get_user_state
@@ -358,6 +359,10 @@ def _show_admin_welcome(chat_id: int, lang: str):
     markup.add(types.InlineKeyboardButton(
         t("btn_admin_panel", lang), callback_data="open_admin_panel"
     ))
+    if has_children_for_grades(chat_id):
+        markup.add(types.InlineKeyboardButton(
+            t("btn_admin_as_parent", lang), callback_data="open_admin_as_parent"
+        ))
     bot.send_message(chat_id, t("auth_admin_welcome", lang),
                       reply_markup=markup, parse_mode='HTML')
 
@@ -468,6 +473,21 @@ def callback_open_admin_panel(call):
     except Exception as e:
         logger.debug(f"Could not delete admin welcome: {e}")
     cmd_admin_panel(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'open_admin_as_parent')
+def callback_open_admin_as_parent(call):
+    """«👨 Я родитель» — admin переключается в parent-режим про своих детей.
+
+    Tier 2 admin-audit: owner проекта = admin с собственными детьми, и ему
+    нужно тестировать parent UX (AI-чат, дашборд) без второго аккаунта.
+    Возврат в admin panel через /start (он снова покажет admin welcome)."""
+    bot.answer_callback_query(call.id)
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete admin welcome: {e}")
+    _enter_default_chat(call.from_user.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'up_back')
