@@ -646,7 +646,7 @@ def answer_parent_question(
     question: str,
     lang: str = 'ru',
     prev_messages: Optional[list] = None,
-    family_id: Optional[int] = None,
+    stream_callback: Optional[callable] = None,
 ) -> Optional[str]:
     """Отвечает на вопрос родителя про оценки ученика с контекстом из БД.
 
@@ -655,10 +655,12 @@ def answer_parent_question(
     messages array — Claude видит предыдущие вопросы и свои ответы, что
     позволяет follow-up без перезаписи контекста.
 
-    Tool use (PR_E2): AI может вызывать get_subscription_status /
-    get_family_members / get_family_pricing для live данных. family_id
-    резолвится из student_id если не передан явно. Cap MAX_TOOL_ITERATIONS
-    защищает от infinite loop'а.
+    Streaming (PR_H4): если передан `stream_callback`, используется
+    Anthropic streaming API. Callback получает накопленный текст после
+    каждого delta. Возвращает полный финальный текст (как и без streaming).
+    Callback должен быть быстрым (вызовы throttle'ить должен сам callback —
+    например, bot handler ограничивает edit_message_text до 1 раза в 1.5с
+    чтобы не упереться в telegram rate limit).
 
     Не кэширует ответ (каждый turn уникальный). Безопасно деградирует."""
     client = _get_client()
@@ -717,56 +719,36 @@ def answer_parent_question(
     # Tool-use loop. MAX_TOOL_ITERATIONS — cap чтобы Claude не зациклился
     # на serial вызовах tools. +1 для финального ответа после последней пачки tools.
     try:
-        for iteration in range(MAX_TOOL_ITERATIONS + 1):
-            response = client.messages.create(
+        if stream_callback is not None:
+            # PR_H4: streaming path. text_stream даёт только text deltas
+            # (tool_use deltas игнорятся — этот PR streaming для текстовых
+            # ответов, tool_use loop работает без streaming в E2).
+            accumulated = ""
+            with client.messages.stream(
                 model="claude-haiku-4-5",
                 max_tokens=_CHAT_MAX_TOKENS,
                 system=system_prompt,
-                tools=TOOL_DEFINITIONS,
+                messages=messages_array,
+            ) as stream:
+                for chunk in stream.text_stream:
+                    accumulated += chunk
+                    try:
+                        stream_callback(accumulated)
+                    except Exception as e:
+                        # Callback не должен ломать stream
+                        logger.debug(f"stream_callback failed: {e}")
+            text = accumulated.strip()
+        else:
+            message = client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=_CHAT_MAX_TOKENS,
+                system=system_prompt,
                 messages=messages_array,
             )
-
-            stop_reason = getattr(response, 'stop_reason', None)
-            if stop_reason != 'tool_use':
-                # Финальный ответ — извлекаем текст и возвращаем
-                return _extract_text_from_response(response)
-
-            # Claude хочет вызвать tool. Добавляем assistant turn с tool_use
-            # блоками и user turn с tool_result.
-            messages_array.append({"role": "assistant", "content": response.content})
-
-            tool_results = []
-            for block in response.content:
-                if getattr(block, 'type', None) == 'tool_use':
-                    result_text = dispatch_tool(
-                        tool_name=block.name,
-                        tool_input=getattr(block, 'input', None) or {},
-                        family_id=family_id,
-                        lang=lang,
-                    )
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result_text,
-                    })
-
-            if not tool_results:
-                # stop_reason='tool_use' но блоков tool_use нет — странно,
-                # выходим с тем что есть
-                logger.warning(
-                    f"answer_parent_question: stop_reason=tool_use but no tool_use blocks "
-                    f"(student={student_id})"
-                )
-                return _extract_text_from_response(response)
-
-            messages_array.append({"role": "user", "content": tool_results})
-
-        # Hit iteration cap — Claude не сошёлся
-        logger.warning(
-            f"answer_parent_question hit MAX_TOOL_ITERATIONS={MAX_TOOL_ITERATIONS} "
-            f"(student={student_id}, family={family_id})"
-        )
-        return None
+            text = message.content[0].text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        return text or None
     except anthropic.APITimeoutError:
         logger.warning(f"Chat timeout for student {student_id}")
         return None

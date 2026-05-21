@@ -366,6 +366,7 @@
   "ai_chat_error": "Hozir javob olinmadi. Birozdan keyin urinib ko'ring.",
   "ai_chat_too_long": "Savol juda uzun. 500 belgigacha qisqartiring.",
   "chat_feedback_thanks": "Bahoyingiz uchun rahmat!",
+  "ai_chat_thinking": "💭 O'ylayapman…",
   "ai_chat_session_lost": "Chat sessiyasi tugadi, menyudagi «💬 AI'dan soʻrash»ni bosing.",
   "ai_chat_exit": "Menyu",
   "ai_suggested_summer": "Yozda nimani tortish kerak",

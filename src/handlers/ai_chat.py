@@ -10,6 +10,7 @@ navigation). До этого AI был спрятан в WebApp в самом н
 """
 import logging
 import json
+import time
 from telebot import types
 
 from src.bot_instance import bot
@@ -176,15 +177,51 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
 
     recent_grades = get_grade_history_for_student_all(student_id, days=_RECENT_DAYS)
 
-    # PR_H1: multi-turn history. Подгружаем предыдущие сообщения для
-    # follow-up («а что насчёт следующей четверти?» после вопроса про прошлый
-    # месяц). Webapp уже использует тот же pattern с PR_D R6 — теперь и бот.
+    # PR_H1: multi-turn history.
     prev_messages = get_recent_chat_history(user_id, student_id)
 
-    # Сохраняем user message ДО вызова AI — чтобы при race condition или
-    # AI-фейле юзер видел свой вопрос в истории webapp (а не пустоту).
-    # Trade-off: orphan user message если AI упал, но это лучше потери.
+    # Сохраняем user message ДО вызова AI.
     save_chat_message(user_id, student_id, 'user', question)
+
+    # PR_H4: streaming. Шлём placeholder, throttled callback edit'ит его
+    # по мере накопления текста. Throttle 1.5с защищает от telegram flood
+    # (edit_message_text жёсткого rate-limit'а не имеет, но flood-control
+    # сработает при ~20+ edits/sec на один message). Финальный edit ставит
+    # feedback markup на готовый ответ.
+    try:
+        placeholder = bot.send_message(user_id, t("ai_chat_thinking", lang))
+        placeholder_msg_id = placeholder.message_id
+    except Exception as e:
+        logger.warning(f"placeholder send failed user={user_id}: {e}")
+        placeholder_msg_id = None
+
+    stream_state = {
+        'last_edit_at': 0.0,
+        'last_edit_text': '',
+    }
+
+    def _on_chunk(accumulated: str):
+        if placeholder_msg_id is None:
+            return
+        now = time.monotonic()
+        if now - stream_state['last_edit_at'] < 1.5:
+            return
+        if accumulated == stream_state['last_edit_text']:
+            return
+        if not accumulated.strip():
+            return
+        try:
+            bot.edit_message_text(
+                chat_id=user_id,
+                message_id=placeholder_msg_id,
+                text=accumulated,
+            )
+            stream_state['last_edit_at'] = now
+            stream_state['last_edit_text'] = accumulated
+        except Exception as e:
+            # edit может упасть из-за "message is not modified" или
+            # telegram rate limit — не фатально, просто пропускаем чанк
+            logger.debug(f"stream edit_message_text failed: {e}")
 
     try:
         from src.analytics_engine import answer_parent_question
@@ -195,26 +232,45 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict):
             question=question,
             lang=lang,
             prev_messages=prev_messages,
+            stream_callback=_on_chunk if placeholder_msg_id else None,
         )
     except Exception as e:
         logger.warning(f"ai_chat answer failed for user={user_id} student={student_id}: {e}")
         answer = None
 
-    # PR_F: ответы AI идут БЕЗ повторяющихся suggested-кнопок.
-    # Suggested были в welcome, дальше юзер пишет сам или жмёт «Меню» в
-    # postoянной reply-keyboard. Это убирает визуальный шум.
     if not answer:
+        # Если placeholder был отправлен — заменяем на error, иначе шлём новое
+        if placeholder_msg_id is not None:
+            try:
+                bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=placeholder_msg_id,
+                    text=t("ai_chat_error", lang),
+                )
+                return
+            except Exception:
+                pass
         bot.send_message(user_id, t("ai_chat_error", lang))
         return
 
-    # Сохраняем assistant ответ — для будущих follow-up'ов. Captured id
-    # используется PR_H3 для привязки feedback-кнопок к конкретному ответу.
+    # Сохраняем assistant ответ + получаем msg_id для feedback markup
     msg_id = save_chat_message(user_id, student_id, 'assistant', answer)
 
-    # PR_H3: 👍/👎 inline-кнопки под каждым AI ответом. Callback хранит
-    # msg_id чтобы знать какой именно ответ оценили. UPSERT в БД позволяет
-    # переключать оценку (👍 → 👎 или обратно).
-    bot.send_message(user_id, answer, reply_markup=_build_feedback_markup(msg_id))
+    # Финальный edit с полным текстом + 👍/👎 markup. Если placeholder
+    # потерялся (send упал) — fallback на send_message.
+    final_markup = _build_feedback_markup(msg_id)
+    if placeholder_msg_id is not None:
+        try:
+            bot.edit_message_text(
+                chat_id=user_id,
+                message_id=placeholder_msg_id,
+                text=answer,
+                reply_markup=final_markup,
+            )
+            return
+        except Exception as e:
+            logger.debug(f"final edit failed, fallback to send: {e}")
+    bot.send_message(user_id, answer, reply_markup=final_markup)
 
 
 def _build_feedback_markup(msg_id: int, selected: int = 0) -> types.InlineKeyboardMarkup:
