@@ -1,17 +1,17 @@
-"""Handlers для постоянной reply-keyboard {💬 Чат, 📊 Дашборд, ⚙️ Меню} (PR_F).
+"""Handlers для постоянной reply-keyboard навигации (PR role-toggle).
+
+Reply-keyboard варианты:
+  Parent-режим: {💬 Чат, ⚙️ Меню}, плюс для admin'а доп строка {🛠 Управление}
+  Admin-режим:  {🛠 Управление, 👨 Я родитель}
 
 Регистрируется в main.py СРАЗУ ПОСЛЕ state_flows и ДО ai_chat, чтобы
-точное совпадение текста с label кнопки перехватывалось здесь, а не
-улетало в AI как вопрос.
-
-«📊 Дашборд» — это `KeyboardButton(web_app=...)`: Telegram сам открывает
-Mini App при тапе, message с текстом «📊 Дашборд» не приходит. Поэтому
-тут только Чат и Меню.
+точное совпадение текста с label-кнопки перехватывалось здесь, а не
+улетало в AI как вопрос родителя.
 """
 import logging
 
 from src.bot_instance import bot
-from src.database_manager import get_user_lang
+from src.database_manager import get_user_lang, get_parent_role, has_children_for_grades
 from src.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -27,17 +27,63 @@ def _matches_label(message, key: str) -> bool:
 
 @bot.message_handler(func=lambda m: _matches_label(m, "nav_chat"))
 def _on_nav_chat(message):
-    """Reply-keyboard «💬 Чат» — переключение в AI-чат.
-
-    Если юзер уже в ai_chat_mode — заново отправляем welcome. Если нет
-    (например, вышел в меню) — re-enter."""
+    """«💬 Чат» — переключение в AI-чат. Если уже в чате — re-enter welcome."""
     from src.handlers.ai_chat import start_ai_chat
     start_ai_chat(message.chat.id)
 
 
 @bot.message_handler(func=lambda m: _matches_label(m, "nav_menu"))
 def _on_nav_menu(message):
-    """Reply-keyboard «⚙️ Меню» — открывает inline-панель с
-    family / subscription / settings / support."""
+    """«⚙️ Меню» — открывает inline-панель: family / subscription / settings /
+    support + дашборд (для родителей с детьми)."""
     from src.main import _show_user_panel
     _show_user_panel(message.chat.id)
+
+
+@bot.message_handler(func=lambda m: _matches_label(m, "nav_admin_panel"))
+def _on_nav_admin_panel(message):
+    """«🛠 Управление» — открывает admin panel. ТОЛЬКО для admin'а.
+
+    Если admin был в parent-режиме (state ai_chat_mode) — нужно переключить
+    reply-keyboard обратно в admin-mode. Reply-keyboard ставится на любое
+    сообщение от бота; cmd_admin_panel шлёт panel — но не ставит reply.
+    Шлём отдельное короткое сообщение для смены keyboard, потом panel.
+
+    Защита: если не-admin случайно тапнул label (теоретически невозможно —
+    у него нет этой кнопки в keyboard), просто игнорируем."""
+    user_id = message.chat.id
+    if get_parent_role(user_id) != 'admin':
+        return
+
+    from src.main import _build_reply_keyboard
+    from src.handlers.admin import cmd_admin_panel
+    from src.database_manager import clear_user_state, get_user_state
+
+    # Если был в parent-режиме — чистим ai_chat_mode state
+    st = get_user_state(user_id)
+    if st and st.get('state') == 'ai_chat_mode':
+        clear_user_state(user_id)
+
+    # Меняем reply-keyboard на admin-mode минимальным сообщением,
+    # затем admin panel inline.
+    lang = get_user_lang(user_id)
+    bot.send_message(user_id, "🛠",
+                      reply_markup=_build_reply_keyboard(lang, mode='admin'))
+    cmd_admin_panel(message)
+
+
+@bot.message_handler(func=lambda m: _matches_label(m, "nav_as_parent"))
+def _on_nav_as_parent(message):
+    """«👨 Я родитель» — admin переключается в parent-режим.
+
+    Только для admin'а с детьми. Reply-keyboard становится parent-mode
+    {💬 Чат, ⚙️ Меню, 🛠 Управление}, открывается AI-чат."""
+    user_id = message.chat.id
+    if get_parent_role(user_id) != 'admin':
+        return
+    if not has_children_for_grades(user_id):
+        # admin без детей — нечего показывать в parent-режиме
+        bot.send_message(user_id, t("ai_chat_no_students", get_user_lang(user_id)))
+        return
+    from src.main import _enter_default_chat
+    _enter_default_chat(user_id)

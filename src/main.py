@@ -316,58 +316,70 @@ def contact_handler(message):
 #  Пользовательская панель + AI-first navigation (PR_F)
 # ═══════════════════════════════════════════
 
-def _build_reply_keyboard(lang: str) -> types.ReplyKeyboardMarkup:
-    """Постоянная reply-keyboard внизу: {💬 Чат, ⚙️ Меню} — 2 текстовые кнопки.
+def _build_reply_keyboard(lang: str, mode: str = 'parent', is_admin: bool = False) -> types.ReplyKeyboardMarkup:
+    """Постоянная reply-keyboard внизу — варианты:
 
-    PR_F-hotfix #59: «📊 Дашборд» убран из reply-keyboard, потому что
-    KeyboardButton.web_app НЕ передаёт подписанные initData (это Telegram
-    API: reply-keyboard webapp-кнопки для возврата данных боту, не для
-    авторизованной навигации). Дашборд переехал в inline-меню (Меню →
-    📊 Дашборд) — там InlineKeyboardButton.web_app работает корректно."""
+    mode='parent' (default, для всех родителей):
+      ┌──────────┬──────────┐
+      │ 💬 Чат   │ ⚙️ Меню  │
+      └──────────┴──────────┘
+      Если is_admin=True (admin сейчас в parent-mode) — добавляется
+      строка с «🛠 Управление» для toggle обратно в admin.
+
+    mode='admin' (только для admin):
+      ┌──────────────┬──────────────┐
+      │ 🛠 Управление│ 👨 Я родитель│
+      └──────────────┴──────────────┘
+      Toggle в parent — через «Я родитель».
+
+    Для не-admin'ов is_admin игнорируется. Они никогда не видят admin-кнопки.
+    """
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
-    markup.row(
-        types.KeyboardButton(t("nav_chat", lang)),
-        types.KeyboardButton(t("nav_menu", lang)),
-    )
+    if mode == 'admin':
+        markup.row(
+            types.KeyboardButton(t("nav_admin_panel", lang)),
+            types.KeyboardButton(t("nav_as_parent", lang)),
+        )
+    else:  # parent mode
+        markup.row(
+            types.KeyboardButton(t("nav_chat", lang)),
+            types.KeyboardButton(t("nav_menu", lang)),
+        )
+        if is_admin:
+            # Admin в parent-mode видит toggle обратно в admin
+            markup.add(types.KeyboardButton(t("nav_admin_panel", lang)))
     return markup
 
 
 def _show_admin_welcome(chat_id: int, lang: str):
-    """Приветствие админа: «🛠 Управление» + опционально «👨 Я родитель».
+    """Приветствие админа: текст + reply-keyboard admin-режима
+    {🛠 Управление, 👨 Я родитель}. Toggle между режимами — через эту
+    постоянную reply-keyboard (PR role-toggle 21.05).
 
-    Если у админа есть свои дети (он же родитель в системе) — показываем
-    вторую кнопку для переключения в parent-режим (AI-чат + reply-keyboard).
-    Это для owner'а проекта, который хочет тестировать parent-UX без
-    второго аккаунта.
-
-    Также чистим ai_chat_mode state — admin не должен застрять в чате."""
+    Admin тапает «🛠 Управление» → admin panel; «👨 Я родитель» → parent
+    режим (только если есть дети). Inline-кнопки из welcome убраны
+    (дублировали label'ы)."""
     from src.database_manager import clear_user_state, get_user_state
     st = get_user_state(chat_id)
     if st and st.get('state') == 'ai_chat_mode':
         clear_user_state(chat_id)
 
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(
-        t("btn_admin_panel", lang), callback_data="open_admin_panel"
-    ))
-    if has_children_for_grades(chat_id):
-        markup.add(types.InlineKeyboardButton(
-            t("btn_admin_as_parent", lang), callback_data="open_admin_as_parent"
-        ))
     bot.send_message(chat_id, t("auth_admin_welcome", lang),
-                      reply_markup=markup, parse_mode='HTML')
+                      reply_markup=_build_reply_keyboard(lang, mode='admin'),
+                      parse_mode='HTML')
 
 
 def _enter_default_chat(chat_id: int):
-    """Стартует AI-чат как default mode для авторизованного юзера с детьми и
-    активной подпиской.
+    """Стартует parent-режим (AI-чат + reply-keyboard) для любого юзера.
 
-    PR_F: чат — главный mode. Reply-keyboard {Чат, Дашборд, Меню} ставится
-    через ОДНО welcome-сообщение от ai_chat.py, потом юзер пишет вопросы.
-    Чтобы установить reply-keyboard, помечаем её на welcome-message самого
-    чата — отдельного «пустого» сообщения не шлём (Telegram не примет)."""
+    PR role-toggle: если юзер — admin (через «👨 Я родитель» из admin
+    режима), reply-keyboard содержит дополнительный toggle «🛠 Управление»
+    для возврата обратно. Не-admin видит только {💬 Чат, ⚙️ Меню}."""
     from src.handlers.ai_chat import start_ai_chat_with_keyboard
-    start_ai_chat_with_keyboard(chat_id, _build_reply_keyboard(get_user_lang(chat_id)))
+    lang = get_user_lang(chat_id)
+    is_admin = get_parent_role(chat_id) == 'admin'
+    keyboard = _build_reply_keyboard(lang, mode='parent', is_admin=is_admin)
+    start_ai_chat_with_keyboard(chat_id, keyboard)
 
 
 def cmd_user_menu(message):
