@@ -14,8 +14,11 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-# bot_instance валидирует ":" в BOT_TOKEN — формат должен быть похож на реальный
-os.environ.setdefault("BOT_TOKEN", "12345:test-token-for-handler-import")
+# bot_instance валидирует ":" в BOT_TOKEN — формат должен быть похож на реальный.
+# Force-set (а не setdefault) — CI задаёт BOT_TOKEN другим значением, и setdefault
+# не overrid'ит, что приводит к bot_instance exit(1) при импорте handlers.
+if ":" not in os.environ.get("BOT_TOKEN", ""):
+    os.environ["BOT_TOKEN"] = "12345:test-token-for-handler-import"
 os.environ.setdefault("ADMIN_ID", "0")
 os.environ.setdefault("ADMIN_GROUP_ID", "0")
 
