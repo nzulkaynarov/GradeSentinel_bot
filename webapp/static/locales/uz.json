@@ -75,6 +75,9 @@
   "chat_thinking": "AI oʻylamoqda…",
   "chat_error": "Javob olinmadi. Yana urinib koʻring.",
   "chat_rate_limited": "Juda koʻp savol — bir daqiqa kuting",
+  "chat_clear_btn": "↻ Qaytadan boshlash",
+  "chat_clear_confirm": "Suhbat tarixini butunlay oʻchirilsinmi?",
+  "chat_history_loading": "Tarix yuklanmoqda…",
 
   "ai_summary_label": "AI-koʻrik",
   "ai_quick_questions": "💡 Tezkor savollar:",

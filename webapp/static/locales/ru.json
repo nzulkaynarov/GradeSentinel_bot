@@ -75,6 +75,9 @@
   "chat_thinking": "AI думает…",
   "chat_error": "Не получилось получить ответ. Попробуйте ещё раз.",
   "chat_rate_limited": "Слишком много вопросов — подождите минуту",
+  "chat_clear_btn": "↻ Начать заново",
+  "chat_clear_confirm": "Удалить всю историю беседы?",
+  "chat_history_loading": "Загружаем историю…",
 
   "ai_summary_label": "AI-обзор",
   "ai_quick_questions": "💡 Быстрые вопросы:",
