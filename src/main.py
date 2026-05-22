@@ -980,7 +980,11 @@ def main():
     # 2. Load translations
     load_translations()
 
-    # 3. Start monitor engine in a separate thread
+    # 3. Init unified Sender (notification layer with retry + quiet hours)
+    from src.notifications import init_sender
+    init_sender(bot)
+
+    # 4. Start monitor engine in a separate thread
     from src.monitor_engine import set_bot_instance
     set_bot_instance(bot)
 

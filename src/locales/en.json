@@ -216,6 +216,8 @@
   "daily_worst": "⚠️ Attention: {subject} ({grade})",
   "daily_total": "Total records: {count}",
   "bot_alive": "✅ <b>Bot is active</b>\n\nNo new grades received today. I'm monitoring the diary and will notify you as soon as a new entry appears.",
+  "alert_grades_heading": "⚠️ <b>Heads up on grades</b>",
+  "alert_sheet_stuck": "⚠️ <b>Spreadsheet unavailable</b>\n\nStudent: <code>{display_name}</code> (id={student_id})\nConsecutive failures: <b>{count}</b>\n\nVerify that the «Все оценки» sheet exists in the diary and is shared with the service account.",
 
   "support_unavailable": "🔧 <i>Support is temporarily unavailable (group not configured).</i>",
   "support_prompt": "📝 <b>Technical Support</b>\n\nDescribe your question, suggestion or issue. You can send text or photos.\n\nThe administrator will respond as soon as possible.",
