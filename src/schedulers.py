@@ -398,8 +398,15 @@ def _send_daily_evening_summary():
         get_all_parents_with_children, get_today_grades_for_student,
         get_yesterday_grades_for_student, get_user_lang
     )
+    from src.notifications import get_sender, NotificationType
 
     if not _bot:
+        return
+
+    try:
+        sender = get_sender()
+    except RuntimeError:
+        logger.warning("Sender not initialized for evening summary.")
         return
 
     logger.info("Sending daily evening summaries...")
@@ -462,20 +469,21 @@ def _send_daily_evening_summary():
             continue
 
         msg = t("daily_summary_title", lang) + "\n\n" + "\n\n".join(summaries)
-
-        try:
-            _bot.send_message(tg_id, msg, parse_mode='HTML')
-            time.sleep(0.1)
-        except Exception as e:
-            logger.error(f"Failed to send evening summary to {tg_id}: {e}")
+        sender.send(tg_id, msg, ntype=NotificationType.EVENING_SUMMARY)
+        time.sleep(0.1)
 
     logger.info("Daily evening summaries sent.")
 
 
 def _send_bot_alive_status():
     from src.database_manager import get_all_parents_with_children, has_recent_grades_for_parent, get_user_lang
+    from src.notifications import get_sender, NotificationType
 
     if not _bot:
+        return
+    try:
+        sender = get_sender()
+    except RuntimeError:
         return
 
     logger.info("Checking bot alive status (only for parents with 48h+ silence)...")
@@ -495,54 +503,80 @@ def _send_bot_alive_status():
             continue
 
         lang = get_user_lang(tg_id)
-        try:
-            _bot.send_message(tg_id, t("bot_alive", lang), parse_mode='HTML')
-            time.sleep(0.05)
+        if sender.send(tg_id, t("bot_alive", lang), ntype=NotificationType.BOT_ALIVE):
             sent_count += 1
-        except Exception as e:
-            logger.error(f"Failed to send alive status to {tg_id}: {e}")
+        time.sleep(0.05)
 
     logger.info(f"Bot alive status: sent to {sent_count} parents (with 48h+ silence).")
 
 
 def _check_subscription_expiry():
-    """Проверяет истечение подписок и предупреждает пользователей."""
+    """Проверяет истечение подписок и предупреждает пользователей.
+
+    Per-family-per-window idempotency через scheduler_last_sub_expiry_{fid}_{window}.
+    Раньше (без маркера) запуск scheduler'а дважды за день = двойное сообщение,
+    при рестарте бота 10:00+10:05 → юзеры получали уведомление 2 раза.
+    """
     from src.database_manager import (
         get_families_expiring_in_days, get_families_expired_today,
-        get_family_members_telegram_ids, get_user_lang
+        get_family_members_telegram_ids, get_user_lang,
+        get_setting, set_setting,
     )
+    from src.notifications import get_sender, NotificationType
 
     if not _bot:
         return
+    try:
+        sender = get_sender()
+    except RuntimeError:
+        return
 
-    warnings = [
-        (7, "sub_expiry_7d"),
-        (1, "sub_expiry_1d"),
+    today_str = _get_local_now().strftime("%Y-%m-%d")
+
+    def _already_sent(family_id: int, window: str) -> bool:
+        marker_key = f"sub_expiry_sent_{family_id}_{window}"
+        return get_setting(marker_key) == today_str
+
+    def _mark_sent(family_id: int, window: str):
+        marker_key = f"sub_expiry_sent_{family_id}_{window}"
+        set_setting(marker_key, today_str)
+
+    windows = [
+        (7, "sub_expiry_7d", "7d"),
+        (1, "sub_expiry_1d", "1d"),
     ]
 
-    for days, key in warnings:
+    for days, lang_key, window in windows:
         families = get_families_expiring_in_days(days)
         for family in families:
-            tg_ids = get_family_members_telegram_ids(family['family_id'])
+            fid = family['family_id']
+            if _already_sent(fid, window):
+                continue
+            tg_ids = get_family_members_telegram_ids(fid)
             for tg_id in tg_ids:
                 lang = get_user_lang(tg_id)
-                try:
-                    _bot.send_message(tg_id, t(key, lang), parse_mode='HTML')
-                    time.sleep(0.05)
-                except Exception as e:
-                    logger.error(f"Failed to send sub warning to {tg_id}: {e}")
+                sender.send(
+                    tg_id, t(lang_key, lang),
+                    ntype=NotificationType.SUBSCRIPTION_EXPIRY,
+                )
+                time.sleep(0.05)
+            _mark_sent(fid, window)
 
     # Истёкшие сегодня
     expired = get_families_expired_today()
     for family in expired:
-        tg_ids = get_family_members_telegram_ids(family['family_id'])
+        fid = family['family_id']
+        if _already_sent(fid, "0d"):
+            continue
+        tg_ids = get_family_members_telegram_ids(fid)
         for tg_id in tg_ids:
             lang = get_user_lang(tg_id)
-            try:
-                _bot.send_message(tg_id, t("sub_expiry_0d", lang), parse_mode='HTML')
-                time.sleep(0.05)
-            except Exception as e:
-                logger.error(f"Failed to send sub expired to {tg_id}: {e}")
+            sender.send(
+                tg_id, t("sub_expiry_0d", lang),
+                ntype=NotificationType.SUBSCRIPTION_EXPIRY,
+            )
+            time.sleep(0.05)
+        _mark_sent(fid, "0d")
 
     logger.info("Subscription expiry check completed.")
 
@@ -615,12 +649,10 @@ def _send_weekly_text_digest():
             continue
 
         msg = "\n\n".join(sections) + t("weekly_digest_premium_hint", lang)
-        try:
-            _bot.send_message(tg_id, msg, parse_mode='HTML')
+        from src.notifications import get_sender, NotificationType
+        if get_sender().send(tg_id, msg, ntype=NotificationType.WEEKLY_DIGEST):
             sent += 1
-            time.sleep(0.05)
-        except Exception as e:
-            logger.warning(f"Failed to send weekly text digest to {tg_id}: {e}")
+        time.sleep(0.05)
     logger.info(f"Weekly text digest sent to {sent} parents.")
 
 
@@ -636,17 +668,14 @@ def _check_proactive_alerts():
     from src.db.families import get_active_spreadsheets_with_subscription, get_families_for_student
     from src.database_manager import (
         was_alerted_recently, save_alert, get_user_lang,
-        get_family_members_telegram_ids, queue_notification,
+        get_family_members_telegram_ids,
     )
     from src.analytics_engine import detect_anomalies, generate_proactive_alert
-    from src.notification_helpers import is_quiet_hours
-    from src.telegram_utils import send_with_retry
 
     students = get_active_spreadsheets_with_subscription()
     if not students:
         return
 
-    quiet = is_quiet_hours()
     total_sent = 0
     total_skipped_dedup = 0
     total_anomalies = 0
@@ -696,29 +725,16 @@ def _check_proactive_alerts():
             ai_successes += 1
 
             # Префиксуем заголовком чтобы alert выделялся среди обычных
-            # notification'ов об оценках.
-            heading_by_lang = {
-                'ru': '⚠️ <b>Замечено по успеваемости</b>',
-                'uz': '⚠️ <b>O\'qish bo\'yicha eslatma</b>',
-                'en': '⚠️ <b>Heads up on grades</b>',
-            }
-            full_text = f"{heading_by_lang.get(lang, heading_by_lang['ru'])}\n\n{text}"
+            # notification'ов об оценках. Заголовок через locale (раньше
+            # был hardcoded dict heading_by_lang).
+            full_text = f"{t('alert_grades_heading', lang)}\n\n{text}"
 
+            from src.notifications import get_sender, NotificationType
+            sender = get_sender()
             for tg_id in recipients:
-                try:
-                    if quiet:
-                        queue_notification(tg_id, full_text)
-                    else:
-                        send_with_retry(
-                            _bot.send_message,
-                            tg_id,
-                            full_text,
-                            parse_mode='HTML',
-                        )
+                if sender.send(tg_id, full_text, ntype=NotificationType.PROACTIVE_ALERT):
                     total_sent += 1
-                    time.sleep(0.05)  # gentle pacing
-                except Exception as e:
-                    logger.warning(f"Failed to send proactive alert to {tg_id}: {e}")
+                time.sleep(0.05)  # gentle pacing
 
             try:
                 save_alert(student_id, atype)

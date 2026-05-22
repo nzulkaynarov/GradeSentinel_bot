@@ -129,46 +129,33 @@ def _make_grade_inline_keyboard(student_id: int, lang: str = 'ru') -> types.Inli
     )
     return markup
 
-def send_notification(telegram_ids, message, inline_markup=None, force=False):
-    """
+def send_notification(telegram_ids, message, inline_markup=None, force=False,
+                      ntype=None):
+    """Backward-compat обёртка над unified Sender.
+
     Отправляет уведомление. В тихие часы (22:00-07:00) копит в очередь.
     Пользователи в режиме 'summary_only' не получают мгновенных уведомлений
     (кроме force=True для четвертных оценок).
     message может быть dict {tg_id: msg_text} для мультиязычности или str.
+
+    ntype: NotificationType (default GRADE_INSTANT). Для quarter передавать
+    QUARTER_GRADE — это влияет на structured-логи и quiet hours policy.
     """
-    if not _bot:
-        logger.warning("Bot instance not set. Using logger placeholder.")
+    from src.notifications import get_sender, NotificationType
+    try:
+        sender = get_sender()
+    except RuntimeError:
+        logger.warning("Sender not initialized. Falling back to log placeholder.")
         for tg_id in telegram_ids:
             logger.info(f"[PLACEHOLDER -> {tg_id}]")
         return
 
-    quiet = is_quiet_hours()
+    nt = ntype or NotificationType.GRADE_INSTANT
 
     for tg_id in telegram_ids:
         msg_text = message[tg_id] if isinstance(message, dict) else message
-
-        # Проверяем режим уведомлений
-        if not force:
-            notify_mode = get_notify_mode(tg_id)
-            if notify_mode == 'summary_only':
-                logger.info(f"Skipped notification for TG:{tg_id} (summary_only mode)")
-                continue
-
-        try:
-            if quiet:
-                queue_notification(tg_id, msg_text)
-                logger.info(f"Notification queued (quiet hours) for TG:{tg_id}")
-            else:
-                lang = get_user_lang(tg_id)
-                kb = inline_markup[tg_id] if isinstance(inline_markup, dict) else inline_markup
-                _bot.send_message(
-                    tg_id, msg_text, parse_mode='HTML',
-                    disable_web_page_preview=True,
-                    reply_markup=kb
-                )
-                logger.info(f"Notification sent to TG:{tg_id}")
-        except Exception as e:
-            logger.error(f"Failed to send notification to {tg_id}: {e}")
+        kb = inline_markup[tg_id] if isinstance(inline_markup, dict) else inline_markup
+        sender.send(tg_id, msg_text, ntype=nt, kb=kb, force=force)
 
 
 def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_tg_ids):
@@ -202,47 +189,28 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
     else:
         kb = inline_markup
 
-    quiet = is_quiet_hours()
+    from src.notifications import get_sender, NotificationType
+    try:
+        sender = get_sender()
+    except RuntimeError:
+        logger.warning(f"Sender not initialized for group send (student={student_id}).")
+        return
 
     for grp in groups:
         chat_id = grp['chat_id']
         thread_id = grp.get('message_thread_id')
-
-        if quiet:
-            # Тихие часы: пишем в group_notification_queue, утренний flush
-            # (07:00) добавит к личной morning-сводке. Без inline_markup —
-            # после ночи callback'и могут устареть.
-            try:
-                from src.database_manager import queue_group_notification
-                queue_group_notification(chat_id, thread_id, msg_text)
-                logger.info(
-                    f"Group notification queued (quiet hours) for chat={chat_id} thread={thread_id} (student={student_id})"
-                )
-            except Exception as e:
-                logger.error(f"Failed to queue group notification to {chat_id} (thread={thread_id}): {e}")
-            continue
-
-        try:
-            kwargs = {
-                'parse_mode': 'HTML',
-                'disable_web_page_preview': True,
-                'reply_markup': kb,
-            }
-            if thread_id is not None:
-                kwargs['message_thread_id'] = thread_id
-            _bot.send_message(chat_id, msg_text, **kwargs)
-            logger.info(
-                f"Group notification sent to chat={chat_id} thread={thread_id} (student={student_id})"
-            )
-        except Exception as e:
-            # Бот мог быть кикнут, потерять права, или тема удалена.
-            # Не валим уведомления родителям из-за этого.
-            logger.warning(f"Failed to send group notification to {chat_id} (thread={thread_id}): {e}")
+        # В тихие часы Sender сам положит в group_notification_queue
+        # (по NotificationType.GRADE_GROUP — он в _DEFER_IN_QUIET).
+        # Inline_markup для queue не сохраняется (callback устаревает за ночь);
+        # передаём только для активного окна.
+        sender.send_to_group(
+            chat_id, thread_id, msg_text,
+            ntype=NotificationType.GRADE_GROUP, kb=kb,
+        )
 
 def _record_student_failure(student_id: int, display_name: str):
     """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу
-    в логи + Telegram (раньше только в логах, юзер не видел).
-    """
+    в логи + Telegram (через Sender, с retry + i18n)."""
     _student_failure_counts[student_id] += 1
     count = _student_failure_counts[student_id]
     if count >= _FAILURE_THRESHOLD:
@@ -250,24 +218,24 @@ def _record_student_failure(student_id: int, display_name: str):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if last_alert is None or (now - last_alert).total_seconds() > _FAILURE_ALERT_COOLDOWN_HOURS * 3600:
             _last_failure_alert[student_id] = now
-            msg = (
+            logger.error(
                 f"[SHEET STUCK] student_id={student_id} ({display_name}): "
                 f"{count} consecutive failures fetching data"
             )
-            logger.error(msg)
             try:
+                from src.notifications import get_sender, NotificationType
+                from src.database_manager import get_user_lang
                 import os
                 admin_id = int(os.environ.get("ADMIN_ID", "0") or "0")
-                if _bot is not None and admin_id > 0:
-                    _bot.send_message(
-                        admin_id,
-                        f"⚠️ <b>Таблица недоступна</b>\n\n"
-                        f"Ученик: <code>{display_name}</code> (id={student_id})\n"
-                        f"Подряд ошибок: <b>{count}</b>\n\n"
-                        f"Проверь что лист «Все оценки» существует в дневнике "
-                        f"и доступен для service account'а.",
-                        parse_mode='HTML',
-                    )
+                lang = get_user_lang(admin_id) if admin_id else "ru"
+                text = t(
+                    "alert_sheet_stuck",
+                    lang,
+                    display_name=display_name,
+                    student_id=student_id,
+                    count=count,
+                )
+                get_sender().send_to_admin(text, ntype=NotificationType.SHEET_FAILURE)
             except Exception as e:
                 logger.warning(f"Failed to send sheet-stuck alert to admin: {e}")
 

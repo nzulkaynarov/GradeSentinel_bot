@@ -216,6 +216,8 @@
   "daily_worst": "⚠️ Diqqat: {subject} ({grade})",
   "daily_total": "Jami yozuvlar: {count}",
   "bot_alive": "✅ <b>Bot faol</b>\n\nBugun hali yangi baho kelmadi. Men kundalikni kuzatayapman va yangi yozuv paydo bo'lishi bilan darhol xabar beraman.",
+  "alert_grades_heading": "⚠️ <b>O'qish bo'yicha eslatma</b>",
+  "alert_sheet_stuck": "⚠️ <b>Jadval mavjud emas</b>\n\nO'quvchi: <code>{display_name}</code> (id={student_id})\nKetma-ket xatolar: <b>{count}</b>\n\n«Все оценки» varag'i kundalikda mavjudligini va service account uchun ochiqligini tekshir.",
 
   "support_unavailable": "🔧 <i>Yordam funksiyasi vaqtincha mavjud emas (guruh sozlanmagan).</i>",
   "support_prompt": "📝 <b>Texnik yordam</b>\n\nSavolingizni, taklifingizni yoki muammoingizni yozing. Matn yoki rasm yuborishingiz mumkin.\n\nAdministrator imkon qadar tezroq javob beradi.",

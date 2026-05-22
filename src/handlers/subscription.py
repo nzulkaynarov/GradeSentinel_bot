@@ -628,10 +628,30 @@ def handle_successful_payment(message):
     )
 
     extend_subscription(family_id, months)
-
-    send_content(user_id, t("sub_payment_success", lang, months=months))
     logger.info(f"Payment successful: family={family_id}, plan={plan_key}, "
                 f"months={months}, user={user_id}")
+
+    # Уведомление юзеру — best-effort. Подписка уже активирована, поэтому
+    # любой сбой здесь НЕ должен валить транзакцию. Если send упадёт — admin
+    # alert в логи + Telegram, юзер обнаружит активную подписку при /subscription.
+    try:
+        send_content(user_id, t("sub_payment_success", lang, months=months))
+    except Exception as e:
+        logger.error(
+            f"Payment notify failed for user={user_id} family={family_id}: {e}. "
+            f"Subscription is active despite notification failure."
+        )
+        try:
+            from src.notifications import get_sender, NotificationType
+            get_sender().send_to_admin(
+                f"⚠️ <b>Payment notify failed</b>\n\n"
+                f"family={family_id} user={user_id} months={months}\n"
+                f"Subscription активирована, но юзер не получил подтверждение.\n"
+                f"Err: <code>{e}</code>",
+                ntype=NotificationType.PAYMENT_SUCCESS,
+            )
+        except Exception as ee:
+            logger.error(f"Admin alert for payment notify failure also failed: {ee}")
 
 
 # ═══════════════════════════════════════════

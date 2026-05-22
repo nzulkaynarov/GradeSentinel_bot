@@ -129,7 +129,9 @@ def init_db():
             phone TEXT UNIQUE NOT NULL,
             telegram_id INTEGER UNIQUE,
             role TEXT DEFAULT 'senior',
-            telegram_first_name TEXT
+            telegram_first_name TEXT,
+            notify_mode TEXT DEFAULT 'instant',
+            lang TEXT DEFAULT 'ru'
         )
         ''')
 

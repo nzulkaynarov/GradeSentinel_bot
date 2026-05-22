@@ -73,13 +73,17 @@ def setup_group_for_student(temp_db):
 
 
 def test_group_message_queued_during_quiet_hours(setup_group_for_student, monkeypatch):
-    """В тихие часы _send_to_groups_for_student пишет в queue, не вызывает bot.send."""
+    """В тихие часы _send_to_groups_for_student пишет в queue, не вызывает bot.send.
+    После refactor'а 22.05.2026 группа идёт через Sender — patch'им quiet_hours
+    в новом location."""
     info = setup_group_for_student
 
     fake_bot = MagicMock()
     me._bot = fake_bot
+    from src.notifications import init_sender
+    init_sender(fake_bot)
 
-    with patch('src.monitor_engine.is_quiet_hours', return_value=True):
+    with patch('src.notifications.sender.is_quiet_hours', return_value=True):
         me._send_to_groups_for_student(
             info['student_id'], "test msg", inline_markup=None,
             parent_tg_ids=[info['tg_id']],
@@ -92,13 +96,15 @@ def test_group_message_queued_during_quiet_hours(setup_group_for_student, monkey
 
 
 def test_group_message_sent_outside_quiet_hours(setup_group_for_student, monkeypatch):
-    """Вне тихих часов — обычная отправка через bot.send_message, очередь не трогается."""
+    """Вне тихих часов — отправка через Sender → bot.send_message, очередь не трогается."""
     info = setup_group_for_student
 
     fake_bot = MagicMock()
     me._bot = fake_bot
+    from src.notifications import init_sender
+    init_sender(fake_bot)
 
-    with patch('src.monitor_engine.is_quiet_hours', return_value=False):
+    with patch('src.notifications.sender.is_quiet_hours', return_value=False):
         me._send_to_groups_for_student(
             info['student_id'], "test msg", inline_markup=None,
             parent_tg_ids=[info['tg_id']],
