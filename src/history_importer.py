@@ -212,11 +212,17 @@ def _import_from_sheet(
     with get_db_connection() as conn:
         cursor = conn.cursor()
         for rec in records:
-            # Фикс A: сегодняшние даты — зона monitor'а. Не пишем из истории,
-            # чтобы не плодить дубли из-за race с двухфазным подтверждением
-            # (monitor откладывает UPDATE на цикл, а мастер-лист уже содержит
-            # новое значение → SELECT-дедуп ниже не находит → INSERT дубля).
-            if rec['date'] and rec['date'].date() == today:
+            # Фикс A: сегодня и будущие даты — зона monitor'а. Не пишем из истории.
+            #
+            # Раньше (== today) был баг: учитель проставлял в «Все оценки» оценку
+            # на завтра, importer записывал её с datedate > today, а когда «завтра»
+            # становилось «сегодня», monitor видел запись в БД через
+            # get_existing_grade_by_content → пропускал → уведомление терялось.
+            # Инцидент 22.05.2026 (Умарбек, Английский язык, JD6).
+            #
+            # Сейчас (>= today) importer импортирует ТОЛЬКО исторические оценки
+            # (вчера и раньше). Сегодняшние и будущие — всегда через monitor → notify.
+            if rec['date'] and rec['date'].date() >= today:
                 skipped += 1
                 continue
 

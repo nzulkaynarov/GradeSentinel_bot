@@ -941,10 +941,31 @@ def _heartbeat_loop():
 
 
 def start_bot():
-    """Запускает Telegram бота в режиме polling."""
+    """Запускает Telegram бота в режиме polling.
+
+    Обёртка вокруг bot.polling с резистентностью к сетевым ошибкам.
+    none_stop=True не покрывает крэши polling-thread'а (timeout, DNS, 502) —
+    они всплывают через polling_thread.raise_exceptions() и убивают процесс.
+    За 7д до фикса наблюдалось 82 traceback'а (≈12/день), каждый = systemd
+    restart на 4 сек + потеря notification window. Сейчас retry-loop внутри.
+    """
     logger.info("Starting Telegram Bot...")
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
-    bot.polling(none_stop=True)
+
+    backoff = 5
+    max_backoff = 120
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=30, long_polling_timeout=30)
+            backoff = 5  # успешный exit (manual stop) — сброс
+            break
+        except Exception as e:
+            logger.warning(
+                f"bot.polling crashed: {type(e).__name__}: {e}. "
+                f"Restarting in {backoff}s (in-process, no systemd restart)."
+            )
+            time.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
 
 def main():
     logger.info("Initializing GradeSentinel v2.0...")

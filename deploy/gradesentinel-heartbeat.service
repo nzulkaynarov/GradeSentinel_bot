@@ -6,11 +6,14 @@ After=gradesentinel-bot.service
 
 [Service]
 Type=oneshot
+# Escape всех bash-`$` через `$$`, чтобы systemd не пытался expand'ить их как
+# свои переменные. Раньше был warning «Referenced but unset environment
+# variable evaluates to an empty string: AGE» на каждом запуске (раз в минуту).
 ExecStart=/usr/bin/env bash -c '\
     HB=/var/lib/gradesentinel/.heartbeat; \
-    [ -f "$HB" ] || exit 0; \
-    AGE=$(( $(date +%%s) - $(stat -c %%Y "$HB") )); \
-    if [ "$AGE" -gt 180 ]; then \
-        echo "Heartbeat protukh (${AGE}s), restarting bot"; \
+    [ -f "$$HB" ] || exit 0; \
+    AGE=$$(( $$(date +%%s) - $$(stat -c %%Y "$$HB") )); \
+    if [ "$$AGE" -gt 180 ]; then \
+        echo "Heartbeat protukh ($${AGE}s), restarting bot"; \
         systemctl restart gradesentinel-bot; \
     fi'

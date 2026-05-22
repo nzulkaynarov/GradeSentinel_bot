@@ -240,7 +240,9 @@ def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_
             logger.warning(f"Failed to send group notification to {chat_id} (thread={thread_id}): {e}")
 
 def _record_student_failure(student_id: int, display_name: str):
-    """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу."""
+    """Учитывает неудачную попытку чтения таблицы. После N подряд — алерт админу
+    в логи + Telegram (раньше только в логах, юзер не видел).
+    """
     _student_failure_counts[student_id] += 1
     count = _student_failure_counts[student_id]
     if count >= _FAILURE_THRESHOLD:
@@ -248,10 +250,26 @@ def _record_student_failure(student_id: int, display_name: str):
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if last_alert is None or (now - last_alert).total_seconds() > _FAILURE_ALERT_COOLDOWN_HOURS * 3600:
             _last_failure_alert[student_id] = now
-            logger.error(
+            msg = (
                 f"[SHEET STUCK] student_id={student_id} ({display_name}): "
                 f"{count} consecutive failures fetching data"
             )
+            logger.error(msg)
+            try:
+                import os
+                admin_id = int(os.environ.get("ADMIN_ID", "0") or "0")
+                if _bot is not None and admin_id > 0:
+                    _bot.send_message(
+                        admin_id,
+                        f"⚠️ <b>Таблица недоступна</b>\n\n"
+                        f"Ученик: <code>{display_name}</code> (id={student_id})\n"
+                        f"Подряд ошибок: <b>{count}</b>\n\n"
+                        f"Проверь что лист «Все оценки» существует в дневнике "
+                        f"и доступен для service account'а.",
+                        parse_mode='HTML',
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to send sheet-stuck alert to admin: {e}")
 
 
 def _record_student_success(student_id: int):
