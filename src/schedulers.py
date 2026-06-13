@@ -52,6 +52,10 @@ _job_locks = {
     'subscription': threading.Lock(),
     'cleanup': threading.Lock(),
     'weekly_text_digest': threading.Lock(),
+    # PR_H5 proactive-alerts: джоб запускается из _scheduler_loop в 17:00, но
+    # лок не был зарегистрирован → _run_job_safe падал с KeyError каждый день,
+    # фича никогда не отрабатывала в проде. (fix prod-stability)
+    'proactive_alerts': threading.Lock(),
 }
 
 # In-memory кэш маркеров: {job: marker}. Источник правды — БД (settings),

@@ -38,7 +38,7 @@ def _state_is(user_id: int, expected: str) -> bool:
     return bool(s and s.get('state') == expected)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_family_name'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_family_name'))
 def _on_family_name(message):
     """User вводит название новой семьи. process_family_name сам разрулит
     self-serve vs admin flow через get_user_state.data."""
@@ -46,7 +46,7 @@ def _on_family_name(message):
     process_family_name(message)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_head_choice'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_head_choice'))
 def _on_head_choice(message):
     """User выбирает «сам главой» / «назначить другого»."""
     from src.handlers.admin import process_head_choice
@@ -55,7 +55,7 @@ def _on_head_choice(message):
     process_head_choice(message, family_name)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_head_fio'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_head_fio'))
 def _on_head_fio(message):
     """User вводит ФИО внешнего главы."""
     from src.handlers.admin import process_head_fio
@@ -64,7 +64,7 @@ def _on_head_fio(message):
     process_head_fio(message, family_name)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_head_phone'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_head_phone'))
 def _on_head_phone(message):
     """User вводит телефон главы. data — json {family_name, head_fio}."""
     from src.handlers.admin import process_head_phone
@@ -79,14 +79,14 @@ def _on_head_phone(message):
 
 
 # ─── Subscription / promo / price flows ─────────────────────────────
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_code'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_promo_code'))
 def _on_promo_code(message):
     """Юзер вводит промокод для применения к своей семье."""
     from src.handlers.subscription import _process_promo_code
     _process_promo_code(message)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_admin_price'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_admin_price'))
 def _on_admin_price(message):
     """Админ вводит новую цену для тарифа. data — plan_key."""
     from src.handlers.subscription import _process_price_input
@@ -95,14 +95,14 @@ def _on_admin_price(message):
     _process_price_input(message, plan_key)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_free'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_promo_free'))
 def _on_promo_free(message):
     """Админ создаёт промокод с бесплатными месяцами."""
     from src.handlers.subscription import _process_promo_free
     _process_promo_free(message)
 
 
-@bot.message_handler(func=lambda m: _state_is(m.from_user.id, 'awaiting_promo_discount'))
+@bot.message_handler(func=lambda m: m.chat.type == 'private' and _state_is(m.from_user.id, 'awaiting_promo_discount'))
 def _on_promo_discount(message):
     """Админ создаёт промокод со скидкой."""
     from src.handlers.subscription import _process_promo_discount

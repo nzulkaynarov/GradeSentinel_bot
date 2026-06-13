@@ -18,8 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 def _matches_label(message, key: str) -> bool:
-    """True если text сообщения точно равен локализованному label кнопки."""
+    """True если text сообщения точно равен локализованному label кнопки.
+
+    Только private-чаты: reply-keyboard навигация существует лишь в личке.
+    В группах (бот добавлен для уведомлений) такие совпадения текста не должны
+    срабатывать — иначе сообщение участника группы улетает как команда/вопрос."""
     if not message.text:
+        return False
+    if getattr(message.chat, 'type', None) != 'private':
         return False
     lang = get_user_lang(message.chat.id)
     return message.text.strip() == t(key, lang).strip()

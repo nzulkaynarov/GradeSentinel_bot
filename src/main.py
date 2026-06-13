@@ -874,9 +874,14 @@ def callback_up_lang(call):
 #  Обработка Reply-кнопок главного меню
 # ═══════════════════════════════════════════
 
-@bot.message_handler(func=lambda m: m.text in BUTTON_ACTIONS)
+@bot.message_handler(
+    func=lambda m: m.chat.type == 'private' and m.text in BUTTON_ACTIONS
+)
 def handle_menu_buttons(message):
-    """Обработчик нажатий на кнопки главного меню (мультиязычный)."""
+    """Обработчик нажатий на кнопки главного меню (мультиязычный).
+
+    Только private: reply-keyboard кнопки живут лишь в личке. В группе
+    совпадение текста не должно перехватываться (бот там — для уведомлений)."""
     action = BUTTON_ACTIONS[message.text]
     user_id = message.chat.id
     lang = get_user_lang(user_id)
