@@ -69,7 +69,11 @@ jobs:
           sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-webapp.service /etc/systemd/system/gradesentinel-webapp.service
           sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.service /etc/systemd/system/gradesentinel-heartbeat.service
           sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.timer /etc/systemd/system/gradesentinel-heartbeat.timer
-          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/Caddyfile
+          # Мультитенантный VPS: пишем ТОЛЬКО свой фрагмент в conf.d/grades.caddy.
+          # Мастер /etc/caddy/Caddyfile (глобальный блок + import conf.d/*.caddy)
+          # создаётся один раз в install.sh и деплоем НЕ трогается — иначе затрём
+          # чужие сайты (b2b.railtech.uz). Каталог conf.d уже создан install.sh.
+          sudo /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/conf.d/grades.caddy
 
           sudo /usr/bin/caddy validate --config /etc/caddy/Caddyfile
           sudo /usr/bin/systemctl daemon-reload

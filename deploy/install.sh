@@ -139,8 +139,22 @@ systemctl enable --now fail2ban
 # ────────────────────────────────────────────────────────────
 # 7. Caddy config
 # ────────────────────────────────────────────────────────────
-log "Шаг 7/8: Caddyfile → /etc/caddy/Caddyfile"
-install -m 0644 "${REPO_DIR}/deploy/Caddyfile" /etc/caddy/Caddyfile
+log "Шаг 7/8: Caddy фрагмент → /etc/caddy/conf.d/grades.caddy"
+# Мультитенантный VPS: деплой пишет ТОЛЬКО свой фрагмент, мастер не трогаем —
+# иначе затрём чужие сайты (b2b.railtech.uz и т.п.).
+install -d -m 0755 /etc/caddy/conf.d
+install -m 0644 "${REPO_DIR}/deploy/Caddyfile" /etc/caddy/conf.d/grades.caddy
+# Гарантируем мастер с глобальным блоком + import (идемпотентно; чужие
+# фрагменты в conf.d не трогаем).
+if ! grep -q 'import /etc/caddy/conf.d' /etc/caddy/Caddyfile 2>/dev/null; then
+    cat > /etc/caddy/Caddyfile <<'CADDYMASTER'
+{
+    email zulkaynarov@gmail.com
+}
+
+import /etc/caddy/conf.d/*.caddy
+CADDYMASTER
+fi
 # /var/log/caddy уже создан apt-пакетом caddy; install -d НЕ перевладеет
 # существующую директорию, поэтому делаем chown явно. На повторный запуск
 # скрипта это идемпотентно.
