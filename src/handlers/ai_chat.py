@@ -227,9 +227,16 @@ def _on_pick_family(call):
     _enter_chat_mode(user_id, family, lang)
 
 
-@bot.message_handler(func=lambda m: _is_ai_chat_state(m.from_user.id))
+@bot.message_handler(
+    func=lambda m: m.chat.type == 'private' and _is_ai_chat_state(m.from_user.id)
+)
 def _on_chat_message(message):
     """Любой текст в ai_chat_mode → вопрос для AI.
+
+    ТОЛЬКО private-чаты. Бот добавлен в семейные группы для уведомлений; если
+    родитель/админ оставался в ai_chat_mode и писал в группе, сообщение
+    участника улетало в AI и бот отвечал (галлюцинировал) прямо в группе.
+    Гейт chat.type == 'private' закрывает эту утечку.
 
     PR_G-hotfix: убран admin-блокировщик. Admin может legitimately быть в
     ai_chat_mode через «👨 Я родитель» (Tier 2) — там AI должен отвечать.

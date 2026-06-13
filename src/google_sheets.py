@@ -2,6 +2,7 @@ import os
 import json
 import time
 import logging
+import threading
 from typing import List, Optional
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -20,21 +21,41 @@ CREDENTIALS_FILE = os.environ.get(
 )
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
-_sheets_service = None
+# Сервис кэшируется ПО ПОТОКАМ (thread-local), а не глобальным singleton'ом.
+#
+# КРИТИЧНО: googleapiclient построен на httplib2, который НЕ thread-safe —
+# один объект Http (и его SSL-сокет) нельзя дёргать из нескольких потоков
+# одновременно. monitor_engine читает листы через ThreadPoolExecutor(8), и при
+# общем singleton'е конкурентные .execute() портили SSL-стрим → симптомы:
+#   SSL DECRYPTION_FAILED_OR_BAD_RECORD_MAC / WRONG_VERSION_NUMBER,
+#   IncompleteRead, HTML «400 Bad Request», и периодический SIGSEGV/SIGABRT
+#   (повреждение нативной памяти в OpenSSL под конкурентным доступом).
+# Thread-local service → у каждого потока свой Http → гонки на сокете нет.
+# Официальная рекомендация google-api-python-client: «each thread needs its
+# own httplib2.Http() instance».
+_thread_local = threading.local()
 
 def get_sheets_service():
-    """Инициализирует и возвращает кэшированный сервис Google Sheets API (singleton)."""
-    global _sheets_service
-    if _sheets_service is not None:
-        return _sheets_service
+    """Возвращает Google Sheets API service, индивидуальный для текущего потока.
+
+    Кэшируется в thread-local: один service (и httplib2.Http) на поток,
+    переживает много вызовов в рамках жизни потока. См. комментарий выше про
+    thread-safety — глобальный singleton вызывал нативные крэши под
+    параллельным fetch'ем в monitor_engine."""
+    service = getattr(_thread_local, 'service', None)
+    if service is not None:
+        return service
 
     if not os.path.exists(CREDENTIALS_FILE):
         return None
 
     creds = Credentials.from_service_account_file(
         CREDENTIALS_FILE, scopes=SCOPES)
-    _sheets_service = build('sheets', 'v4', credentials=creds)
-    return _sheets_service
+    # cache_discovery=False — не писать discovery-кэш на диск (oauth2client<4
+    # warning) и не делать сетевой запрос discovery doc на каждый build.
+    service = build('sheets', 'v4', credentials=creds, cache_discovery=False)
+    _thread_local.service = service
+    return service
 
 def get_sheet_data(spreadsheet_id: str, range_name: str, max_retries: int = 3) -> Optional[List[List[str]]]:
     """
