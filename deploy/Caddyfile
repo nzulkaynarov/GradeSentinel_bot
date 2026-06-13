@@ -1,12 +1,13 @@
-# /etc/caddy/Caddyfile — multi-tenant config для VPS railtech.uz
-# Caddy сам тянет Let's Encrypt сертификат на каждый поддомен.
-# Перед reload: caddy validate --config /etc/caddy/Caddyfile
-
-{
-    # Email для Let's Encrypt уведомлений об экспирации
-    email zulkaynarov@gmail.com
-    # admin off  # раскомментить если не нужен Caddy admin API на :2019
-}
+# /etc/caddy/conf.d/grades.caddy — ФРАГМЕНТ сайта grades.railtech.uz.
+#
+# Мультитенантный VPS (railtech.uz): на сервере несколько проектов делят Caddy.
+# Чтобы деплой GradeSentinel НЕ затирал чужие сайты (например b2b.railtech.uz),
+# деплой пишет ТОЛЬКО этот фрагмент в /etc/caddy/conf.d/grades.caddy, а мастер
+# /etc/caddy/Caddyfile содержит глобальный блок { email } + import conf.d/*.caddy
+# и деплоями не трогается. Поэтому здесь НЕТ глобального блока { ... } —
+# второй глобальный блок уронил бы `caddy validate` (дубль).
+#
+# Caddy сам тянет Let's Encrypt. Проверка: caddy validate --config /etc/caddy/Caddyfile
 
 # ═══════════════════════════════════════════════════════════
 #  grades.railtech.uz
@@ -66,12 +67,3 @@ grades.railtech.uz {
         level INFO
     }
 }
-
-# ═══════════════════════════════════════════════════════════
-#  NOTE: bare domain railtech.uz сейчас на GitHub Pages
-#  (185.199.x.x), не указывает на этот VPS. Поэтому блока
-#  для него здесь нет — Caddy не должен пытаться выдать ему
-#  TLS-cert (challenge будет fail'ить и шуметь в логах).
-#  Если в будущем переведёшь railtech.uz на этот VPS —
-#  добавь блок здесь.
-# ═══════════════════════════════════════════════════════════

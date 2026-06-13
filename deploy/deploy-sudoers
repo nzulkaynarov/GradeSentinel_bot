@@ -32,7 +32,9 @@ deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/g
 deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-webapp.service /etc/systemd/system/gradesentinel-webapp.service
 deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.service /etc/systemd/system/gradesentinel-heartbeat.service
 deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-heartbeat.timer /etc/systemd/system/gradesentinel-heartbeat.timer
-deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/Caddyfile
+# Мультитенантный VPS: деплой пишет ТОЛЬКО свой фрагмент в conf.d (не мастер),
+# чтобы не затирать чужие сайты (b2b.railtech.uz). Мастер создаёт install.sh.
+deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/Caddyfile /etc/caddy/conf.d/grades.caddy
 
 # Управление сервисами (только наши, по префиксу gradesentinel-)
 deploy ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
