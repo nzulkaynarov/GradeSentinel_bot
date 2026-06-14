@@ -3,6 +3,8 @@ config/*.json
 
 # Переменные окружения (Токены бота, пароли)
 .env
+.env.*
+!.env.example
 
 # База данных (чтобы не затереть рабочую базу пустой версией из гита)
 data/*.db
@@ -25,6 +27,28 @@ __pycache__/
 .venv
 venv/
 ENV/
+
+# Тестовые / линт-кэши (корень проекта — pytest/ruff/mypy/coverage)
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging артефакты
+build/
+dist/
+*.egg-info/
+
+# IDE / редакторы
+.idea/
+.vscode/
+
+# Бэкапы и merge-артефакты (*.bak появляются при правках конфигов, *.orig при конфликтах)
+*.bak
+*.orig
 
 # Docker
 .dockerignore
