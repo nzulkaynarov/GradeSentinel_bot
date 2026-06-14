@@ -878,6 +878,7 @@ from src.db.families import (  # noqa: E402, F401
     add_family,
     add_student,
     update_student_display_name,
+    update_student_spreadsheet,
     set_family_head,
     link_parent_to_family,
     link_student_to_family,
