@@ -125,6 +125,33 @@ def update_student_display_name(student_id: int, display_name: str):
         )
 
 
+def update_student_spreadsheet(student_id: int, spreadsheet_id: str,
+                               display_name: Optional[str] = None) -> bool:
+    """Меняет ссылку (spreadsheet_id) у СУЩЕСТВУЮЩЕГО ученика, сохраняя историю.
+
+    grade_history и quarter_grades привязаны к student_id (FK), НЕ к
+    spreadsheet_id, поэтому смена ссылки in-place не теряет ни одной оценки.
+    Сценарий: с началом учебного года школа выдаёт новую таблицу — родитель
+    меняет ссылку, история прошлых лет остаётся, новые оценки доимпортируются
+    (history_importer дедупит по содержимому).
+
+    display_name (если передан) обновляется из заголовка новой таблицы.
+    Возвращает True если ученик существовал и строка обновлена."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if display_name is not None:
+            cursor.execute(
+                'UPDATE students SET spreadsheet_id = ?, display_name = ? WHERE id = ?',
+                (spreadsheet_id, display_name, student_id),
+            )
+        else:
+            cursor.execute(
+                'UPDATE students SET spreadsheet_id = ? WHERE id = ?',
+                (spreadsheet_id, student_id),
+            )
+        return cursor.rowcount > 0
+
+
 # ─── Связи ──────────────────────────────────────────────────────────
 def set_family_head(family_id: int, parent_id: int):
     """Делает родителя главой семьи + гарантирует family_links запись.

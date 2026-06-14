@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Optional, Tuple
 from telebot import types
@@ -16,6 +17,9 @@ STATE_AWAITING_CHILD_URL = "awaiting_child_url"
 STATE_AWAITING_MEMBER_INFO = "awaiting_member_info"
 STATE_AWAITING_MEMBER_FIO = "awaiting_member_fio"
 STATE_AWAITING_MEMBER_PHONE = "awaiting_member_phone"
+# Смена ссылки на таблицу у существующего ученика (сохраняя историю).
+STATE_AWAITING_RELINK_URL = "awaiting_relink_url"        # data=json {f_id, s_id, name}
+STATE_AWAITING_RELINK_CONFIRM = "awaiting_relink_confirm"  # data=json {f_id, s_id, name, ss_id, title}
 
 
 def _parse_int_args(call_data: str, prefix: str, count: int) -> Optional[Tuple[int, ...]]:
@@ -74,9 +78,14 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
     from src.database_manager import get_child_count, get_parent_role, is_subscription_active, get_family_subscription
     lang = get_user_lang(chat_id)
     markup = types.InlineKeyboardMarkup()
+    child_count = get_child_count(f_id)
     markup.add(types.InlineKeyboardButton(t("family_invite_btn", lang), callback_data=f"gen_invite_{f_id}"))
     markup.add(types.InlineKeyboardButton(t("family_add_child_btn", lang), callback_data=f"add_child_{f_id}"))
     markup.add(types.InlineKeyboardButton(t("family_list_btn", lang), callback_data=f"list_edit_{f_id}"))
+    # Смена ссылки на таблицу (новый учебный год → новая ссылка от школы).
+    # Только если есть дети — иначе менять нечего.
+    if child_count > 0:
+        markup.add(types.InlineKeyboardButton(t("family_relink_btn", lang), callback_data=f"relink_list_{f_id}"))
 
     role = get_parent_role(chat_id)
     if role == 'admin':
@@ -95,7 +104,6 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
         # Для глав семей (не админов) — кнопка назад в меню
         markup.add(types.InlineKeyboardButton(t("user_panel_back", lang), callback_data="up_back"))
 
-    child_count = get_child_count(f_id)
     text = t("family_manage_title", lang, count=child_count)
     if message_id_to_edit:
         bot.edit_message_text(text, chat_id, message_id_to_edit, reply_markup=markup, parse_mode='HTML')
@@ -338,6 +346,185 @@ def process_add_child_step(message, f_id):
     except Exception as e:
         logger.exception("Unexpected error in process_add_child_step")
         send_content(message.chat.id, t("child_add_error", lang))
+
+# ─── Смена ссылки на таблицу у существующего ученика (сохраняя историю) ──────
+# Сценарий: новый учебный год → школа выдала новую ссылку (и/или сменился класс).
+# grade_history привязана к student_id, поэтому UPDATE spreadsheet_id сохраняет
+# всю историю. Защита от чужой таблицы — confirm-шаг с её заголовком.
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('relink_list_'))
+def callback_relink_list(call):
+    """Шаг 1: выбор ребёнка, у которого менять ссылку."""
+    from src.database_manager import get_family_students
+    args = _parse_int_args(call.data, 'relink_list_', 1)
+    if not args:
+        return
+    f_id = args[0]
+    if not _check_family_access(call, f_id):
+        return
+    lang = get_user_lang(call.from_user.id)
+    students = get_family_students(f_id)
+    if not students:
+        bot.answer_callback_query(call.id, t("relink_no_students", lang), show_alert=True)
+        return
+    markup = types.InlineKeyboardMarkup()
+    for s in students:
+        markup.add(types.InlineKeyboardButton(
+            f"🔗 {s['fio']}", callback_data=f"relink_pick_{f_id}_{s['id']}"))
+    markup.add(types.InlineKeyboardButton(t("family_back", lang), callback_data=f"back_manage_{f_id}"))
+    bot.edit_message_text(t("relink_pick_prompt", lang), call.message.chat.id,
+                          call.message.message_id, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('relink_pick_'))
+def callback_relink_pick(call):
+    """Шаг 2: выбран ребёнок → просим новую ссылку (persistent state)."""
+    from src.database_manager import get_family_students
+    args = _parse_int_args(call.data, 'relink_pick_', 2)
+    if not args:
+        return
+    f_id, s_id = args
+    if not _check_family_access(call, f_id):
+        return
+    lang = get_user_lang(call.from_user.id)
+    student = next((s for s in get_family_students(f_id) if s['id'] == s_id), None)
+    if not student:
+        bot.answer_callback_query(call.id, t("relink_no_students", lang), show_alert=True)
+        return
+    name = student['fio']
+    set_user_state(call.from_user.id, STATE_AWAITING_RELINK_URL,
+                   json.dumps({"f_id": f_id, "s_id": s_id, "name": name}))
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True,
+                                        input_field_placeholder=t("child_url_placeholder", lang))
+    markup.add(types.KeyboardButton(t("btn_cancel", lang)))
+    bot.answer_callback_query(call.id)
+    bot.send_message(call.message.chat.id, t("relink_enter_url", lang, name=name), reply_markup=markup)
+
+
+@bot.message_handler(
+    func=lambda msg: (get_user_state(msg.chat.id) or {}).get('state') == STATE_AWAITING_RELINK_URL,
+    content_types=['text']
+)
+def receive_relink_url(message):
+    """Шаг 3: получили ссылку → валидируем, тянем заголовок, показываем confirm."""
+    from src.google_sheets import get_spreadsheet_title
+    lang = get_user_lang(message.chat.id)
+    state = get_user_state(message.chat.id)
+    try:
+        data = json.loads(state.get('data') or '{}')
+        f_id = int(data['f_id']); s_id = int(data['s_id']); name = data.get('name', '')
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        clear_user_state(message.chat.id)
+        return
+
+    if not message.text or message.text == t("btn_cancel", lang):
+        clear_user_state(message.chat.id)
+        send_menu_safe(message.chat.id, t("relink_cancelled", lang))
+        return
+
+    url = message.text.strip()
+    try:
+        bot.delete_message(message.chat.id, message.message_id)
+    except Exception as e:
+        logger.debug(f"Could not delete relink URL message: {e}")
+
+    if "docs.google.com/spreadsheets/d/" not in url or "/d/" not in url:
+        send_menu_safe(message.chat.id, t("child_url_invalid", lang))
+        return
+    ss_id = url.split("/d/")[1].split("/")[0]
+    if not ss_id:
+        send_menu_safe(message.chat.id, t("child_url_no_id", lang))
+        return
+
+    # Проверяем доступ к таблице и берём её заголовок для confirm.
+    title = None
+    try:
+        title = get_spreadsheet_title(ss_id)
+    except Exception as se:
+        err_str = str(se)
+        logger.error(f"Error calling Sheets API on relink: {se}")
+        if '403' in err_str or '404' in err_str or 'permission' in err_str.lower():
+            send_menu_safe(message.chat.id, t("child_no_access_error", lang))
+            return
+    if not title:
+        title = t("default_student_name", lang)
+
+    # Защита от чужой таблицы: показываем заголовок и просим подтвердить.
+    set_user_state(message.chat.id, STATE_AWAITING_RELINK_CONFIRM, json.dumps(
+        {"f_id": f_id, "s_id": s_id, "name": name, "ss_id": ss_id, "title": title}))
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton(t("relink_confirm_yes", lang), callback_data="relink_ok"),
+        types.InlineKeyboardButton(t("relink_confirm_no", lang), callback_data="relink_no"),
+    )
+    send_menu_safe(message.chat.id,
+                   t("relink_confirm_prompt", lang, name=name, title=title),
+                   inline_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'relink_ok')
+def callback_relink_confirm(call):
+    """Шаг 4: подтверждено → UPDATE spreadsheet_id (история сохраняется) + импорт."""
+    from src.database_manager import update_student_spreadsheet
+    from src.utils import clean_student_name
+    lang = get_user_lang(call.from_user.id)
+    state = get_user_state(call.from_user.id)
+    if not state or state.get('state') != STATE_AWAITING_RELINK_CONFIRM:
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        data = json.loads(state.get('data') or '{}')
+        f_id = int(data['f_id']); s_id = int(data['s_id'])
+        ss_id = data['ss_id']; title = data.get('title') or data.get('name', '')
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        clear_user_state(call.from_user.id)
+        bot.answer_callback_query(call.id)
+        return
+    # Перепроверка прав (state мог пережить смену роли).
+    if not can_manage_family(call.from_user.id, f_id):
+        clear_user_state(call.from_user.id)
+        bot.answer_callback_query(call.id, t("admin_no_access", lang), show_alert=True)
+        return
+    clear_user_state(call.from_user.id)
+
+    display_name = clean_student_name(title)
+    update_student_spreadsheet(s_id, ss_id, display_name=display_name)
+    try:
+        bot.edit_message_text(t("relink_done", lang, name=display_name),
+                              call.message.chat.id, call.message.message_id)
+    except Exception:
+        send_menu_safe(call.message.chat.id, t("relink_done", lang, name=display_name))
+    bot.answer_callback_query(call.id)
+
+    # Фоновый импорт истории из новой таблицы (дедуп по содержимому — старые
+    # годы не задвоятся, новые оценки подтянутся в тот же student_id).
+    import threading
+    def _bg_relink_import():
+        try:
+            from src.history_importer import import_history_for_student, import_quarters_for_student
+            result = import_history_for_student(s_id, ss_id)
+            q_result = import_quarters_for_student(s_id, ss_id)
+            total = result['imported'] + q_result['imported']
+            if total > 0:
+                send_content(call.message.chat.id,
+                             t("history_imported", lang, count=total, name=display_name))
+        except Exception as e:
+            logger.error(f"Background relink import failed for student {s_id}: {e}")
+    threading.Thread(target=_bg_relink_import, daemon=True).start()
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'relink_no')
+def callback_relink_cancel(call):
+    """Отмена на confirm-шаге."""
+    lang = get_user_lang(call.from_user.id)
+    clear_user_state(call.from_user.id)
+    try:
+        bot.edit_message_text(t("relink_cancelled", lang),
+                              call.message.chat.id, call.message.message_id)
+    except Exception as e:
+        logger.debug(f"relink cancel edit failed: {e}")
+    bot.answer_callback_query(call.id)
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
