@@ -420,6 +420,48 @@ def compute_year_insight(student_id: int, report: dict, lang: str = 'ru') -> Opt
         return None
 
 
+_SUMMER_ACTIVITY_MAX_TOKENS = 320
+
+
+def generate_summer_activity(student_name: str, subject: str,
+                             lang: str = 'ru') -> Optional[str]:
+    """«Летний режим»: короткая каникулярная активность для родителя под
+    отстающий предмет ребёнка.
+
+    Чистый AI с жёстким промптом (locale 'summer_activity_prompt') — он держит
+    тон («помочь закрепить», НЕ «отстаёт/слабый») и формат (одна конкретная
+    активность на 10-15 минут, без давления). Безопасно деградирует в None
+    (нет ANTHROPIC_API_KEY / timeout / API error / мета-ответ)."""
+    client = _get_client()
+    if not client:
+        return None
+
+    prompt = t("summer_activity_prompt", lang, name=student_name, subject=subject)
+    try:
+        message = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=_SUMMER_ACTIVITY_MAX_TOKENS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = message.content[0].text.strip()
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        if not _looks_like_real_insight(text):
+            logger.warning(
+                f"Summer activity для {student_name}/{subject} отбракован как мета-ответ")
+            return None
+        return text
+    except anthropic.APITimeoutError:
+        logger.warning(f"Summer activity timeout for {student_name}")
+        return None
+    except anthropic.APIError as e:
+        logger.warning(f"Summer activity API error: {e}")
+        return None
+    except Exception as e:
+        logger.warning(f"Summer activity unexpected error: {e}")
+        return None
+
+
 # ════════════════════════════════════════════════════════════
 #  AI chat — родитель спрашивает про оценки ученика
 # ════════════════════════════════════════════════════════════

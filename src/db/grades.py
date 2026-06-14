@@ -208,6 +208,36 @@ def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[D
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_weakest_subject(student_id: int, days: int = 200,
+                        min_count: int = 3) -> Optional[Dict[str, Any]]:
+    """Самый слабый предмет ученика за N дней: {subject, avg, count}.
+
+    Для «Летнего режима» (нэдж под отстающий предмет на каникулах). days=200
+    по умолчанию — летом последние оценки лежат за прошлый семестр (30-100 дней
+    назад). min_count=3 (data-honesty): предмет с 1-2 оценками — шум, не сигнал,
+    такие пропускаем. Возвращает None если ни у одного предмета нет ≥min_count
+    числовых оценок."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT subject, AVG(grade_value) AS avg, COUNT(*) AS cnt
+            FROM grade_history
+            WHERE student_id = ?
+              AND grade_value IS NOT NULL
+              AND COALESCE(grade_date, date(date_added, '+5 hours'))
+                  >= date('now', '+5 hours', ?)
+            GROUP BY subject
+            HAVING cnt >= ?
+            ORDER BY avg ASC, cnt DESC
+            LIMIT 1
+        ''', (student_id, f'-{days} days', min_count))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {"subject": row["subject"], "avg": round(row["avg"], 2),
+                "count": row["cnt"]}
+
+
 # ─── Daily summaries ────────────────────────────────────────────────
 def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
     """Оценки студента за сегодня (по Ташкенту). Дедуп по subject — MAX(date_added)

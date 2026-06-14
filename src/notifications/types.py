@@ -15,6 +15,7 @@ class NotificationType(str, Enum):
     SUBSCRIPTION_EXPIRY = "sub_expiry"       # 10:00, за 7д/1д/0д
     WEEKLY_DIGEST = "weekly_digest"          # Вс 09:00
     PROACTIVE_ALERT = "proactive_alert"      # ежечасно, AI-аномалии
+    SUMMER_ACTIVITY = "summer_activity"      # каникулы: еженедельный AI-нэдж родителю
 
     # Admin/operational
     SHEET_FAILURE = "sheet_failure"          # 5 подряд ошибок чтения листа

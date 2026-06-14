@@ -141,6 +141,8 @@
   "relink_confirm_no": "❌ Bekor qilish",
   "relink_done": "✅ «{name}» uchun havola yangilandi. Yangi jadvaldan baholar yuklanmoqda…",
   "relink_cancelled": "Bekor qilindi. Havola o'zgartirilmadi.",
+  "summer_activity_heading": "🌞 Ta'til uchun g'oya",
+  "summer_activity_prompt": "Sen — ta'tilda maktab o'quvchisi ota-onasiga yordam beradigan iliq va qisqa yordamchisan. Bola: {name}. Yozda yumshoq qo'llab-quvvatlash foydali bo'lgan fan: {subject}.\n\nOta-onaga «{subject}» ni bosimsiz va qiziqarli mustahkamlash uchun 10–15 daqiqalik BITTA aniq mashg'ulot taklif qil (uyda, sayrda yoki o'yin tarzida). Qoidalar: ohang qo'llab-quvvatlovchi bo'lsin; bola «orqada qolyapti», «zaif» yoki «pasaymoqda» deb YOZMA — faqat qanday qilib qiziqarli mashq qilish haqida; kirish va xayrlashuvsiz; 2–3 qisqa gap; o'zbek tilida.",
   "family_list_btn": "📋 Ro'yxat va O'chirish",
   "family_delete_btn": "🗑 Oilani o'chirish",
   "family_back_btn": "⬅️ Oilalar ro'yxatiga",
