@@ -634,7 +634,9 @@ from src.db.grades import (  # noqa: E402, F401
     get_quarter_grades,
     get_grade_history_for_student,
     get_grade_history_for_student_all,
+    get_weak_subjects,
     get_weakest_subject,
+    get_rotated_weak_subject,
     get_today_grades_for_student,
     get_overnight_grades_for_student,
     get_yesterday_grades_for_student,
@@ -839,6 +841,8 @@ from src.db.maintenance import (  # noqa: E402, F401
 from src.db.settings import (  # noqa: E402, F401
     get_setting,
     set_setting,
+    is_summer_opted_out,
+    set_summer_opted_out,
     get_plans_from_db,
     save_plans_to_db,
 )

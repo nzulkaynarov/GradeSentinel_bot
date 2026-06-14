@@ -35,6 +35,16 @@ def set_setting(key: str, value: str):
         ''', (key, value))
 
 
+def is_summer_opted_out(tg_id: int) -> bool:
+    """True если родитель отписался от «Летнего режима» (тап «🔕 Хватит»)."""
+    return get_setting(f"summer_optout_{tg_id}") == "1"
+
+
+def set_summer_opted_out(tg_id: int, opted_out: bool = True):
+    """Ставит/снимает opt-out от летних нэджей для родителя."""
+    set_setting(f"summer_optout_{tg_id}", "1" if opted_out else "0")
+
+
 def get_plans_from_db() -> Optional[Dict[str, Any]]:
     """Возвращает тарифы из БД или None если не заданы / невалидный JSON."""
     raw = get_setting('plans')
@@ -54,6 +64,8 @@ def save_plans_to_db(plans: Dict[str, Any]):
 __all__ = [
     "get_setting",
     "set_setting",
+    "is_summer_opted_out",
+    "set_summer_opted_out",
     "get_plans_from_db",
     "save_plans_to_db",
 ]

@@ -82,6 +82,7 @@ import src.handlers.analytics
 import src.handlers.settings
 import src.handlers.subscription
 import src.handlers.invite
+import src.handlers.summer  # noqa: F401  — «Летний режим» feedback (✅/🔄/🔕)
 import src.handlers.group
 
 # For direct routing in main menu
@@ -122,6 +123,12 @@ def send_welcome(message):
     user_id = message.chat.id
     lang = get_user_lang(user_id)
     admin_id_env = os.environ.get("ADMIN_ID")
+
+    # «Летний режим»: /start = «я вернулся» → снимаем opt-out, если был.
+    # Сообщение об отписке («🔕 Хватит») обещает возврат через /start — держим слово.
+    from src.database_manager import is_summer_opted_out, set_summer_opted_out
+    if is_summer_opted_out(user_id):
+        set_summer_opted_out(user_id, False)
 
     # Проверяем deep link (инвайт)
     args = message.text.split(maxsplit=1)

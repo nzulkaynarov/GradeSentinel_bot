@@ -815,10 +815,11 @@ def _check_summer_mode():
 
     from src.db.families import get_active_spreadsheets_with_subscription, get_families_for_student
     from src.database_manager import (
-        get_weakest_subject, get_user_lang, get_setting, set_setting,
-        get_family_members_telegram_ids,
+        get_rotated_weak_subject, get_user_lang, get_setting, set_setting,
+        get_family_members_telegram_ids, is_summer_opted_out,
     )
     from src.analytics_engine import generate_summer_activity
+    from src.handlers.summer import build_summer_keyboard
 
     students = get_active_spreadsheets_with_subscription()
     if not students:
@@ -840,9 +841,10 @@ def _check_summer_mode():
             continue  # на этой неделе уже слали
 
         try:
-            weak = get_weakest_subject(student_id)
+            # Чередуем предмет по неделям (worst-first list, индекс week % N).
+            weak = get_rotated_weak_subject(student_id, iso_week)
         except Exception as e:
-            logger.warning(f"get_weakest_subject failed for {student_id}: {e}")
+            logger.warning(f"get_rotated_weak_subject failed for {student_id}: {e}")
             continue
         if not weak:
             continue  # недостаточно данных (нет предмета с ≥3 оценками)
@@ -853,7 +855,8 @@ def _check_summer_mode():
         recipients = []
         for fam in families:
             recipients.extend(get_family_members_telegram_ids(fam['id']))
-        recipients = list(dict.fromkeys(recipients))
+        # Опт-аут в 1 тап («🔕 Хватит») — ключевой guardrail: не шлём тем, кто отписался.
+        recipients = [tg for tg in dict.fromkeys(recipients) if not is_summer_opted_out(tg)]
         if not recipients:
             continue
         lang = get_user_lang(recipients[0]) or 'ru'
@@ -865,10 +868,14 @@ def _check_summer_mode():
         ai_successes += 1
 
         full_text = f"{t('summer_activity_heading', lang)}\n\n{text}"
+        kb = build_summer_keyboard(student_id, lang)
         from src.notifications import get_sender, NotificationType
         sender = get_sender()
         for tg_id in recipients:
-            if sender.send(tg_id, full_text, ntype=NotificationType.SUMMER_ACTIVITY):
+            # defer=False: нэдж в 11:00 (не тихие часы) + inline-кнопки не должны
+            # попасть в очередь (там markup не сохраняется → кнопки потерялись бы).
+            if sender.send(tg_id, full_text, ntype=NotificationType.SUMMER_ACTIVITY,
+                           kb=kb, defer=False):
                 total_sent += 1
             time.sleep(0.05)
 

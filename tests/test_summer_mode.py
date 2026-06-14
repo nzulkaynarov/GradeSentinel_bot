@@ -91,6 +91,48 @@ def test_holiday_bad_json_falls_back_to_default(temp_db):
     assert sched._get_holiday_periods() == sched._DEFAULT_HOLIDAY_PERIODS
 
 
+# ─────────────────── stage 2: rotation + opt-out ───────────────────
+
+def test_weak_subjects_ordered_worst_first(temp_db):
+    sid = dbm.add_student("Kid", "ss")
+    for v in (2, 2, 2):
+        _seed(sid, "Слабый", v)
+    for v in (3, 3, 3):
+        _seed(sid, "Средний", v)
+    for v in (5, 5, 5):
+        _seed(sid, "Сильный", v)
+    subs = dbm.get_weak_subjects(sid, days=60)
+    assert [s["subject"] for s in subs] == ["Слабый", "Средний", "Сильный"]
+
+
+def test_rotated_subject_cycles_by_week(temp_db):
+    sid = dbm.add_student("Kid", "ss")
+    for v in (2, 2, 2):
+        _seed(sid, "A", v)
+    for v in (3, 3, 3):
+        _seed(sid, "B", v)
+    # 2 предмета → чередование по чётности недели
+    w0 = dbm.get_rotated_weak_subject(sid, 0, days=60)
+    w1 = dbm.get_rotated_weak_subject(sid, 1, days=60)
+    w2 = dbm.get_rotated_weak_subject(sid, 2, days=60)
+    assert w0["subject"] == "A"      # worst, index 0
+    assert w1["subject"] == "B"      # index 1
+    assert w2["subject"] == "A"      # wrap (2 % 2 == 0)
+
+
+def test_rotated_subject_none_without_data(temp_db):
+    sid = dbm.add_student("Kid", "ss")
+    assert dbm.get_rotated_weak_subject(sid, 0) is None
+
+
+def test_summer_optout_roundtrip(temp_db):
+    assert dbm.is_summer_opted_out(777) is False
+    dbm.set_summer_opted_out(777, True)
+    assert dbm.is_summer_opted_out(777) is True
+    dbm.set_summer_opted_out(777, False)
+    assert dbm.is_summer_opted_out(777) is False
+
+
 def test_summer_mode_skips_when_not_holiday(temp_db, monkeypatch):
     """Если не каникулы — джоба выходит сразу, без обращения к students."""
     dbm.set_setting('summer_mode_holidays', json.dumps([["2000-01-01", "2000-01-02"]]))

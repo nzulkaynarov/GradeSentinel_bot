@@ -208,15 +208,14 @@ def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[D
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_weakest_subject(student_id: int, days: int = 200,
-                        min_count: int = 3) -> Optional[Dict[str, Any]]:
-    """Самый слабый предмет ученика за N дней: {subject, avg, count}.
+def get_weak_subjects(student_id: int, days: int = 200, min_count: int = 3,
+                     limit: int = 5) -> List[Dict[str, Any]]:
+    """Слабейшие предметы ученика за N дней, по возрастанию среднего:
+    [{subject, avg, count}, ...] (worst first).
 
-    Для «Летнего режима» (нэдж под отстающий предмет на каникулах). days=200
-    по умолчанию — летом последние оценки лежат за прошлый семестр (30-100 дней
-    назад). min_count=3 (data-honesty): предмет с 1-2 оценками — шум, не сигнал,
-    такие пропускаем. Возвращает None если ни у одного предмета нет ≥min_count
-    числовых оценок."""
+    Для «Летнего режима»: чтобы чередовать предметы по неделям и давать «другую
+    идею». days=200 — летом последние оценки за прошлый семестр. min_count=3
+    (data-honesty): предмет с 1-2 оценками — шум, пропускаем."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -229,13 +228,30 @@ def get_weakest_subject(student_id: int, days: int = 200,
             GROUP BY subject
             HAVING cnt >= ?
             ORDER BY avg ASC, cnt DESC
-            LIMIT 1
-        ''', (student_id, f'-{days} days', min_count))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return {"subject": row["subject"], "avg": round(row["avg"], 2),
-                "count": row["cnt"]}
+            LIMIT ?
+        ''', (student_id, f'-{days} days', min_count, limit))
+        return [{"subject": r["subject"], "avg": round(r["avg"], 2),
+                 "count": r["cnt"]} for r in cursor.fetchall()]
+
+
+def get_weakest_subject(student_id: int, days: int = 200,
+                        min_count: int = 3) -> Optional[Dict[str, Any]]:
+    """Самый слабый предмет ученика: {subject, avg, count} или None."""
+    subjects = get_weak_subjects(student_id, days=days, min_count=min_count, limit=1)
+    return subjects[0] if subjects else None
+
+
+def get_rotated_weak_subject(student_id: int, week: int, days: int = 200,
+                            min_count: int = 3) -> Optional[Dict[str, Any]]:
+    """Слабый предмет с чередованием по неделям: subjects[week % N].
+
+    «Летний режим» крутит предметы неделя-за-неделей, чтобы не долбить один и
+    тот же. Детерминирована по (student_id, week) — scheduler (первичная отправка)
+    и handler («🔄 Другую») выбирают одинаковый предмет. None если данных нет."""
+    subjects = get_weak_subjects(student_id, days=days, min_count=min_count)
+    if not subjects:
+        return None
+    return subjects[week % len(subjects)]
 
 
 # ─── Daily summaries ────────────────────────────────────────────────
