@@ -6,6 +6,7 @@
 4. Проверка четвертных оценок (12:00, 18:00)
 5. Предупреждение об истечении подписки (10:00)
 """
+import json
 import time
 import logging
 import threading
@@ -56,6 +57,8 @@ _job_locks = {
     # лок не был зарегистрирован → _run_job_safe падал с KeyError каждый день,
     # фича никогда не отрабатывала в проде. (fix prod-stability)
     'proactive_alerts': threading.Lock(),
+    # «Летний режим»: еженедельный AI-нэдж родителю на каникулах.
+    'summer_mode': threading.Lock(),
 }
 
 # In-memory кэш маркеров: {job: marker}. Источник правды — БД (settings),
@@ -218,6 +221,12 @@ def _scheduler_loop():
             # до evening summary в 19:00). Раз в день, dedup на 48ч в БД.
             if now.hour == 17 and now.minute < 6:
                 _run_job_safe('proactive_alerts', today_str, _check_proactive_alerts)
+
+            # «Летний режим»: еженедельно в среду 11:00. Сам job выходит сразу,
+            # если сегодня НЕ каникулы (_is_holiday_now по календарю в settings).
+            # Каденс 1/нед, дедуп на (ученик, ISO-неделя).
+            if now.weekday() == 2 and now.hour == 11 and now.minute < 6:
+                _run_job_safe('summer_mode', today_str, _check_summer_mode)
 
             # Проверка четвертных оценок 2 раза в день: 12:00 и 18:00
             if now.hour in (12, 18) and now.minute < 6:
@@ -754,6 +763,126 @@ def _check_proactive_alerts():
     # 0 calls (нет аномалий) = не fail (нет данных для оценки).
     if ai_calls > 0:
         _track_ai_outcome('proactive_alerts', success=(ai_successes > 0))
+
+
+# ── «Летний режим» (каникулярные AI-нэджи родителю) ─────────────────────────
+# Календарь каникул хранится в settings (key 'summer_mode_holidays') как JSON
+# список пар ["YYYY-MM-DD","YYYY-MM-DD"]. Владелец задаёт его явно через
+# set_setting; до настройки используется дефолт ниже (летние каникулы UZ 2026).
+_DEFAULT_HOLIDAY_PERIODS = [["2026-06-01", "2026-08-25"]]
+
+
+def _get_holiday_periods():
+    """Список периодов каникул [[start,end], ...] из settings (или дефолт)."""
+    from src.database_manager import get_setting
+    raw = get_setting('summer_mode_holidays')
+    if not raw:
+        return _DEFAULT_HOLIDAY_PERIODS
+    try:
+        periods = json.loads(raw)
+        if isinstance(periods, list):
+            return periods
+    except (ValueError, TypeError):
+        logger.warning("summer_mode_holidays не парсится как JSON — использую дефолт")
+    return _DEFAULT_HOLIDAY_PERIODS
+
+
+def _is_holiday_now() -> bool:
+    """True если сегодня (по Ташкенту) попадает в период каникул."""
+    today = _get_local_now().date().isoformat()
+    for period in _get_holiday_periods():
+        try:
+            start, end = period[0], period[1]
+        except (IndexError, TypeError, KeyError):
+            continue
+        if start <= today <= end:
+            return True
+    return False
+
+
+def _check_summer_mode():
+    """«Летний режим»: на каникулах раз в неделю шлёт родителю короткую
+    AI-активность под самый слабый предмет ребёнка (чтобы подписка не молчала
+    всё лето → удержание перед сентябрьским renewal).
+
+    Гейт — календарь каникул (settings 'summer_mode_holidays'). Контент — чистый
+    AI с жёстким промптом (тон «закрепить», не «отстаёт»). Дедуп — маркер на
+    (ученик, ISO-неделя). Отправка через get_sender() (тихие часы / notify_mode
+    / retry уже учтены). Безопасно деградирует: один сломанный student не валит
+    цикл, нет данных по предмету → просто пропуск."""
+    if not _is_holiday_now():
+        return
+
+    from src.db.families import get_active_spreadsheets_with_subscription, get_families_for_student
+    from src.database_manager import (
+        get_weakest_subject, get_user_lang, get_setting, set_setting,
+        get_family_members_telegram_ids,
+    )
+    from src.analytics_engine import generate_summer_activity
+
+    students = get_active_spreadsheets_with_subscription()
+    if not students:
+        return
+
+    iso_year, iso_week, _ = _get_local_now().isocalendar()
+    week_tag = f"{iso_year}W{iso_week:02d}"
+
+    total_sent = 0
+    ai_calls = 0
+    ai_successes = 0
+
+    for s in students:
+        student_id = s['student_id']
+        student_name = s.get('display_name') or s.get('fio') or 'ученик'
+
+        marker_key = f"summer_sent_{student_id}_{week_tag}"
+        if get_setting(marker_key):
+            continue  # на этой неделе уже слали
+
+        try:
+            weak = get_weakest_subject(student_id)
+        except Exception as e:
+            logger.warning(f"get_weakest_subject failed for {student_id}: {e}")
+            continue
+        if not weak:
+            continue  # недостаточно данных (нет предмета с ≥3 оценками)
+
+        families = get_families_for_student(student_id)
+        if not families:
+            continue
+        recipients = []
+        for fam in families:
+            recipients.extend(get_family_members_telegram_ids(fam['id']))
+        recipients = list(dict.fromkeys(recipients))
+        if not recipients:
+            continue
+        lang = get_user_lang(recipients[0]) or 'ru'
+
+        ai_calls += 1
+        text = generate_summer_activity(student_name, weak['subject'], lang=lang)
+        if not text:
+            continue  # AI fail → не шлём пустоту, маркер не ставим (ретрай след. неделю)
+        ai_successes += 1
+
+        full_text = f"{t('summer_activity_heading', lang)}\n\n{text}"
+        from src.notifications import get_sender, NotificationType
+        sender = get_sender()
+        for tg_id in recipients:
+            if sender.send(tg_id, full_text, ntype=NotificationType.SUMMER_ACTIVITY):
+                total_sent += 1
+            time.sleep(0.05)
+
+        try:
+            set_setting(marker_key, "1")
+        except Exception as e:
+            logger.warning(f"set summer marker failed for {student_id}: {e}")
+
+    logger.info(
+        f"Summer mode cycle: students={len(students)}, sent={total_sent}, "
+        f"ai_calls={ai_calls}, ai_successes={ai_successes}"
+    )
+    if ai_calls > 0:
+        _track_ai_outcome('summer_mode', success=(ai_successes > 0))
 
 
 def _run_weekly_cleanup():

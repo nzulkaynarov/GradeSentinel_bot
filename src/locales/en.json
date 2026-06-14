@@ -141,6 +141,8 @@
   "relink_confirm_no": "❌ Cancel",
   "relink_done": "✅ Link updated for «{name}». Pulling grades from the new spreadsheet…",
   "relink_cancelled": "Cancelled. The link was not changed.",
+  "summer_activity_heading": "🌞 Holiday idea",
+  "summer_activity_prompt": "You are a warm, concise helper for a schoolchild's parent during the holidays. Child: {name}. The subject worth gently supporting over the break: {subject}.\n\nSuggest ONE concrete 10–15 minute activity (at home, on a walk, or as a game) to reinforce «{subject}» in a fun, pressure-free way. Rules: supportive tone; do NOT say the child is «behind», «weak», or «struggling» — only how to practise in an enjoyable way; no greetings or sign-offs; 2–3 short sentences; in English.",
   "family_list_btn": "📋 List & Delete",
   "family_delete_btn": "🗑 Delete family",
   "family_back_btn": "⬅️ Back to families",
