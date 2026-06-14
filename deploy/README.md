@@ -182,7 +182,51 @@ sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db \
 scp deploy@176.101.56.141:/tmp/sentinel-*.db ~/backups/
 ```
 
-Рекомендация — настроить cron на ежедневный backup. Делается одним systemd-таймером, можно добавить позже.
+Ежедневный локальный бэкап уже настроен: `gradesentinel-backup.timer` (22:30 UTC =
+03:30 TST) пишет gzip в `/var/backups/gradesentinel/`, ротация 7 дней.
+
+### Off-site бэкап (rclone → облако)
+
+Локальные бэкапы лежат на том же VPS — при его гибели теряются вместе с БД.
+`gradesentinel-offsite-backup.timer` (23:00 UTC = 04:00 TST) зеркалит папку
+бэкапов в облако через `rclone`. **Юнит уже установлен и enabled, но мягко
+скипает, пока не сконфигурирован** — алертов не шлёт.
+
+> ⚠️ **Privacy:** в БД — PII реальных родителей/детей (телефоны, имена, оценки).
+> Используй rclone **crypt** remote (client-side шифрование) поверх B2/S3 —
+> провайдер будет хранить только зашифрованные блобы.
+
+**Провижининг (один раз, на VPS под root):**
+
+```bash
+# 1. Установить rclone
+curl https://rclone.org/install.sh | sudo bash
+
+# 2. Завести бакет у провайдера (рекоменд. Backblaze B2 — дёшево; или S3).
+#    Создать application key с доступом только на этот бакет.
+
+# 3. Настроить rclone: сначала backend (b2/s3), затем crypt поверх него.
+sudo rclone --config /etc/gradesentinel/rclone.conf config
+#   - remote 'b2raw'   : type=b2,  account+key, bucket
+#   - remote 'secret'  : type=crypt, remote=b2raw:gradesentinel-db, задать пароли
+#   (crypt шифрует и имена файлов, и содержимое)
+
+# 4. Указать целевой remote и закрыть права (gradesentinel-юзер читает оба файла)
+echo 'RCLONE_REMOTE=secret:' | sudo tee /etc/gradesentinel/offsite-backup.env
+sudo chown root:gradesentinel /etc/gradesentinel/offsite-backup.env /etc/gradesentinel/rclone.conf
+sudo chmod 0640               /etc/gradesentinel/offsite-backup.env /etc/gradesentinel/rclone.conf
+
+# 5. Прогнать вручную + проверить
+sudo systemctl start gradesentinel-offsite-backup.service
+journalctl -u gradesentinel-offsite-backup.service -n 20 --no-pager
+sudo rclone --config /etc/gradesentinel/rclone.conf ls secret:
+```
+
+Off-site хранит то же 7-дневное окно, что и локально (`rclone sync`). Нужна более
+длинная история — включи versioning/lifecycle на стороне бакета.
+
+**Восстановление:** `rclone copy secret:sentinel-YYYYMMDD-HHMMSS.db.gz .` →
+`gunzip` → положить в `/var/lib/gradesentinel/sentinel.db` (бот остановлен).
 
 ### Откат к прошлой версии
 

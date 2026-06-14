@@ -179,6 +179,11 @@ install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.service" /etc/system
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.timer" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.service" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.timer" /etc/systemd/system/
+# Off-site бэкап (rclone → облако). Юнит мягко скипает, пока не сконфигурирован
+# (/etc/gradesentinel/offsite-backup.env + rclone.conf — provision вручную,
+# см. README). Поэтому таймер можно enable'ить сразу — он не будет шуметь.
+install -m 0644 "${REPO_DIR}/deploy/gradesentinel-offsite-backup.service" /etc/systemd/system/
+install -m 0644 "${REPO_DIR}/deploy/gradesentinel-offsite-backup.timer" /etc/systemd/system/
 
 # Каталог для бэкапов БД (gradesentinel:gradesentinel 0750).
 install -d -o gradesentinel -g gradesentinel -m 0750 /var/backups/gradesentinel
@@ -191,6 +196,7 @@ install -m 0440 -o root -g root "${REPO_DIR}/deploy/deploy-sudoers" /etc/sudoers
 systemctl daemon-reload
 systemctl enable gradesentinel-heartbeat.timer
 systemctl enable gradesentinel-backup.timer
+systemctl enable gradesentinel-offsite-backup.timer
 # bot/webapp юниты НЕ enable'ятся здесь — их активирует первый деплой
 # (раньше бы пытались стартовать без кода в /opt/gradesentinel и упали).
 
