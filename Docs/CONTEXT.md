@@ -162,26 +162,25 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 ### AI roadmap (после AI-first redesign 21.05.2026)
 
-**Tier 1 — knowledge expansion (текущий приоритет, лето 2026):**
-- **PR_E1 (~2ч): FAQ в system prompt.** Расширить `_CHAT_SYSTEM_PROMPTS` со статичными знаниями — тарифы, тихие часы, как добавить ребёнка, инвайт-ссылки, мониторинг. Чтобы AI отвечал на «сколько стоит?», «как пользоваться?» без extra инфры. ~5K tokens system prompt — приемлемо для Haiku 200K context.
-- **PR_E2 (~3-4ч): Tool use для динамики.** Anthropic SDK поддерживает tools — AI сам решает когда нужны актуальные данные:
-  - `get_subscription_status(family_id)` — активна ли, когда заканчивается
-  - `get_family_members(family_id)` — кто в семье
-  - `get_family_pricing()` — текущие тарифы из `settings` (когда станут динамическими)
-  - Loop через Anthropic tool_use → tool_result паттерн.
-- Решение НЕ RAG: документация компактная (~15-20K токенов), Claude Haiku 4.5 = 200K context, инфра vector DB/embeddings не оправдана. RAG имеет смысл когда документация >100K токенов или per-school knowledge base — то есть после расширения для контракта.
+> ⚠️ **Статусы сверены с КОДОМ 2026-06-29** — бОльшая часть Tier 1/2 УЖЕ в проде
+> (раздел раньше числил их «planned» и вводил в заблуждение). ✅ done · 🟡 частично · ⏳ planned.
 
-**Tier 2 — UX и автоматизация (через 1-2 недели после Tier 1):**
-- **Streaming responses** — SSE для WebApp (Anthropic API supports), batched для Telegram (отправлять частичные сообщения раз в N токенов).
-- **Proactive AI alerts** — anomaly detection раз в день: «У X серия троек, обратите внимание» → push в Telegram. Это **B2B killer feature** для презентации школе.
-- **👍/👎 feedback на ответы** — таблица `ai_chat_feedback`, кнопки под каждым ответом. Данные для будущего prompt tuning.
-- **UI history rendering в WebApp** — endpoint `GET /api/chat/history/<id>` уже есть (PR #52), dashboard.html не рендерит. Подгружать при открытии chat-section, рендерить prev messages.
-- **Bot ai_chat использует conversation history** — в handlers/ai_chat.py подключить `get_recent_chat_history` к `answer_parent_question(prev_messages=...)`. Сейчас таблица есть, но bot контекст не помнит.
+**Tier 1 — knowledge expansion:** ✅ **ГОТОВ**
+- ✅ **PR_E1: FAQ в system prompt** — `_CHAT_SYSTEM_PROMPTS` (analytics_engine.py) содержит блок «ФАКТЫ О БОТЕ» (что делает, тихие часы, команды, как добавить ребёнка, инвайты, подписка/цены, WebApp, языки, тайминги) на ru/uz/en.
+- ✅ **PR_E2: Tool use для динамики** — `src/ai_tools.py`: `get_subscription_status` / `get_family_members` / `get_family_pricing` + диспетчер + tool_use→tool_result loop (`answer_parent_question`, `MAX_TOOL_ITERATIONS`). family_id резолвится server-side (нельзя подменить).
+- Решение НЕ RAG (в силе): документация компактная (~15-20K токенов), Haiku 200K context — vector DB не оправдана; имеет смысл только при >100K или per-school KB (после контракта).
 
-**Tier 3 — после школьного контракта (август-сентябрь 2026):**
-- **Voice input** — Telegram voice message → Whisper API → текст → AI → ответ голосом. UZ-родители выиграют.
+**Tier 2 — UX и автоматизация:** в основном ГОТОВ
+- 🟡 **Streaming** — для Telegram СДЕЛАНО (PR_H4: `stream_callback` + throttled edit в `handlers/ai_chat.py`); SSE для WebApp — нет (webapp заморожен правилом web-rewrite «не трогать»).
+- 🟡 **Proactive AI alerts** — `detect_anomalies` (analytics_engine) + «Летний режим» weekly-нэджи есть; отдельного ежедневного anomaly→push ещё нет. **B2B killer feature** для школы.
+- ✅ **👍/👎 feedback** — `_build_feedback_markup` + `fb:`-callbacks + `save_feedback` (таблица `ai_chat_feedback`).
+- ⏳ **UI history rendering в WebApp** — backend `GET /api/chat/history` есть, `dashboard.html` не рендерит; **блокировано** правилом «webapp/app.py не трогать».
+- ✅ **Bot conversation memory** — `handlers/ai_chat.py` подключает `get_recent_family_chat_history` → `answer_parent_question(prev_messages=...)`.
+
+**Tier 3 — после школьного контракта (август-сентябрь 2026):** ⏳ всё planned
+- **Voice input** — Telegram voice → Whisper → текст → AI → ответ голосом. UZ-родители выиграют.
 - **School-side dashboard + multi-tenancy** — `schools` table, RBAC (admin → teacher → parent), teacher view (класс/поток overview), white-label опционально.
-- **RAG для per-school knowledge** — если школа даст «свой учебный план / FAQ» — здесь уже vector DB оправдана.
+- **RAG для per-school knowledge** — если школа даст свой учебный план / FAQ — тогда vector DB оправдана.
 
 **Архитектурные:**
 - `handlers/subscription.py` 1318 строк — split отложен сознательно. Платёжные сервисы (CLICK/PAYME) не подключены (владелец выдаёт подписки вручную через `/grant_sub`). Возвращаться когда платежи активны.
