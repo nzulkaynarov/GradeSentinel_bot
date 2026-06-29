@@ -32,7 +32,7 @@ def get_user_stats(telegram_id: int) -> Dict[str, Any]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
+        cursor.execute('SELECT id FROM parents WHERE telegram_id = %s', (telegram_id,))
         parent_row = cursor.fetchone()
         if not parent_row:
             return {'families': 0, 'students': 0, 'history_records': 0}
@@ -40,19 +40,19 @@ def get_user_stats(telegram_id: int) -> Dict[str, Any]:
         parent_id = parent_row['id']
         return {
             'families': cursor.execute(
-                'SELECT COUNT(DISTINCT family_id) as c FROM family_links WHERE parent_id = ?',
+                'SELECT COUNT(DISTINCT family_id) as c FROM family_links WHERE parent_id = %s',
                 (parent_id,),
             ).fetchone()['c'],
             'students': cursor.execute('''
                 SELECT COUNT(DISTINCT student_id) as c
                 FROM family_links
-                WHERE parent_id = ? AND student_id IS NOT NULL
+                WHERE parent_id = %s AND student_id IS NOT NULL
             ''', (parent_id,)).fetchone()['c'],
             'history_records': cursor.execute('''
                 SELECT COUNT(*) as c
                 FROM grade_history
                 WHERE student_id IN (
-                    SELECT DISTINCT student_id FROM family_links WHERE parent_id = ?
+                    SELECT DISTINCT student_id FROM family_links WHERE parent_id = %s
                 )
             ''', (parent_id,)).fetchone()['c'],
         }
@@ -71,18 +71,19 @@ def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, fio, phone, role, telegram_first_name FROM parents WHERE telegram_id = ?",
+            "SELECT id, fio, phone, role, telegram_first_name FROM parents WHERE telegram_id = %s",
             (telegram_id,),
         )
         user = cursor.fetchone()
         if not user:
             return None
+        user_dict = dict(user)
 
         cursor.execute('''
             SELECT DISTINCT f.family_name
             FROM families f
             JOIN family_links fl ON f.id = fl.family_id
-            WHERE fl.parent_id = ?
+            WHERE fl.parent_id = %s
         ''', (user['id'],))
         families = [row['family_name'] for row in cursor.fetchall()]
 
@@ -91,7 +92,7 @@ def get_user_info_by_tg_id(telegram_id: int) -> Optional[Dict[str, Any]]:
             'fio': user['fio'],
             'phone': user['phone'],
             'role': user['role'],
-            'telegram_first_name': user['telegram_first_name'] if 'telegram_first_name' in user.keys() else None,
+            'telegram_first_name': user_dict.get('telegram_first_name'),
             'families': families,
         }
 

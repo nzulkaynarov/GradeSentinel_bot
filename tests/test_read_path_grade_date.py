@@ -26,7 +26,7 @@ def _seed_grade(student_id, subject, raw_text, cell_reference,
         cur.execute(
             "INSERT INTO grade_history "
             "(student_id, subject, grade_value, raw_text, cell_reference, date_added, grade_date) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (student_id, subject, grade_value, raw_text, cell_reference,
              date_added, grade_date),
         )
@@ -51,7 +51,8 @@ def test_get_history_uses_grade_date_for_period(temp_db):
 
     rows = dbm.get_grade_history_for_student(sid, days=7)
     assert len(rows) == 1, "Должна попасть в окно по grade_date, не по date_added"
-    assert rows[0]['grade_date'] == real_grade_date
+    # psycopg возвращает date-объект — сравниваем эквивалентно через isoformat()
+    assert rows[0]['grade_date'].isoformat() == real_grade_date
     assert rows[0]['raw_text'] == '5'
 
 

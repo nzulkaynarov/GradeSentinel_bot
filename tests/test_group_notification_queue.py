@@ -64,7 +64,7 @@ def setup_group_for_student(temp_db):
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
             'INSERT INTO family_groups (family_id, chat_id, chat_title, '
-            'message_thread_id, added_by) VALUES (?, ?, ?, ?, ?)',
+            'message_thread_id, added_by) VALUES (%s, %s, %s, %s, %s)',
             (fam_id, -1009999, 'Test Group', 42, head_id),
         )
 

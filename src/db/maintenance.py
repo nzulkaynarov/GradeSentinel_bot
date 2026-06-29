@@ -1,8 +1,8 @@
 """Обслуживание БД: архивирование, чистки, каскадные удаления.
 
 Используется schedulers (weekly cleanup в вс 03:00) и admin handlers
-(delete family). Атомарность критична — операции в одной транзакции,
-архивирование с BEGIN IMMEDIATE для защиты от race с monitor INSERT.
+(delete family). Атомарность критична — операции в одной транзакции
+(psycopg сам ведёт транзакцию, коммит на выходе with-блока).
 """
 import logging
 from typing import Optional
@@ -17,7 +17,7 @@ def archive_old_grades(days: Optional[int] = None) -> int:
 
     days по умолчанию из config.GRADE_ARCHIVE_DAYS.
 
-    Атомарность: BEGIN IMMEDIATE + перенос по конкретным id (не по WHERE
+    Атомарность: перенос по конкретным id (не по WHERE
     date_added < cutoff) — иначе DELETE мог бы захватить запись, которой
     нет в INSERT (или удалить позднее вставленную).
     """
@@ -26,11 +26,10 @@ def archive_old_grades(days: Optional[int] = None) -> int:
         days = GRADE_ARCHIVE_DAYS
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('BEGIN IMMEDIATE')
-        cutoff = f'-{int(days)} days'
         cursor.execute(
-            'SELECT id FROM grade_history WHERE date_added < datetime("now", ?)',
-            (cutoff,),
+            "SELECT id FROM grade_history "
+            "WHERE date_added < (now() at time zone 'utc') - %s * interval '1 day'",
+            (int(days),),
         )
         ids = [row['id'] for row in cursor.fetchall()]
         if not ids:
@@ -41,7 +40,7 @@ def archive_old_grades(days: Optional[int] = None) -> int:
         chunk_size = 500
         for i in range(0, len(ids), chunk_size):
             chunk = ids[i:i + chunk_size]
-            placeholders = ','.join('?' * len(chunk))
+            placeholders = ','.join(['%s'] * len(chunk))
             cursor.execute(
                 f'''INSERT INTO grade_history_archive
                     (student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added)
@@ -70,8 +69,8 @@ def cleanup_old_notification_queue(hours: Optional[int] = None) -> int:
         cursor = conn.cursor()
         cursor.execute('''
             DELETE FROM notification_queue
-            WHERE created_at < datetime('now', ?)
-        ''', (f'-{int(hours)} hours',))
+            WHERE created_at < (now() at time zone 'utc') - %s * interval '1 hour'
+        ''', (int(hours),))
         if cursor.rowcount > 0:
             logger.info(f"Cleaned {cursor.rowcount} stale notifications older than {hours}h")
         return cursor.rowcount
@@ -87,8 +86,8 @@ def cleanup_expired_invites(days: Optional[int] = None) -> int:
         cursor = conn.cursor()
         cursor.execute('''
             DELETE FROM family_invites
-            WHERE expires_at < datetime('now', ?)
-        ''', (f'-{int(days)} days',))
+            WHERE expires_at < (now() at time zone 'utc') - %s * interval '1 day'
+        ''', (int(days),))
         if cursor.rowcount > 0:
             logger.info(f"Cleaned {cursor.rowcount} expired invites")
         return cursor.rowcount
@@ -106,34 +105,34 @@ def delete_family_cascade(family_id: int) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        cursor.execute('SELECT id FROM families WHERE id = ?', (family_id,))
+        cursor.execute('SELECT id FROM families WHERE id = %s', (family_id,))
         if not cursor.fetchone():
             return False
 
         # Студенты, которые останутся осиротевшими после удаления связей
         cursor.execute('''
             SELECT DISTINCT student_id FROM family_links
-            WHERE family_id = ? AND student_id IS NOT NULL
+            WHERE family_id = %s AND student_id IS NOT NULL
         ''', (family_id,))
         student_ids = [row['student_id'] for row in cursor.fetchall()]
 
-        cursor.execute('DELETE FROM family_links WHERE family_id = ?', (family_id,))
+        cursor.execute('DELETE FROM family_links WHERE family_id = %s', (family_id,))
 
         # Студенты без других семей — удаляем со всеми их данными
         for s_id in student_ids:
             cursor.execute(
-                'SELECT COUNT(*) as cnt FROM family_links WHERE student_id = ?',
+                'SELECT COUNT(*) as cnt FROM family_links WHERE student_id = %s',
                 (s_id,),
             )
             if cursor.fetchone()['cnt'] == 0:
-                cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (s_id,))
-                cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (s_id,))
-                cursor.execute('DELETE FROM students WHERE id = ?', (s_id,))
+                cursor.execute('DELETE FROM grade_history WHERE student_id = %s', (s_id,))
+                cursor.execute('DELETE FROM quarter_grades WHERE student_id = %s', (s_id,))
+                cursor.execute('DELETE FROM students WHERE id = %s', (s_id,))
 
-        cursor.execute('DELETE FROM payments WHERE family_id = ?', (family_id,))
-        cursor.execute('DELETE FROM family_invites WHERE family_id = ?', (family_id,))
-        cursor.execute('DELETE FROM family_groups WHERE family_id = ?', (family_id,))
-        cursor.execute('DELETE FROM families WHERE id = ?', (family_id,))
+        cursor.execute('DELETE FROM payments WHERE family_id = %s', (family_id,))
+        cursor.execute('DELETE FROM family_invites WHERE family_id = %s', (family_id,))
+        cursor.execute('DELETE FROM family_groups WHERE family_id = %s', (family_id,))
+        cursor.execute('DELETE FROM families WHERE id = %s', (family_id,))
 
         logger.info(
             f"Family {family_id} cascade-deleted (orphaned students: {len(student_ids)})"

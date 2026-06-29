@@ -16,7 +16,6 @@ grade_date NOT NULL, но COALESCE остаётся бесплатной защ�
 [feedback-codebase-gotchas] пункт 12.
 """
 import logging
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -39,17 +38,17 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
         grade_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO grade_history
-                  (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
-            return cursor.rowcount > 0
-        except sqlite3.IntegrityError:
-            # Дубликат по UNIQUE(student, subject, grade_date, raw_text)
-            # или (на legacy-БД до 1C) по старому UNIQUE(student, cell_reference).
-            return False
+        # ON CONFLICT DO NOTHING (bare, без target) покрывает оба UNIQUE:
+        # (student, subject, grade_date, raw_text) и legacy (student, cell_reference).
+        # В PG нельзя ловить IntegrityError внутри транзакции и продолжать (tx aborts),
+        # поэтому дубликат определяем по cursor.rowcount == 0.
+        cursor.execute('''
+            INSERT INTO grade_history
+              (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+        ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
+        return cursor.rowcount > 0
 
 
 def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[str, Any]]:
@@ -59,7 +58,7 @@ def get_existing_grade(student_id: int, cell_reference: str) -> Optional[Dict[st
         cursor.execute('''
             SELECT grade_value, raw_text, subject
             FROM grade_history
-            WHERE student_id = ? AND cell_reference = ?
+            WHERE student_id = %s AND cell_reference = %s
         ''', (student_id, cell_reference))
         row = cursor.fetchone()
         return dict(row) if row else None
@@ -77,7 +76,7 @@ def grade_exists_by_content(student_id: int, subject: str,
         cursor = conn.cursor()
         cursor.execute('''
             SELECT 1 FROM grade_history
-            WHERE student_id = ? AND subject = ? AND grade_date = ? AND raw_text = ?
+            WHERE student_id = %s AND subject = %s AND grade_date = %s AND raw_text = %s
             LIMIT 1
         ''', (student_id, subject, grade_date, raw_text))
         return cursor.fetchone() is not None
@@ -96,7 +95,7 @@ def get_existing_grade_by_content(student_id: int, subject: str,
         cursor.execute('''
             SELECT grade_value, raw_text, subject, cell_reference
             FROM grade_history
-            WHERE student_id = ? AND subject = ? AND grade_date = ?
+            WHERE student_id = %s AND subject = %s AND grade_date = %s
             ORDER BY date_added DESC
             LIMIT 1
         ''', (student_id, subject, grade_date))
@@ -113,8 +112,8 @@ def update_grade_by_content(student_id: int, subject: str, grade_date: str,
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE grade_history
-            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
-            WHERE student_id = ? AND subject = ? AND grade_date = ?
+            SET grade_value = %s, raw_text = %s, date_added = (now() at time zone 'utc')
+            WHERE student_id = %s AND subject = %s AND grade_date = %s
         ''', (grade_value, raw_text, student_id, subject, grade_date))
         return cursor.rowcount > 0
 
@@ -128,8 +127,8 @@ def update_grade(student_id: int, cell_reference: str,
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE grade_history
-            SET grade_value = ?, raw_text = ?, date_added = CURRENT_TIMESTAMP
-            WHERE student_id = ? AND cell_reference = ?
+            SET grade_value = %s, raw_text = %s, date_added = (now() at time zone 'utc')
+            WHERE student_id = %s AND cell_reference = %s
         ''', (grade_value, raw_text, student_id, cell_reference))
         return cursor.rowcount > 0
 
@@ -143,7 +142,7 @@ def upsert_quarter_grade(student_id: int, subject: str, quarter: int,
         cursor = conn.cursor()
         cursor.execute('''
             SELECT grade_value, raw_text FROM quarter_grades
-            WHERE student_id = ? AND subject = ? AND quarter = ?
+            WHERE student_id = %s AND subject = %s AND quarter = %s
         ''', (student_id, subject, quarter))
         existing = cursor.fetchone()
 
@@ -152,11 +151,11 @@ def upsert_quarter_grade(student_id: int, subject: str, quarter: int,
 
         cursor.execute('''
             INSERT INTO quarter_grades (student_id, subject, quarter, grade_value, raw_text)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(student_id, subject, quarter)
-            DO UPDATE SET grade_value = excluded.grade_value,
-                          raw_text = excluded.raw_text,
-                          updated_at = CURRENT_TIMESTAMP
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (student_id, subject, quarter)
+            DO UPDATE SET grade_value = EXCLUDED.grade_value,
+                          raw_text = EXCLUDED.raw_text,
+                          updated_at = (now() at time zone 'utc')
         ''', (student_id, subject, quarter, grade_value, raw_text))
         return True
 
@@ -168,7 +167,7 @@ def get_quarter_grades(student_id: int) -> List[Dict[str, Any]]:
         cursor.execute('''
             SELECT subject, quarter, grade_value, raw_text
             FROM quarter_grades
-            WHERE student_id = ?
+            WHERE student_id = %s
             ORDER BY subject, quarter
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -183,12 +182,12 @@ def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[
         cursor.execute('''
             SELECT subject, grade_value, raw_text, grade_date, date_added
             FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  >= date('now', '+5 hours', ?)
-            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')),
+            WHERE student_id = %s
+              AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
+                  >= ((now() at time zone 'utc') + interval '5 hours')::date - %s
+            ORDER BY COALESCE(grade_date, (date_added + interval '5 hours')::date),
                      date_added
-        ''', (student_id, f'-{days} days'))
+        ''', (student_id, days))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -199,12 +198,12 @@ def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[D
         cursor.execute('''
             SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
             FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  >= date('now', '+5 hours', ?)
-            ORDER BY COALESCE(grade_date, date(date_added, '+5 hours')) DESC,
+            WHERE student_id = %s
+              AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
+                  >= ((now() at time zone 'utc') + interval '5 hours')::date - %s
+            ORDER BY COALESCE(grade_date, (date_added + interval '5 hours')::date) DESC,
                      date_added DESC
-        ''', (student_id, f'-{days} days'))
+        ''', (student_id, days))
         return [dict(row) for row in cursor.fetchall()]
 
 
@@ -222,15 +221,15 @@ def get_weakest_subject(student_id: int, days: int = 200,
         cursor.execute('''
             SELECT subject, AVG(grade_value) AS avg, COUNT(*) AS cnt
             FROM grade_history
-            WHERE student_id = ?
+            WHERE student_id = %s
               AND grade_value IS NOT NULL
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  >= date('now', '+5 hours', ?)
+              AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
+                  >= ((now() at time zone 'utc') + interval '5 hours')::date - %s
             GROUP BY subject
-            HAVING cnt >= ?
+            HAVING COUNT(*) >= %s
             ORDER BY avg ASC, cnt DESC
             LIMIT 1
-        ''', (student_id, f'-{days} days', min_count))
+        ''', (student_id, days, min_count))
         row = cursor.fetchone()
         if not row:
             return None
@@ -245,12 +244,15 @@ def get_today_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, MAX(date_added) as date_added
-            FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  = date('now', '+5 hours')
-            GROUP BY subject
+            SELECT subject, grade_value, raw_text, date_added FROM (
+                SELECT DISTINCT ON (subject)
+                       subject, grade_value, raw_text, date_added
+                FROM grade_history
+                WHERE student_id = %s
+                  AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
+                      = ((now() at time zone 'utc') + interval '5 hours')::date
+                ORDER BY subject, date_added DESC
+            ) sub
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -266,13 +268,16 @@ def get_overnight_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, cell_reference,
-                   MAX(date_added) as date_added
-            FROM grade_history
-            WHERE student_id = ?
-              AND date_added >= datetime('now', '+5 hours', 'start of day', '-2 hours', '-5 hours')
-              AND date_added <= datetime('now')
-            GROUP BY subject
+            SELECT subject, grade_value, raw_text, cell_reference, date_added FROM (
+                SELECT DISTINCT ON (subject)
+                       subject, grade_value, raw_text, cell_reference, date_added
+                FROM grade_history
+                WHERE student_id = %s
+                  AND date_added >= date_trunc('day', (now() at time zone 'utc') + interval '5 hours')
+                                    - interval '2 hours' - interval '5 hours'
+                  AND date_added <= (now() at time zone 'utc')
+                ORDER BY subject, date_added DESC
+            ) sub
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -285,9 +290,9 @@ def get_yesterday_grades_for_student(student_id: int) -> List[Dict[str, Any]]:
         cursor.execute('''
             SELECT subject, grade_value, raw_text
             FROM grade_history
-            WHERE student_id = ?
-              AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                  = date('now', '+5 hours', '-1 day')
+            WHERE student_id = %s
+              AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
+                  = ((now() at time zone 'utc') + interval '5 hours')::date - 1
             ORDER BY date_added
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -302,9 +307,9 @@ def has_today_grades_for_parent(telegram_id: int) -> bool:
             SELECT COUNT(*) as c FROM grade_history gh
             JOIN family_links fl ON gh.student_id = fl.student_id
             JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ?
-              AND COALESCE(gh.grade_date, date(gh.date_added, '+5 hours'))
-                  = date('now', '+5 hours')
+            WHERE p.telegram_id = %s
+              AND COALESCE(gh.grade_date, (gh.date_added + interval '5 hours')::date)
+                  = ((now() at time zone 'utc') + interval '5 hours')::date
         ''', (telegram_id,))
         return cursor.fetchone()['c'] > 0
 
@@ -319,8 +324,9 @@ def has_recent_grades_for_parent(telegram_id: int, hours: int = 48) -> bool:
             SELECT COUNT(*) as c FROM grade_history gh
             JOIN family_links fl ON gh.student_id = fl.student_id
             JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND gh.date_added >= datetime('now', ?)
-        ''', (telegram_id, f'-{hours} hours'))
+            WHERE p.telegram_id = %s
+              AND gh.date_added >= (now() at time zone 'utc') - %s * interval '1 hour'
+        ''', (telegram_id, hours))
         return cursor.fetchone()['c'] > 0
 
 
@@ -334,7 +340,7 @@ def get_parents_for_student(student_id: int) -> List[int]:
             SELECT DISTINCT p.telegram_id
             FROM parents p
             JOIN family_links fl ON p.id = fl.parent_id
-            WHERE fl.student_id = ? AND p.telegram_id IS NOT NULL
+            WHERE fl.student_id = %s AND p.telegram_id IS NOT NULL
         ''', (student_id,))
         return [row['telegram_id'] for row in cursor.fetchall()]
 

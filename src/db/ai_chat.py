@@ -37,10 +37,10 @@ def save_chat_message(telegram_id: int, student_id: int, role: str, content: str
         cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO ai_chat_messages (telegram_id, student_id, role, content) '
-            'VALUES (?, ?, ?, ?)',
+            'VALUES (%s, %s, %s, %s) RETURNING id',
             (telegram_id, student_id, role, content),
         )
-        return cursor.lastrowid
+        return cursor.fetchone()[0]
 
 
 def save_feedback(message_id: int, telegram_id: int, rating: int,
@@ -54,11 +54,11 @@ def save_feedback(message_id: int, telegram_id: int, rating: int,
     with get_db_connection() as conn:
         conn.cursor().execute(
             'INSERT INTO ai_chat_feedback (message_id, telegram_id, rating, comment) '
-            'VALUES (?, ?, ?, ?) '
-            'ON CONFLICT(message_id) DO UPDATE SET '
-            '  rating=excluded.rating, '
-            '  comment=excluded.comment, '
-            '  created_at=CURRENT_TIMESTAMP',
+            'VALUES (%s, %s, %s, %s) '
+            'ON CONFLICT (message_id) DO UPDATE SET '
+            '  rating=EXCLUDED.rating, '
+            '  comment=EXCLUDED.comment, '
+            "  created_at=(now() at time zone 'utc')",
             (message_id, telegram_id, rating, comment),
         )
 
@@ -68,7 +68,7 @@ def get_feedback_for_message(message_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT rating, comment, created_at FROM ai_chat_feedback WHERE message_id = ?',
+            'SELECT rating, comment, created_at FROM ai_chat_feedback WHERE message_id = %s',
             (message_id,),
         )
         row = cursor.fetchone()
@@ -83,7 +83,7 @@ def get_message_owner(message_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT telegram_id FROM ai_chat_messages WHERE id = ?',
+            'SELECT telegram_id FROM ai_chat_messages WHERE id = %s',
             (message_id,),
         )
         row = cursor.fetchone()
@@ -101,8 +101,8 @@ def get_recent_chat_history(
         cursor = conn.cursor()
         cursor.execute(
             'SELECT id, role, content, created_at FROM ai_chat_messages '
-            'WHERE telegram_id = ? AND student_id = ? '
-            'ORDER BY id DESC LIMIT ?',
+            'WHERE telegram_id = %s AND student_id = %s '
+            'ORDER BY id DESC LIMIT %s',
             (telegram_id, student_id, limit),
         )
         rows = list(reversed(cursor.fetchall()))
@@ -119,7 +119,7 @@ def clear_chat_history(telegram_id: int, student_id: int):
     """Очищает историю чата (например, юзер нажал «начать заново»)."""
     with get_db_connection() as conn:
         conn.cursor().execute(
-            'DELETE FROM ai_chat_messages WHERE telegram_id = ? AND student_id = ?',
+            'DELETE FROM ai_chat_messages WHERE telegram_id = %s AND student_id = %s',
             (telegram_id, student_id),
         )
 
@@ -138,10 +138,10 @@ def save_family_chat_message(telegram_id: int, family_id: int,
         cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO ai_chat_messages (telegram_id, family_id, role, content) '
-            'VALUES (?, ?, ?, ?)',
+            'VALUES (%s, %s, %s, %s) RETURNING id',
             (telegram_id, family_id, role, content),
         )
-        return cursor.lastrowid
+        return cursor.fetchone()[0]
 
 
 def get_recent_family_chat_history(
@@ -154,8 +154,8 @@ def get_recent_family_chat_history(
         cursor = conn.cursor()
         cursor.execute(
             'SELECT id, role, content, created_at FROM ai_chat_messages '
-            'WHERE telegram_id = ? AND family_id = ? '
-            'ORDER BY id DESC LIMIT ?',
+            'WHERE telegram_id = %s AND family_id = %s '
+            'ORDER BY id DESC LIMIT %s',
             (telegram_id, family_id, limit),
         )
         rows = list(reversed(cursor.fetchall()))
@@ -170,7 +170,7 @@ def clear_family_chat_history(telegram_id: int, family_id: int):
     """NAV-001: очистка family-scoped истории."""
     with get_db_connection() as conn:
         conn.cursor().execute(
-            'DELETE FROM ai_chat_messages WHERE telegram_id = ? AND family_id = ?',
+            'DELETE FROM ai_chat_messages WHERE telegram_id = %s AND family_id = %s',
             (telegram_id, family_id),
         )
 

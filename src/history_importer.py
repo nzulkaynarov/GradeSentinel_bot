@@ -235,37 +235,44 @@ def _import_from_sheet(
             # grade_date с fallback на date(date_added, '+5h') для legacy-записей.
             cursor.execute('''
                 SELECT 1 FROM grade_history
-                WHERE student_id = ? AND subject = ?
-                  AND COALESCE(grade_date, date(date_added, '+5 hours'))
-                      = COALESCE(?, '')
-                  AND raw_text = ?
+                WHERE student_id = %s AND subject = %s
+                  AND COALESCE(
+                        grade_date::text,
+                        (date_added::timestamp + interval '5 hours')::date::text)
+                      = COALESCE(%s, '')
+                  AND raw_text = %s
                 LIMIT 1
             ''', (student_id, rec['subject'], grade_date, rec['raw_text']))
             if cursor.fetchone():
                 skipped += 1
                 continue
 
-            try:
-                if date_added:
-                    cursor.execute('''
-                        INSERT INTO grade_history
-                          (student_id, subject, grade_value, raw_text,
-                           cell_reference, date_added, grade_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'],
-                          rec['raw_text'], cell_ref, date_added, grade_date))
-                else:
-                    cursor.execute('''
-                        INSERT INTO grade_history
-                          (student_id, subject, grade_value, raw_text, cell_reference)
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (student_id, rec['subject'], rec['grade_value'],
-                          rec['raw_text'], cell_ref))
+            # ON CONFLICT DO NOTHING вместо try/except: в PG любая ошибка
+            # (UNIQUE constraint на cell_reference того же листа — повторный
+            # импорт после ручного редактирования) аборти́т ВСЮ транзакцию, и
+            # следующий execute в цикле упал бы. Дедуп выше должен ловить такие
+            # случаи раньше, но ON CONFLICT — надёжный safety net без abort'а.
+            # rowcount=0 → конфликт → считаем как skipped.
+            if date_added:
+                cursor.execute('''
+                    INSERT INTO grade_history
+                      (student_id, subject, grade_value, raw_text,
+                       cell_reference, date_added, grade_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                ''', (student_id, rec['subject'], rec['grade_value'],
+                      rec['raw_text'], cell_ref, date_added, grade_date))
+            else:
+                cursor.execute('''
+                    INSERT INTO grade_history
+                      (student_id, subject, grade_value, raw_text, cell_reference)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                ''', (student_id, rec['subject'], rec['grade_value'],
+                      rec['raw_text'], cell_ref))
+            if cursor.rowcount:
                 imported += 1
-            except Exception:
-                # UNIQUE constraint на cell_reference (того же листа) — повторный
-                # импорт того же листа после ручного редактирования. Дедуп выше
-                # должен ловить такие случаи раньше, но safety net не помешает.
+            else:
                 skipped += 1
 
     return {'imported': imported, 'skipped': skipped, 'total': len(records)}
@@ -393,7 +400,7 @@ def import_history_for_all_students(force: bool = False):
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT COUNT(*) as c FROM grade_history
-                    WHERE student_id = ? AND cell_reference LIKE 'Все оценки!%'
+                    WHERE student_id = %s AND cell_reference LIKE 'Все оценки!%%'
                 ''', (student_id,))
                 count = cursor.fetchone()['c']
 

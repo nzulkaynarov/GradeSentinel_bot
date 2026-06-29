@@ -22,7 +22,7 @@ def test_delete_family_cleans_payments(temp_db):
     delete_family_cascade(fam_id)
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as n FROM payments WHERE family_id = ?", (fam_id,))
+        c.execute("SELECT COUNT(*) as n FROM payments WHERE family_id = %s", (fam_id,))
         assert c.fetchone()['n'] == 0
 
 
@@ -32,7 +32,7 @@ def test_delete_family_cleans_invites(temp_db):
     delete_family_cascade(fam_id)
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as n FROM family_invites WHERE family_id = ?", (fam_id,))
+        c.execute("SELECT COUNT(*) as n FROM family_invites WHERE family_id = %s", (fam_id,))
         assert c.fetchone()['n'] == 0
 
 
@@ -46,11 +46,11 @@ def test_delete_family_cleans_orphan_student_data(temp_db):
 
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as n FROM students WHERE id = ?", (student_id,))
+        c.execute("SELECT COUNT(*) as n FROM students WHERE id = %s", (student_id,))
         assert c.fetchone()['n'] == 0
-        c.execute("SELECT COUNT(*) as n FROM grade_history WHERE student_id = ?", (student_id,))
+        c.execute("SELECT COUNT(*) as n FROM grade_history WHERE student_id = %s", (student_id,))
         assert c.fetchone()['n'] == 0
-        c.execute("SELECT COUNT(*) as n FROM quarter_grades WHERE student_id = ?", (student_id,))
+        c.execute("SELECT COUNT(*) as n FROM quarter_grades WHERE student_id = %s", (student_id,))
         assert c.fetchone()['n'] == 0
 
 
@@ -68,5 +68,5 @@ def test_delete_family_keeps_shared_student(temp_db):
 
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as n FROM students WHERE id = ?", (student_id,))
+        c.execute("SELECT COUNT(*) as n FROM students WHERE id = %s", (student_id,))
         assert c.fetchone()['n'] == 1  # студент жив, привязан к F2

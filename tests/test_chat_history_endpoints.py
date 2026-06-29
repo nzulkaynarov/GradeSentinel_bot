@@ -37,7 +37,7 @@ def seeded_chat(temp_db):
     future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
-            "UPDATE families SET subscription_end = ? WHERE id = ?",
+            "UPDATE families SET subscription_end = %s WHERE id = %s",
             (future, fam_id),
         )
 

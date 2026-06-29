@@ -1,7 +1,21 @@
-"""Re-export get_db_connection / DB_PATH.
+"""Единая точка входа к соединению с БД.
 
-Удобная точка входа для нового кода: `from src.db.connection import get_db_connection`.
+Миграция SQLite → PostgreSQL (2026-06-29): соединение теперь даёт src/db/pg.py
+(psycopg v3 + пул). Все модули src/db/* импортируют get_db_connection отсюда —
+значит переключение бэкенда сделано в одном месте.
 """
-from src.database_manager import get_db_connection, DB_PATH, init_db
+from src.db.pg import (  # noqa: F401
+    ForeignKeyViolation,
+    IntegrityError,
+    OperationalError,
+    UniqueViolation,
+    get_db_connection,
+)
 
-__all__ = ["get_db_connection", "DB_PATH", "init_db"]
+__all__ = [
+    "get_db_connection",
+    "IntegrityError",
+    "UniqueViolation",
+    "ForeignKeyViolation",
+    "OperationalError",
+]

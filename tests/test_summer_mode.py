@@ -34,7 +34,7 @@ def _seed(sid, subject, value, _date_iso=None):
         conn.cursor().execute(
             "INSERT INTO grade_history "
             "(student_id, subject, grade_value, raw_text, cell_reference, grade_date) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (sid, subject, value, str(value), "X", grade_date),
         )
 

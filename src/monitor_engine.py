@@ -564,7 +564,7 @@ def check_for_quarter_changes():
                     cursor = conn.cursor()
                     cursor.execute('''
                         SELECT raw_text FROM quarter_grades
-                        WHERE student_id = ? AND subject = ? AND quarter = ?
+                        WHERE student_id = %s AND subject = %s AND quarter = %s
                     ''', (student_id, subject, quarter))
                     existing = cursor.fetchone()
 

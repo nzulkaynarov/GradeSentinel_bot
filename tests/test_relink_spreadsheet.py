@@ -20,7 +20,7 @@ def _seed_grade(student_id, subject, raw_text, grade_date, cell_reference="X1"):
         conn.cursor().execute(
             "INSERT INTO grade_history "
             "(student_id, subject, grade_value, raw_text, cell_reference, grade_date) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (student_id, subject, None, raw_text, cell_reference, grade_date),
         )
 
@@ -28,7 +28,7 @@ def _seed_grade(student_id, subject, raw_text, grade_date, cell_reference="X1"):
 def _spreadsheet_of(student_id):
     with dbm.get_db_connection() as conn:
         row = conn.cursor().execute(
-            "SELECT spreadsheet_id, display_name FROM students WHERE id = ?",
+            "SELECT spreadsheet_id, display_name FROM students WHERE id = %s",
             (student_id,),
         ).fetchone()
         return (row["spreadsheet_id"], row["display_name"]) if row else (None, None)
@@ -37,7 +37,7 @@ def _spreadsheet_of(student_id):
 def _grade_count(student_id):
     with dbm.get_db_connection() as conn:
         return conn.cursor().execute(
-            "SELECT COUNT(*) c FROM grade_history WHERE student_id = ?",
+            "SELECT COUNT(*) c FROM grade_history WHERE student_id = %s",
             (student_id,),
         ).fetchone()["c"]
 

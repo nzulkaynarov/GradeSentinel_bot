@@ -909,13 +909,19 @@ def detect_anomalies(student_id: int) -> list:
     for g in grades:
         if g.get('grade_value') is None:
             continue
-        date_str = g.get('grade_date') or (g.get('date_added') or '')[:10]
-        if not date_str:
+        # psycopg возвращает DATE/TIMESTAMP как date/datetime ОБЪЕКТЫ (не строки).
+        raw_date = g.get('grade_date') or g.get('date_added')
+        if raw_date is None:
             continue
-        try:
-            d = datetime.fromisoformat(date_str).date()
-        except (ValueError, TypeError):
-            continue
+        if isinstance(raw_date, str):
+            try:
+                d = datetime.fromisoformat(raw_date).date()
+            except (ValueError, TypeError):
+                continue
+        elif isinstance(raw_date, datetime):
+            d = raw_date.date()
+        else:  # date-объект (DATE-колонка grade_date)
+            d = raw_date
         if d < window_start:
             continue
         if g['grade_value'] <= _LOW_GRADE_THRESHOLD:

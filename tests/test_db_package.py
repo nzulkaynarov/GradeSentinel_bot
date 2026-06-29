@@ -21,6 +21,7 @@ def test_db_maintenance_imports_match_original():
 def test_db_connection_imports_match_original():
     from src.db import connection
     from src import database_manager as dm
+    # get_db_connection переэкспортируется в обоих из src.db.pg — один объект.
     assert connection.get_db_connection is dm.get_db_connection
-    assert connection.init_db is dm.init_db
-    assert connection.DB_PATH == dm.DB_PATH
+    # init_db живёт в database_manager (Alembic), connection.py его не реэкспортит
+    # (миграция на PG, 2026-06-29) — циклический импорт иначе.

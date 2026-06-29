@@ -32,7 +32,7 @@ def get_parent_by_phone(phone: str) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT * FROM parents WHERE phone = ? OR phone = ?',
+            'SELECT * FROM parents WHERE phone = %s OR phone = %s',
             (phone, "+" + phone),
         )
         row = cursor.fetchone()
@@ -43,7 +43,7 @@ def get_parent_by_telegram(telegram_id: int) -> Optional[Dict[str, Any]]:
     """Возвращает полную запись родителя по telegram_id."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM parents WHERE telegram_id = ?', (telegram_id,))
+        cursor.execute('SELECT * FROM parents WHERE telegram_id = %s', (telegram_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
@@ -52,7 +52,7 @@ def get_parent_id_by_telegram(telegram_id: int) -> Optional[int]:
     """Возвращает internal parent ID по telegram_id."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (telegram_id,))
+        cursor.execute('SELECT id FROM parents WHERE telegram_id = %s', (telegram_id,))
         row = cursor.fetchone()
         return row['id'] if row else None
 
@@ -63,7 +63,7 @@ def update_parent_telegram_id(phone: str, telegram_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE parents SET telegram_id = ? WHERE phone = ? OR phone = ?',
+            'UPDATE parents SET telegram_id = %s WHERE phone = %s OR phone = %s',
             (telegram_id, phone, "+" + phone),
         )
 
@@ -79,8 +79,8 @@ def update_parent_first_name(telegram_id: int, first_name: Optional[str]):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE parents SET telegram_first_name = ? '
-            'WHERE telegram_id = ? AND (telegram_first_name IS NULL OR telegram_first_name != ?)',
+            'UPDATE parents SET telegram_first_name = %s '
+            'WHERE telegram_id = %s AND (telegram_first_name IS NULL OR telegram_first_name != %s)',
             (first_name, telegram_id, first_name),
         )
 
@@ -105,13 +105,15 @@ def add_parent(fio: str, phone: str, role: str = 'senior') -> Optional[int]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT OR IGNORE INTO parents (fio, phone, role) VALUES (?, ?, ?)',
+            'INSERT INTO parents (fio, phone, role) VALUES (%s, %s, %s) '
+            'ON CONFLICT DO NOTHING RETURNING id',
             (fio, phone, role),
         )
-        if cursor.rowcount == 0:
-            cursor.execute('SELECT id FROM parents WHERE phone = ?', (phone,))
+        row = cursor.fetchone()
+        if row is None:
+            cursor.execute('SELECT id FROM parents WHERE phone = %s', (phone,))
             return cursor.fetchone()['id']
-        return cursor.lastrowid
+        return row['id']
 
 
 # ─── Профиль ────────────────────────────────────────────────────────
@@ -119,7 +121,7 @@ def get_parent_role(telegram_id: int) -> Optional[str]:
     """Возвращает роль ('admin' / 'senior' / 'head') или None."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT role FROM parents WHERE telegram_id = ?', (telegram_id,))
+        cursor.execute('SELECT role FROM parents WHERE telegram_id = %s', (telegram_id,))
         row = cursor.fetchone()
         return row['role'] if row else None
 
@@ -128,7 +130,7 @@ def get_user_lang(telegram_id: int) -> str:
     """Возвращает язык пользователя (ru/uz/en). По умолчанию 'ru'."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT lang FROM parents WHERE telegram_id = ?', (telegram_id,))
+        cursor.execute('SELECT lang FROM parents WHERE telegram_id = %s', (telegram_id,))
         row = cursor.fetchone()
         return row['lang'] if row and row['lang'] else 'ru'
 
@@ -138,7 +140,7 @@ def set_user_lang(telegram_id: int, lang: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE parents SET lang = ? WHERE telegram_id = ?',
+            'UPDATE parents SET lang = %s WHERE telegram_id = %s',
             (lang, telegram_id),
         )
 
@@ -148,7 +150,7 @@ def get_notify_mode(telegram_id: int) -> str:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT notify_mode FROM parents WHERE telegram_id = ?',
+            'SELECT notify_mode FROM parents WHERE telegram_id = %s',
             (telegram_id,),
         )
         row = cursor.fetchone()
@@ -160,7 +162,7 @@ def set_notify_mode(telegram_id: int, mode: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE parents SET notify_mode = ? WHERE telegram_id = ?',
+            'UPDATE parents SET notify_mode = %s WHERE telegram_id = %s',
             (mode, telegram_id),
         )
 
@@ -174,7 +176,7 @@ def get_families_for_head(head_telegram_id: int) -> List[Dict[str, Any]]:
             SELECT f.id, f.family_name
             FROM families f
             JOIN parents p ON f.head_id = p.id
-            WHERE p.telegram_id = ?
+            WHERE p.telegram_id = %s
         ''', (head_telegram_id,))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -191,7 +193,7 @@ def is_head_of_family(telegram_id: int, family_id: int) -> bool:
         cursor.execute('''
             SELECT 1 FROM families f
             JOIN parents p ON f.head_id = p.id
-            WHERE p.telegram_id = ? AND f.id = ?
+            WHERE p.telegram_id = %s AND f.id = %s
         ''', (telegram_id, family_id))
         return cursor.fetchone() is not None
 
@@ -203,7 +205,7 @@ def is_member_of_family(telegram_id: int, family_id: int) -> bool:
         cursor.execute('''
             SELECT 1 FROM family_links fl
             JOIN parents p ON fl.parent_id = p.id
-            WHERE p.telegram_id = ? AND fl.family_id = ?
+            WHERE p.telegram_id = %s AND fl.family_id = %s
             LIMIT 1
         ''', (telegram_id, family_id))
         return cursor.fetchone() is not None

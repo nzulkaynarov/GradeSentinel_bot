@@ -25,7 +25,7 @@ def get_last_menu_id(user_id: int) -> Optional[int]:
     """Возвращает ID последнего сообщения меню для пользователя."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT last_menu_msg_id FROM app_states WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT last_menu_msg_id FROM app_states WHERE user_id = %s', (user_id,))
         row = cursor.fetchone()
         return row['last_menu_msg_id'] if row else None
 
@@ -36,8 +36,8 @@ def update_last_menu_id(user_id: int, msg_id: Optional[int]):
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO app_states (user_id, last_menu_msg_id)
-            VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET last_menu_msg_id = excluded.last_menu_msg_id
+            VALUES (%s, %s)
+            ON CONFLICT(user_id) DO UPDATE SET last_menu_msg_id = EXCLUDED.last_menu_msg_id
         ''', (user_id, msg_id))
 
 
@@ -48,11 +48,11 @@ def set_user_state(user_id: int, state: str, data: str = None):
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO user_states (user_id, state, data, updated_at)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, (now() at time zone 'utc'))
             ON CONFLICT(user_id) DO UPDATE SET
-                state = excluded.state,
-                data = excluded.data,
-                updated_at = CURRENT_TIMESTAMP
+                state = EXCLUDED.state,
+                data = EXCLUDED.data,
+                updated_at = (now() at time zone 'utc')
         ''', (user_id, state, data))
 
 
@@ -60,7 +60,7 @@ def get_user_state(user_id: int) -> Optional[Dict[str, Any]]:
     """Возвращает текущее состояние пользователя или None."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT state, data FROM user_states WHERE user_id = ?', (user_id,))
+        cursor.execute('SELECT state, data FROM user_states WHERE user_id = %s', (user_id,))
         row = cursor.fetchone()
         if row:
             return {'state': row['state'], 'data': row['data']}
@@ -71,7 +71,7 @@ def clear_user_state(user_id: int):
     """Удаляет состояние пользователя (по завершении flow или при сбросе)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM user_states WHERE user_id = ?', (user_id,))
+        cursor.execute('DELETE FROM user_states WHERE user_id = %s', (user_id,))
 
 
 # ─── support_msg_map ─────────────────────────────────────────────────
@@ -80,8 +80,9 @@ def save_support_msg_map(admin_msg_id: int, user_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR REPLACE INTO support_msg_map (admin_msg_id, user_id)
-            VALUES (?, ?)
+            INSERT INTO support_msg_map (admin_msg_id, user_id)
+            VALUES (%s, %s)
+            ON CONFLICT (admin_msg_id) DO UPDATE SET user_id = EXCLUDED.user_id
         ''', (admin_msg_id, user_id))
 
 
@@ -91,7 +92,7 @@ def get_support_user_id(admin_msg_id: int) -> Optional[int]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT user_id FROM support_msg_map WHERE admin_msg_id = ?',
+            'SELECT user_id FROM support_msg_map WHERE admin_msg_id = %s',
             (admin_msg_id,),
         )
         row = cursor.fetchone()

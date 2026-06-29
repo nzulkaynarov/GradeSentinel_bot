@@ -1,0 +1,36 @@
+# Локальный/CI прогон тестов против PostgreSQL 17 (миграция с SQLite, 2026-06-29).
+# Локальный Python 3.9 не подходит (нужен 3.10+); поэтому тесты — в Docker.
+#   docker compose -f docker-compose.test.yml build tests   # один раз / при смене requirements
+#   docker compose -f docker-compose.test.yml run --rm tests
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: gs
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: gstest
+    tmpfs:
+      - /var/lib/postgresql/data   # БД в памяти — быстрее, эфемерно
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gs -d gstest"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    image: gradesentinel-tests:py312
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://gs:test@db:5432/gstest
+      PYTHONPATH: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+      ADMIN_ID: "0"
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: ["pytest", "-q", "--tb=short", "-p", "no:cacheprovider"]

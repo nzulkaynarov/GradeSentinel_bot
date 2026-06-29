@@ -8,7 +8,6 @@
 падают именно в нужную тему.
 """
 import logging
-import sqlite3
 from typing import Any, Dict, List, Optional
 
 from src.db.connection import get_db_connection
@@ -23,14 +22,12 @@ def link_group_to_family(family_id: int, chat_id: int, chat_title: str,
     chat_id уже привязан (к этой или другой семье — UNIQUE constraint)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                INSERT INTO family_groups (family_id, chat_id, chat_title, message_thread_id, added_by)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (family_id, chat_id, chat_title, message_thread_id, added_by_parent_id))
-            return True
-        except sqlite3.IntegrityError:
-            return False
+        cursor.execute('''
+            INSERT INTO family_groups (family_id, chat_id, chat_title, message_thread_id, added_by)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+        ''', (family_id, chat_id, chat_title, message_thread_id, added_by_parent_id))
+        return cursor.rowcount > 0
 
 
 def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
@@ -41,7 +38,7 @@ def get_family_for_group(chat_id: int) -> Optional[Dict[str, Any]]:
             SELECT fg.family_id, fg.message_thread_id, f.family_name
             FROM family_groups fg
             JOIN families f ON f.id = fg.family_id
-            WHERE fg.chat_id = ?
+            WHERE fg.chat_id = %s
         ''', (chat_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
@@ -52,7 +49,7 @@ def get_groups_for_family(family_id: int) -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT chat_id, message_thread_id FROM family_groups WHERE family_id = ?',
+            'SELECT chat_id, message_thread_id FROM family_groups WHERE family_id = %s',
             (family_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -66,7 +63,7 @@ def get_groups_for_student(student_id: int) -> List[Dict[str, Any]]:
             SELECT DISTINCT fg.chat_id, fg.message_thread_id
             FROM family_groups fg
             JOIN family_links fl ON fl.family_id = fg.family_id
-            WHERE fl.student_id = ?
+            WHERE fl.student_id = %s
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -75,7 +72,7 @@ def unlink_group(chat_id: int) -> bool:
     """Удаляет привязку группы. True если удалили, False если не было."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM family_groups WHERE chat_id = ?', (chat_id,))
+        cursor.execute('DELETE FROM family_groups WHERE chat_id = %s', (chat_id,))
         return cursor.rowcount > 0
 
 
@@ -84,7 +81,7 @@ def update_group_thread(chat_id: int, message_thread_id: Optional[int]) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE family_groups SET message_thread_id = ? WHERE chat_id = ?',
+            'UPDATE family_groups SET message_thread_id = %s WHERE chat_id = %s',
             (message_thread_id, chat_id),
         )
         return cursor.rowcount > 0

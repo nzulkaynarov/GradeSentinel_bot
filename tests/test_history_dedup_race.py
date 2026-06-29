@@ -89,7 +89,7 @@ def test_history_sync_skips_today_when_monitor_owns_it(temp_db):
     with dbm.get_db_connection() as conn:
         rows = conn.cursor().execute(
             "SELECT raw_text, cell_reference FROM grade_history "
-            "WHERE student_id=? AND subject=?",
+            "WHERE student_id=%s AND subject=%s",
             (sid, "Узбекский язык"),
         ).fetchall()
     assert len(rows) == 1, (
@@ -116,7 +116,7 @@ def test_history_sync_still_imports_yesterday(temp_db):
     assert result['imported'] >= 1, "Вчерашняя оценка должна быть импортирована"
     with dbm.get_db_connection() as conn:
         rows = conn.cursor().execute(
-            "SELECT raw_text FROM grade_history WHERE student_id=? AND subject=?",
+            "SELECT raw_text FROM grade_history WHERE student_id=%s AND subject=%s",
             (sid, "Алгебра"),
         ).fetchall()
     assert len(rows) == 1
