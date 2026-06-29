@@ -12,6 +12,7 @@ from src.database_manager import (
     set_setting,
 )
 from src.i18n import t
+from src.utils import to_date_str
 from src.ai_tools import (
     TOOL_DEFINITIONS,
     MAX_TOOL_ITERATIONS,
@@ -75,7 +76,7 @@ def analyze_student_grades(student_id: int, student_name: str, days: int = 14, l
         return None
 
     grade_text = "\n".join(
-        f"{g.get('grade_date') or (g.get('date_added') or '')[:10]}: "
+        f"{to_date_str(g.get('grade_date') or g.get('date_added'))}: "
         f"{g['subject']} = {g['raw_text']}"
         + (f" (балл: {g['grade_value']})" if g['grade_value'] else "")
         for g in grades
@@ -482,7 +483,7 @@ def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CO
         return "(пусто — оценок в БД пока нет)"
     lines = []
     for g in grades[:max_count]:
-        date_str = g.get("grade_date") or (g.get("date_added") or "")[:10]
+        date_str = to_date_str(g.get("grade_date") or g.get("date_added"))
         subj = g.get("subject", "?")
         raw = g.get("raw_text", "?")
         student_name = g.get("student_name")

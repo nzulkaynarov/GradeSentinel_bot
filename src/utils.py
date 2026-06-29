@@ -1,6 +1,23 @@
 import re
 
 
+def to_date_str(value) -> str:
+    """'YYYY-MM-DD' из date/datetime ЛИБО строки. None/пусто → ''.
+
+    psycopg для DATE/TIMESTAMP-колонок отдаёт date/datetime ОБЪЕКТЫ (не строки),
+    поэтому потребители, делавшие value[:10] (привычка времён SQLite, где даты
+    были TEXT), после миграции на PostgreSQL падали с TypeError. Хелпер принимает
+    оба варианта (миграция sqlite→PostgreSQL, 2026-06-29)."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value[:10]
+    try:
+        return value.isoformat()[:10]
+    except AttributeError:
+        return str(value)[:10]
+
+
 def mask_phone(phone: str) -> str:
     """Маскирует телефон до последних 4 цифр для логов: 998901234567 → ***4567."""
     if not phone:

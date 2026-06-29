@@ -18,6 +18,7 @@ from src.config import (
     PANEL_CACHE_TTL, POLLING_INTERVAL, HEARTBEAT_INTERVAL,
 )
 from src.rate_limiter import is_rate_limited
+from src.utils import to_date_str
 
 _panel_cache: dict = {}  # {chat_id: (timestamp, data_dict)}
 _panel_cache_lock = threading.Lock()
@@ -443,7 +444,7 @@ def _show_user_panel(chat_id: int, message_id: int = None):
     fam_lines = []
     for fs in panel['fam_subs']:
         if fs['active'] and fs['sub'] and fs['sub'].get('subscription_end'):
-            status = f"✅ до {fs['sub']['subscription_end'][:10]}"
+            status = f"✅ до {to_date_str(fs['sub']['subscription_end'])}"
         else:
             status = "❌"
         fam_lines.append(f"🏠 <b>{fs['family_name']}</b> — {status}")
