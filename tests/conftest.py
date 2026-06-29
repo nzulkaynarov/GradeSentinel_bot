@@ -1,7 +1,15 @@
-"""Общие фикстуры для тестов GradeSentinel."""
+"""Общие фикстуры для тестов GradeSentinel (PostgreSQL).
+
+Миграция SQLite → PostgreSQL (2026-06-29): тесты гоняются против ТЕСТОВОЙ PG
+(env DATABASE_URL / PG*). Схема создаётся один раз на сессию через Alembic;
+изоляция между тестами — TRUNCATE всех таблиц (RESTART IDENTITY CASCADE).
+
+Локальный прогон: docker compose -f docker-compose.test.yml run --rm tests
+(postgres:17 + python:3.12). Локальный Python 3.9 не подходит — нужен Docker.
+"""
 import os
 import sys
-import tempfile
+
 import pytest
 
 # Делаем src импортируемым
@@ -9,73 +17,54 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-# Грузим локали один раз для всей тестовой сессии. В проде это делает main.py
-# при старте; тесты которые проверяют форматированный текст без этого получают
-# сырые ключи вместо переводов.
-from src.i18n import load_translations as _load_translations
+# Грузим локали один раз на сессию (в проде это делает main.py при старте).
+from src.i18n import load_translations as _load_translations  # noqa: E402
+
 _load_translations()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _db_schema():
+    """Создаёт схему один раз на сессию (Alembic upgrade head). Без сконфигурированной
+    PG БД-тесты пропускаются (а не падают), чтобы не-БД тесты могли идти где угодно."""
+    if not (os.environ.get("DATABASE_URL") or os.environ.get("PGHOST")):
+        pytest.skip("PostgreSQL не сконфигурирован (DATABASE_URL/PGHOST)")
+    os.environ.setdefault("ADMIN_ID", "0")  # не создавать админа из ENV
+    import src.database_manager as dbm
+
+    dbm.init_db()
+    yield
+    from src.db.pg import close_pool
+
+    close_pool()
+
+
+def _truncate_all() -> None:
+    from src.db.pg import get_db_connection
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+            "AND tablename <> 'alembic_version'"
+        )
+        tables = [row[0] for row in cursor.fetchall()]
+        if tables:
+            cursor.execute(
+                "TRUNCATE TABLE "
+                + ", ".join('"%s"' % t for t in tables)
+                + " RESTART IDENTITY CASCADE"
+            )
 
 
 @pytest.fixture
 def temp_db(monkeypatch):
-    """Создаёт временную БД и инициализирует схему. Возвращает путь к файлу."""
-    fd, path = tempfile.mkstemp(suffix='.db')
-    os.close(fd)
+    """Чистая БД для теста: TRUNCATE всех таблиц до и после теста.
 
-    # Подменяем путь к БД до импорта database_manager
-    import src.database_manager as dbm
-    monkeypatch.setattr(dbm, 'DB_PATH', path)
-
-    # Чтобы init_db не пытался создать админа из ENV — выставим пустой
-    monkeypatch.setenv('ADMIN_ID', '0')
-
-    dbm.init_db()
-    yield path
-
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
-
-
-@pytest.fixture
-def legacy_temp_db(monkeypatch):
-    """Pre-1C БД: grade_date nullable + старый UNIQUE(student_id, cell_reference).
-
-    Нужно для тестов backfill-скрипта и legacy-fallback'ов в read-path.
-    После init_db делаем DROP+CREATE grade_history со старой схемой —
-    это симулирует состояние прод-БД между этапами 1A и 1C.
-    """
-    fd, path = tempfile.mkstemp(suffix='.db')
-    os.close(fd)
-
-    import src.database_manager as dbm
-    monkeypatch.setattr(dbm, 'DB_PATH', path)
-    monkeypatch.setenv('ADMIN_ID', '0')
-    dbm.init_db()
-
-    with dbm.get_db_connection() as conn:
-        conn.cursor().executescript('''
-            DROP TABLE grade_history;
-            CREATE TABLE grade_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                subject TEXT NOT NULL,
-                grade_value REAL,
-                raw_text TEXT NOT NULL,
-                cell_reference TEXT NOT NULL,
-                grade_date DATE,
-                date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(student_id) REFERENCES students(id),
-                UNIQUE(student_id, cell_reference)
-            );
-            CREATE INDEX idx_grade_history_student_date ON grade_history(student_id, date_added);
-            CREATE INDEX idx_grade_history_student_cell ON grade_history(student_id, cell_reference);
-        ''')
-
-    yield path
-
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
+    Историческая совместимость: раньше фикстура возвращала путь к временному
+    sqlite-файлу и подменяла DB_PATH. Теперь БД — общая тестовая PG, а изоляция
+    обеспечивается truncate. Возвращает None (путь больше не нужен)."""
+    monkeypatch.setenv("ADMIN_ID", "0")
+    _truncate_all()
+    yield None
+    _truncate_all()
