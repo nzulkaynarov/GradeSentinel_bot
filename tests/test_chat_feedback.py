@@ -67,7 +67,7 @@ def test_save_feedback_upserts_on_toggle(temp_db):
     # Sanity: только одна строка в таблице
     with dbm.get_db_connection() as conn:
         count = conn.cursor().execute(
-            'SELECT COUNT(*) as c FROM ai_chat_feedback WHERE message_id = ?',
+            'SELECT COUNT(*) as c FROM ai_chat_feedback WHERE message_id = %s',
             (msg_id,)).fetchone()['c']
     assert count == 1
 
@@ -138,7 +138,7 @@ def seeded_msg(temp_db):
     future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
-            "UPDATE families SET subscription_end = ? WHERE id = ?",
+            "UPDATE families SET subscription_end = %s WHERE id = %s",
             (future, fam_id),
         )
 

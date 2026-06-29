@@ -267,9 +267,10 @@ def compute_trend_by_day(grades, period_days):
     for g in grades:
         if g.get("grade_value") is None:
             continue
-        date_str = g.get("grade_date")
-        if not date_str and g.get("date_added"):
-            date_str = g["date_added"][:10]
+        # psycopg возвращает date/datetime ОБЪЕКТЫ для date/timestamp-колонок —
+        # _grade_date_str нормализует всё в строку 'YYYY-MM-DD' (стабильный
+        # JSON-ключ + сортируемость).
+        date_str = _grade_date_str(g)
         if date_str:
             by_date[date_str].append(g["grade_value"])
 
@@ -486,12 +487,34 @@ _RU_MONTH_NAMES = {
 }
 
 
+def _iso(value) -> str:
+    """Нормализует значение date/timestamp-колонки в строку.
+
+    psycopg v3 возвращает python date/datetime ОБЪЕКТЫ (а не строки, как
+    делал sqlite3). Любой код, который ниже делает строковые операции над
+    датами ([:10], [:7], fromisoformat, строковые сравнения >=/<=), должен
+    получать стабильную ISO-строку. date/datetime → .isoformat(); строки
+    (legacy/тестовые данные) и прочее → str(); None/пусто → ''.
+    """
+    if not value:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
 def _grade_date_str(g) -> str:
-    """grade_date с fallback на date_added для legacy записей."""
+    """grade_date с fallback на date_added для legacy записей.
+
+    Всегда возвращает строку 'YYYY-MM-DD' (через _iso), даже когда psycopg
+    отдал date/datetime ОБЪЕКТ — иначе строковые сравнения/срезы ниже падают.
+    """
     gd = g.get("grade_date")
     if gd:
-        return gd
-    return (g.get("date_added") or "")[:10]
+        # grade_date — DATE-колонка → isoformat() даёт ровно 'YYYY-MM-DD'.
+        return _iso(gd)
+    # date_added — TIMESTAMP → isoformat() = 'YYYY-MM-DDT...', берём дату.
+    return _iso(g.get("date_added"))[:10]
 
 
 def compute_year_report(grades):
@@ -570,7 +593,7 @@ def compute_year_report(grades):
     )[:5]
 
     # Лучшая серия пятёрок (грубая: подряд по date_added в хронологии)
-    sorted_by_date = sorted(numeric_grades, key=lambda g: (_grade_date_str(g), g.get("date_added") or ""))
+    sorted_by_date = sorted(numeric_grades, key=lambda g: (_grade_date_str(g), _iso(g.get("date_added"))))
     best_streak = 0
     current_streak = 0
     for g in sorted_by_date:
@@ -651,11 +674,13 @@ def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:
         # COUNT ловит INSERT даже когда несколько вставок в одну секунду
         # (CURRENT_TIMESTAMP в SQLite — секундная точность).
         cur.execute(
-            "SELECT MAX(date_added), COUNT(*) FROM grade_history WHERE student_id = ?",
+            "SELECT MAX(date_added), COUNT(*) FROM grade_history WHERE student_id = %s",
             (student_id,),
         )
         row = cur.fetchone()
-        watermark = (row[0] if row and row[0] else "") if row else ""
+        # MAX(date_added) — psycopg отдаёт datetime ОБЪЕКТ; нормализуем в строку
+        # чтобы cache-key (ниже) был стабилен.
+        watermark = _iso(row[0]) if row else ""
         count = row[1] if row else 0
 
     # 6h-bucket в UTC. Сменяется в 0/6/12/18 UTC = 5/11/17/23 TST.
@@ -705,15 +730,10 @@ def api_dashboard(student_id):
     today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
 
-    def _grade_date(g):
-        gd = g.get("grade_date")
-        if gd:
-            return gd
-        # Fallback для записей которые ещё не получили grade_date через backfill.
-        return (g.get("date_added") or "")[:10]
-
-    grades_current = [g for g in all_grades if _grade_date(g) >= cutoff_date]
-    grades_previous = [g for g in all_grades if _grade_date(g) < cutoff_date]
+    # _grade_date_str всегда отдаёт строку 'YYYY-MM-DD' (нормализует date/
+    # datetime ОБЪЕКТЫ из psycopg) — сравнение с cutoff_date (тоже строка) валидно.
+    grades_current = [g for g in all_grades if _grade_date_str(g) >= cutoff_date]
+    grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
 
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
@@ -882,11 +902,10 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
         cutoff_date = date_from
         period_end = date_to
 
-    def _gd(g):
-        return g.get("grade_date") or (g.get("date_added") or "")[:10]
-
-    grades_current = [g for g in all_grades if cutoff_date <= _gd(g) <= period_end]
-    grades_previous = [g for g in all_grades if _gd(g) < cutoff_date]
+    # _grade_date_str нормализует date/datetime ОБЪЕКТЫ из psycopg в строку
+    # 'YYYY-MM-DD' — сравнения с cutoff_date/period_end (строки) валидны.
+    grades_current = [g for g in all_grades if cutoff_date <= _grade_date_str(g) <= period_end]
+    grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
 
     # Type-specific фильтрация
     if report_type == 'subject' and subject_filter:
@@ -1157,10 +1176,9 @@ def api_chat():
             gg = dict(g)
             gg['student_name'] = s_name
             all_grades.append(gg)
-    all_grades.sort(
-        key=lambda g: g.get('grade_date') or (g.get('date_added') or '')[:10],
-        reverse=True,
-    )
+    # _grade_date_str нормализует date/datetime ОБЪЕКТЫ (psycopg) в строку —
+    # иначе сортировка падала бы на смеси date-объектов и строк / срезе datetime.
+    all_grades.sort(key=_grade_date_str, reverse=True)
     family_label = student_names[0] if len(student_names) == 1 else ", ".join(student_names)
     lang = get_user_lang(telegram_id)
 

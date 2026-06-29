@@ -33,7 +33,7 @@ def get_active_spreadsheets() -> List[Dict[str, Any]]:
         cursor.execute('''
             SELECT id as student_id, fio, spreadsheet_id, display_name
             FROM students
-            WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ""
+            WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ''
         ''')
         return [dict(row) for row in cursor.fetchall()]
 
@@ -48,7 +48,7 @@ def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
             JOIN family_links fl ON s.id = fl.student_id
             JOIN families f ON fl.family_id = f.id
             WHERE s.spreadsheet_id IS NOT NULL AND s.spreadsheet_id != ''
-              AND (f.subscription_end IS NULL OR f.subscription_end > datetime('now'))
+              AND (f.subscription_end IS NULL OR f.subscription_end > (now() at time zone 'utc'))
         ''')
         return [dict(row) for row in cursor.fetchall()]
 
@@ -62,7 +62,7 @@ def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
             SELECT DISTINCT f.id, f.family_name, f.subscription_end
             FROM families f
             JOIN family_links fl ON fl.family_id = f.id
-            WHERE fl.student_id = ?
+            WHERE fl.student_id = %s
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -79,7 +79,7 @@ def get_families_for_user(telegram_id: int) -> List[Dict[str, Any]]:
         cursor.execute('''
             SELECT DISTINCT f.id, f.family_name, f.subscription_end, f.head_id
             FROM families f
-            JOIN parents p ON p.telegram_id = ?
+            JOIN parents p ON p.telegram_id = %s
             LEFT JOIN family_links fl ON fl.family_id = f.id AND fl.parent_id = p.id
             WHERE fl.parent_id = p.id OR f.head_id = p.id
         ''', (telegram_id,))
@@ -100,8 +100,8 @@ def add_family(name: str) -> Optional[int]:
     """Создаёт новую семью, возвращает её ID."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO families (family_name) VALUES (?)', (name,))
-        return cursor.lastrowid
+        cursor.execute('INSERT INTO families (family_name) VALUES (%s) RETURNING id', (name,))
+        return cursor.fetchone()[0]
 
 
 def add_student(fio: str, spreadsheet_id: str, display_name: str = None) -> Optional[int]:
@@ -109,10 +109,10 @@ def add_student(fio: str, spreadsheet_id: str, display_name: str = None) -> Opti
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO students (fio, spreadsheet_id, display_name) VALUES (?, ?, ?)',
+            'INSERT INTO students (fio, spreadsheet_id, display_name) VALUES (%s, %s, %s) RETURNING id',
             (fio, spreadsheet_id, display_name),
         )
-        return cursor.lastrowid
+        return cursor.fetchone()[0]
 
 
 def update_student_display_name(student_id: int, display_name: str):
@@ -120,7 +120,7 @@ def update_student_display_name(student_id: int, display_name: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE students SET display_name = ? WHERE id = ?',
+            'UPDATE students SET display_name = %s WHERE id = %s',
             (display_name, student_id),
         )
 
@@ -141,12 +141,12 @@ def update_student_spreadsheet(student_id: int, spreadsheet_id: str,
         cursor = conn.cursor()
         if display_name is not None:
             cursor.execute(
-                'UPDATE students SET spreadsheet_id = ?, display_name = ? WHERE id = ?',
+                'UPDATE students SET spreadsheet_id = %s, display_name = %s WHERE id = %s',
                 (spreadsheet_id, display_name, student_id),
             )
         else:
             cursor.execute(
-                'UPDATE students SET spreadsheet_id = ? WHERE id = ?',
+                'UPDATE students SET spreadsheet_id = %s WHERE id = %s',
                 (spreadsheet_id, student_id),
             )
         return cursor.rowcount > 0
@@ -164,7 +164,7 @@ def set_family_head(family_id: int, parent_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'UPDATE families SET head_id = ? WHERE id = ?',
+            'UPDATE families SET head_id = %s WHERE id = %s',
             (parent_id, family_id),
         )
         # SQLite UNIQUE считает NULL разными значениями, поэтому INSERT OR IGNORE
@@ -172,10 +172,10 @@ def set_family_head(family_id: int, parent_id: int):
         # student_id IS NULL. Явный exists-check.
         cursor.execute('''
             INSERT INTO family_links (family_id, parent_id)
-            SELECT ?, ?
+            SELECT %s, %s
             WHERE NOT EXISTS (
                 SELECT 1 FROM family_links
-                WHERE family_id = ? AND parent_id = ? AND student_id IS NULL
+                WHERE family_id = %s AND parent_id = %s AND student_id IS NULL
             )
         ''', (family_id, parent_id, family_id, parent_id))
 
@@ -187,20 +187,21 @@ def link_parent_to_family(family_id: int, parent_id: int):
         cursor = conn.cursor()
         cursor.execute(
             'SELECT DISTINCT student_id FROM family_links '
-            'WHERE family_id = ? AND student_id IS NOT NULL',
+            'WHERE family_id = %s AND student_id IS NOT NULL',
             (family_id,),
         )
         students = cursor.fetchall()
         if students:
             for s in students:
                 cursor.execute(
-                    'INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) '
-                    'VALUES (?, ?, ?)',
+                    'INSERT INTO family_links (family_id, parent_id, student_id) '
+                    'VALUES (%s, %s, %s) ON CONFLICT DO NOTHING',
                     (family_id, parent_id, s['student_id']),
                 )
         else:
             cursor.execute(
-                'INSERT OR IGNORE INTO family_links (family_id, parent_id) VALUES (?, ?)',
+                'INSERT INTO family_links (family_id, parent_id) VALUES (%s, %s) '
+                'ON CONFLICT DO NOTHING',
                 (family_id, parent_id),
             )
 
@@ -210,20 +211,21 @@ def link_student_to_family(family_id: int, student_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT DISTINCT parent_id FROM family_links WHERE family_id = ?',
+            'SELECT DISTINCT parent_id FROM family_links WHERE family_id = %s',
             (family_id,),
         )
         parents = cursor.fetchall()
         if parents:
             for p in parents:
                 cursor.execute(
-                    'INSERT OR IGNORE INTO family_links (family_id, parent_id, student_id) '
-                    'VALUES (?, ?, ?)',
+                    'INSERT INTO family_links (family_id, parent_id, student_id) '
+                    'VALUES (%s, %s, %s) ON CONFLICT DO NOTHING',
                     (family_id, p['parent_id'], student_id),
                 )
         else:
             cursor.execute(
-                'INSERT OR IGNORE INTO family_links (family_id, student_id) VALUES (?, ?)',
+                'INSERT INTO family_links (family_id, student_id) VALUES (%s, %s) '
+                'ON CONFLICT DO NOTHING',
                 (family_id, student_id),
             )
 
@@ -235,7 +237,7 @@ def get_child_count(family_id: int) -> int:
         cursor = conn.cursor()
         cursor.execute(
             'SELECT COUNT(DISTINCT student_id) as count '
-            'FROM family_links WHERE family_id = ? AND student_id IS NOT NULL',
+            'FROM family_links WHERE family_id = %s AND student_id IS NOT NULL',
             (family_id,),
         )
         return cursor.fetchone()['count']
@@ -245,15 +247,19 @@ def get_all_families() -> List[Dict[str, Any]]:
     """Список всех семей с информацией о главе и количестве детей. Для admin /list."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # PG: голые f.family_name / p.fio нельзя выбирать при GROUP BY f.id.
+        # Внешний запрос не агрегирует (child_count — коррелированный подзапрос),
+        # GROUP BY использовался лишь для дедупа → DISTINCT ON (f.id).
         cursor.execute('''
-            SELECT f.id, f.family_name, p.fio as head_fio,
+            SELECT DISTINCT ON (f.id)
+                   f.id, f.family_name, p.fio as head_fio,
                    (SELECT COUNT(DISTINCT student_id)
                     FROM family_links fl2
                     WHERE fl2.family_id = f.id AND fl2.student_id IS NOT NULL
                    ) as child_count
             FROM families f
             LEFT JOIN parents p ON f.head_id = p.id
-            GROUP BY f.id
+            ORDER BY f.id
         ''')
         return [dict(row) for row in cursor.fetchall()]
 
@@ -277,9 +283,9 @@ def get_students_for_parent(telegram_id: int,
                 SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON p.telegram_id = ?
+                JOIN parents p ON p.telegram_id = %s
                 LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
-                WHERE fl.family_id = ?
+                WHERE fl.family_id = %s
                   AND (fl.parent_id = p.id OR f.head_id = p.id)
             ''', (telegram_id, family_id))
         else:
@@ -287,7 +293,7 @@ def get_students_for_parent(telegram_id: int,
                 SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
-                JOIN parents p ON p.telegram_id = ?
+                JOIN parents p ON p.telegram_id = %s
                 LEFT JOIN families f ON f.id = fl.family_id AND f.head_id = p.id
                 WHERE fl.parent_id = p.id OR f.head_id = p.id
             ''', (telegram_id,))
@@ -308,7 +314,7 @@ def get_family_members(family_id: int) -> List[Dict[str, Any]]:
             FROM parents p
             JOIN family_links fl ON p.id = fl.parent_id
             JOIN families f ON f.id = fl.family_id
-            WHERE fl.family_id = ?
+            WHERE fl.family_id = %s
         ''', (family_id,))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -321,7 +327,7 @@ def get_family_members_telegram_ids(family_id: int) -> List[int]:
             SELECT DISTINCT p.telegram_id
             FROM parents p
             JOIN family_links fl ON p.id = fl.parent_id
-            WHERE fl.family_id = ? AND p.telegram_id IS NOT NULL
+            WHERE fl.family_id = %s AND p.telegram_id IS NOT NULL
         ''', (family_id,))
         return [row['telegram_id'] for row in cursor.fetchall()]
 
@@ -334,7 +340,7 @@ def get_family_students(family_id: int) -> List[Dict[str, Any]]:
             SELECT DISTINCT s.id, s.fio, s.spreadsheet_id
             FROM students s
             JOIN family_links fl ON s.id = fl.student_id
-            WHERE fl.family_id = ?
+            WHERE fl.family_id = %s
         ''', (family_id,))
         return [dict(row) for row in cursor.fetchall()]
 
@@ -344,12 +350,12 @@ def delete_parent_from_family(family_id: int, parent_id: int) -> bool:
     """Удаляет родителя из семьи. Главу удалить нельзя — возвращает False."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT head_id FROM families WHERE id = ?', (family_id,))
+        cursor.execute('SELECT head_id FROM families WHERE id = %s', (family_id,))
         row = cursor.fetchone()
         if row and row['head_id'] == parent_id:
             return False
         cursor.execute(
-            'DELETE FROM family_links WHERE family_id = ? AND parent_id = ?',
+            'DELETE FROM family_links WHERE family_id = %s AND parent_id = %s',
             (family_id, parent_id),
         )
         return True
@@ -361,17 +367,17 @@ def delete_student_from_family(family_id: int, student_id: int):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'DELETE FROM family_links WHERE family_id = ? AND student_id = ?',
+            'DELETE FROM family_links WHERE family_id = %s AND student_id = %s',
             (family_id, student_id),
         )
         cursor.execute(
-            'SELECT COUNT(*) as count FROM family_links WHERE student_id = ?',
+            'SELECT COUNT(*) as count FROM family_links WHERE student_id = %s',
             (student_id,),
         )
         if cursor.fetchone()['count'] == 0:
-            cursor.execute('DELETE FROM grade_history WHERE student_id = ?', (student_id,))
-            cursor.execute('DELETE FROM quarter_grades WHERE student_id = ?', (student_id,))
-            cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+            cursor.execute('DELETE FROM grade_history WHERE student_id = %s', (student_id,))
+            cursor.execute('DELETE FROM quarter_grades WHERE student_id = %s', (student_id,))
+            cursor.execute('DELETE FROM students WHERE id = %s', (student_id,))
 
 
 __all__ = [

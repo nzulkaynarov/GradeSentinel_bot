@@ -445,7 +445,7 @@ def process_head_choice(message, family_name):
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT id FROM parents WHERE telegram_id = ?', (user_id,))
+                cursor.execute('SELECT id FROM parents WHERE telegram_id = %s', (user_id,))
                 row = cursor.fetchone()
 
             if not row:

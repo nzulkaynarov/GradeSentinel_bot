@@ -40,7 +40,7 @@ def _seed_active_student(temp_db, sid_label='ss-w'):
     future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
-            "UPDATE families SET subscription_end = ? WHERE id = ?",
+            "UPDATE families SET subscription_end = %s WHERE id = %s",
             (future, fam_id),
         )
     return sid
@@ -88,11 +88,11 @@ def test_monitor_writes_grade_date_on_insert(temp_db):
     with dbm.get_db_connection() as conn:
         row = conn.cursor().execute(
             "SELECT grade_date, raw_text FROM grade_history "
-            "WHERE student_id=? AND subject=?", (sid, "Алгебра")
+            "WHERE student_id=%s AND subject=%s", (sid, "Алгебра")
         ).fetchone()
     assert row is not None, "monitor должен был вставить запись после подтверждения"
     assert row['raw_text'] == '5'
-    assert row['grade_date'] == _tashkent_today().isoformat()
+    assert row['grade_date'].isoformat() == _tashkent_today().isoformat()
 
 
 def test_history_importer_writes_grade_date(temp_db):
@@ -117,11 +117,11 @@ def test_history_importer_writes_grade_date(temp_db):
     with dbm.get_db_connection() as conn:
         row = conn.cursor().execute(
             "SELECT grade_date, raw_text FROM grade_history "
-            "WHERE student_id=? AND subject=?", (sid, "Физика")
+            "WHERE student_id=%s AND subject=%s", (sid, "Физика")
         ).fetchone()
     assert row is not None
     assert row['raw_text'] == '4'
-    assert row['grade_date'] == yday.isoformat()
+    assert row['grade_date'].isoformat() == yday.isoformat()
 
 
 def test_add_grade_defaults_to_today_when_grade_date_omitted(temp_db):
@@ -135,9 +135,9 @@ def test_add_grade_defaults_to_today_when_grade_date_omitted(temp_db):
     assert ok is True
     with dbm.get_db_connection() as conn:
         row = conn.cursor().execute(
-            "SELECT grade_date FROM grade_history WHERE student_id=?", (sid,)
+            "SELECT grade_date FROM grade_history WHERE student_id=%s", (sid,)
         ).fetchone()
-    assert row['grade_date'] == expected
+    assert row['grade_date'].isoformat() == expected
 
 
 def test_add_grade_with_grade_date_explicit(temp_db):
@@ -147,6 +147,6 @@ def test_add_grade_with_grade_date_explicit(temp_db):
     assert ok is True
     with dbm.get_db_connection() as conn:
         row = conn.cursor().execute(
-            "SELECT grade_date FROM grade_history WHERE student_id=?", (sid,)
+            "SELECT grade_date FROM grade_history WHERE student_id=%s", (sid,)
         ).fetchone()
-    assert row['grade_date'] == "2026-05-14"
+    assert row['grade_date'].isoformat() == "2026-05-14"

@@ -20,7 +20,7 @@ def get_setting(key: str, default: str = None) -> Optional[str]:
     """Возвращает значение настройки по ключу."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+        cursor.execute('SELECT value FROM settings WHERE key = %s', (key,))
         row = cursor.fetchone()
         return row['value'] if row else default
 
@@ -30,7 +30,7 @@ def set_setting(key: str, value: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO settings (key, value) VALUES (?, ?)
+            INSERT INTO settings (key, value) VALUES (%s, %s)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         ''', (key, value))
 

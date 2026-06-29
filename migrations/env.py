@@ -5,7 +5,6 @@ URL берётся из окружения (DATABASE_URL / дискретные 
 (postgresql+psycopg://), который уже в requirements.
 """
 import os
-from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -34,11 +33,11 @@ def _url() -> str:
     return url
 
 
-if config.config_file_name is not None:
-    try:
-        fileConfig(config.config_file_name)
-    except Exception:  # noqa: BLE001 — логирование не критично для миграций
-        pass
+# ВАЖНО: НЕ вызываем fileConfig(alembic.ini). apply_migrations() запускается
+# в процессе бота/тестов на каждом старте (init_db), а fileConfig по умолчанию
+# disable_existing_loggers=True и переинициализирует root → это сломало бы
+# логирование приложения (и глотало бы logger.info). Логированием владеет
+# приложение (main.py / тесты), не Alembic.
 
 
 def run_migrations_offline() -> None:

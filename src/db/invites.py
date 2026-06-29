@@ -24,8 +24,8 @@ def create_invite(family_id: int, created_by_parent_id: int,
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO family_invites (family_id, invite_code, created_by, expires_at)
-            VALUES (?, ?, ?, datetime('now', ?))
-        ''', (family_id, code, created_by_parent_id, f'+{int(expires_hours)} hours'))
+            VALUES (%s, %s, %s, (now() at time zone 'utc') + %s * interval '1 hour')
+        ''', (family_id, code, created_by_parent_id, int(expires_hours)))
     return code
 
 
@@ -37,8 +37,8 @@ def get_invite(invite_code: str) -> Optional[Dict[str, Any]]:
             SELECT fi.*, f.family_name
             FROM family_invites fi
             JOIN families f ON fi.family_id = f.id
-            WHERE fi.invite_code = ? AND fi.is_used = 0
-              AND fi.expires_at > datetime('now')
+            WHERE fi.invite_code = %s AND fi.is_used = 0
+              AND fi.expires_at > (now() at time zone 'utc')
         ''', (invite_code,))
         row = cursor.fetchone()
         return dict(row) if row else None
@@ -49,8 +49,8 @@ def use_invite(invite_code: str, used_by_parent_id: int) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            UPDATE family_invites SET is_used = 1, used_by = ?
-            WHERE invite_code = ? AND is_used = 0
+            UPDATE family_invites SET is_used = 1, used_by = %s
+            WHERE invite_code = %s AND is_used = 0
         ''', (used_by_parent_id, invite_code))
         return cursor.rowcount > 0
 

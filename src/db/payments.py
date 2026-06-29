@@ -26,7 +26,7 @@ def get_family_subscription(family_id: int) -> Optional[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT subscription_end FROM families WHERE id = ?',
+            'SELECT subscription_end FROM families WHERE id = %s',
             (family_id,),
         )
         row = cursor.fetchone()
@@ -41,7 +41,7 @@ def extend_subscription(family_id: int, months: int = 1):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT subscription_end FROM families WHERE id = ?',
+            'SELECT subscription_end FROM families WHERE id = %s',
             (family_id,),
         )
         row = cursor.fetchone()
@@ -53,16 +53,16 @@ def extend_subscription(family_id: int, months: int = 1):
             cursor.execute('''
                 UPDATE families SET subscription_end =
                     CASE
-                        WHEN subscription_end > datetime('now')
-                        THEN datetime(subscription_end, ?)
-                        ELSE datetime('now', ?)
+                        WHEN subscription_end > (now() at time zone 'utc')
+                        THEN subscription_end + %s * interval '1 month'
+                        ELSE (now() at time zone 'utc') + %s * interval '1 month'
                     END
-                WHERE id = ?
-            ''', (f'+{months} months', f'+{months} months', family_id))
+                WHERE id = %s
+            ''', (months, months, family_id))
         else:
             cursor.execute(
-                "UPDATE families SET subscription_end = datetime('now', ?) WHERE id = ?",
-                (f'+{months} months', family_id),
+                "UPDATE families SET subscription_end = (now() at time zone 'utc') + %s * interval '1 month' WHERE id = %s",
+                (months, family_id),
             )
 
 
@@ -76,7 +76,7 @@ def record_payment(family_id: int, paid_by_parent_id: int, amount: int,
         cursor.execute('''
             INSERT INTO payments (family_id, paid_by, amount, currency, plan, months,
                                   telegram_payment_charge_id, provider_payment_charge_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         ''', (family_id, paid_by_parent_id, amount, currency, plan, months,
               telegram_charge_id, provider_charge_id))
 
@@ -86,17 +86,19 @@ def is_subscription_active(family_id: int) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT subscription_end FROM families WHERE id = ?',
+            'SELECT subscription_end FROM families WHERE id = %s',
             (family_id,),
         )
         row = cursor.fetchone()
         if not row or not row['subscription_end']:
             return False
         cursor.execute(
-            "SELECT ? > datetime('now') as active",
+            "SELECT %s > (now() at time zone 'utc') as active",
             (row['subscription_end'],),
         )
-        return cursor.fetchone()['active'] == 1
+        # PG возвращает python bool (True/False), а не 1/0 — сравнение '== 1'
+        # всегда было бы False. Сравниваем с True.
+        return cursor.fetchone()['active'] is True
 
 
 def has_any_active_subscription(telegram_id: int) -> bool:
@@ -115,7 +117,7 @@ def cancel_subscription(family_id: int) -> bool:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE families SET subscription_end = datetime('now') WHERE id = ?",
+            "UPDATE families SET subscription_end = (now() at time zone 'utc') WHERE id = %s",
             (family_id,),
         )
         return cursor.rowcount > 0
@@ -129,16 +131,18 @@ def get_families_expiring_in_days(days: int) -> List[Dict[str, Any]]:
             SELECT f.id as family_id, f.family_name, f.subscription_end
             FROM families f
             WHERE f.subscription_end IS NOT NULL
-              AND f.subscription_end > datetime('now')
-              AND f.subscription_end <= datetime('now', ?)
-        ''', (f'+{days + 1} days',))
+              AND f.subscription_end > (now() at time zone 'utc')
+              AND f.subscription_end <= (now() at time zone 'utc') + %s * interval '1 day'
+        ''', (days + 1,))
         target_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=days)).date()
         results = []
         for row in cursor.fetchall():
-            try:
-                end_date = datetime.fromisoformat(row['subscription_end']).date()
-            except (ValueError, TypeError):
+            # psycopg отдаёт timestamp-колонку как datetime-объект (не строку) —
+            # работаем напрямую, без fromisoformat.
+            subscription_end = row['subscription_end']
+            if subscription_end is None:
                 continue
+            end_date = subscription_end.date()
             if end_date == target_date:
                 results.append(dict(row))
         return results
@@ -152,8 +156,8 @@ def get_families_expired_today() -> List[Dict[str, Any]]:
             SELECT f.id as family_id, f.family_name, f.subscription_end
             FROM families f
             WHERE f.subscription_end IS NOT NULL
-              AND date(f.subscription_end, '+5 hours') = date('now', '+5 hours')
-              AND f.subscription_end <= datetime('now')
+              AND (f.subscription_end + interval '5 hours')::date = ((now() at time zone 'utc') + interval '5 hours')::date
+              AND f.subscription_end <= (now() at time zone 'utc')
         ''')
         return [dict(row) for row in cursor.fetchall()]
 

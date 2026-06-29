@@ -61,11 +61,35 @@ def _ensure_admin() -> None:
         )
 
 
+def _backfill_family_links() -> None:
+    """Идемпотентный data-repair: семьям с head_id без строки в family_links —
+    создать связь. Лечит исторические данные (главы, заведённые до того как
+    process_head_choice стал звать link_parent_to_family). На чистой БД — no-op.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO family_links (family_id, parent_id)
+            SELECT f.id, f.head_id FROM families f
+            WHERE f.head_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM family_links fl
+                  WHERE fl.family_id = f.id AND fl.parent_id = f.head_id
+              )
+            """
+        )
+        if cursor.rowcount and cursor.rowcount > 0:
+            logger.info("Backfill: linked %d family heads to family_links.", cursor.rowcount)
+
+
 def init_db() -> None:
-    """Готовит БД к работе: применяет миграции Alembic (создаёт/обновляет схему)
-    и регистрирует супер-админа. Вызывается на старте бота и в тест-харнесе."""
+    """Готовит БД к работе: применяет миграции Alembic (создаёт/обновляет схему),
+    регистрирует супер-админа и чинит исторические orphan-связи семей.
+    Вызывается на старте бота и в тест-харнесе."""
     apply_migrations()
     _ensure_admin()
+    _backfill_family_links()
     logger.info("Database ready (PostgreSQL, schema via Alembic).")
 
 

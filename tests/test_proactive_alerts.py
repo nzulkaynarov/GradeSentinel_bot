@@ -41,7 +41,7 @@ def test_was_alerted_recently_false_when_old(temp_db):
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
             "INSERT INTO proactive_alerts (student_id, alert_type, sent_at) "
-            "VALUES (?, ?, datetime('now', '-50 hours'))",
+            "VALUES (%s, %s, (now() at time zone 'utc') - interval '50 hours')",
             (student_id, 'low_grades_series'),
         )
     assert dbm.was_alerted_recently(student_id, 'low_grades_series') is False

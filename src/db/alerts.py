@@ -11,6 +11,7 @@ Schema (см. init_db в database_manager.py):
   "was_alerted_recently" lookup.
 """
 import logging
+from datetime import datetime
 from typing import Optional
 
 from src.db.connection import get_db_connection
@@ -28,10 +29,10 @@ def save_alert(student_id: int, alert_type: str) -> int:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO proactive_alerts (student_id, alert_type) VALUES (?, ?)',
+            'INSERT INTO proactive_alerts (student_id, alert_type) VALUES (%s, %s) RETURNING id',
             (student_id, alert_type),
         )
-        return cursor.lastrowid
+        return cursor.fetchone()[0]
 
 
 def was_alerted_recently(student_id: int, alert_type: str,
@@ -47,20 +48,23 @@ def was_alerted_recently(student_id: int, alert_type: str,
         cursor = conn.cursor()
         cursor.execute(
             "SELECT 1 FROM proactive_alerts "
-            "WHERE student_id = ? AND alert_type = ? "
-            "AND sent_at > datetime('now', ?) LIMIT 1",
-            (student_id, alert_type, f'-{int(hours)} hours'),
+            "WHERE student_id = %s AND alert_type = %s "
+            "AND sent_at > (now() at time zone 'utc') - %s * interval '1 hour' LIMIT 1",
+            (student_id, alert_type, int(hours)),
         )
         return cursor.fetchone() is not None
 
 
-def get_last_alert_at(student_id: int, alert_type: str) -> Optional[str]:
-    """Возвращает ISO timestamp последнего alert'а указанного типа, или None."""
+def get_last_alert_at(student_id: int, alert_type: str) -> Optional[datetime]:
+    """Возвращает timestamp последнего alert'а указанного типа, или None.
+
+    psycopg возвращает наивный datetime (UTC), а не строку.
+    """
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             "SELECT sent_at FROM proactive_alerts "
-            "WHERE student_id = ? AND alert_type = ? "
+            "WHERE student_id = %s AND alert_type = %s "
             "ORDER BY sent_at DESC LIMIT 1",
             (student_id, alert_type),
         )

@@ -88,7 +88,7 @@ def seeded_student(temp_db):
     future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
-            "UPDATE families SET subscription_end = ? WHERE id = ?", (future, fam_id),
+            "UPDATE families SET subscription_end = %s WHERE id = %s", (future, fam_id),
         )
 
     today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
@@ -140,7 +140,7 @@ def test_pdf_endpoint_filename_ascii_only_in_header(client, temp_db):
     future = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)).strftime('%Y-%m-%d')
     with dbm.get_db_connection() as conn:
         conn.cursor().execute(
-            "UPDATE families SET subscription_end = ? WHERE id = ?", (future, fam_id),
+            "UPDATE families SET subscription_end = %s WHERE id = %s", (future, fam_id),
         )
 
     with patch("webapp.app._authorize_student_access", return_value=555555):

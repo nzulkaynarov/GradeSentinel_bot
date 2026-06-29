@@ -70,7 +70,7 @@ def get_streak_count(student_id: int) -> int:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT grade_value FROM grade_history
-            WHERE student_id = ? AND grade_value IS NOT NULL
+            WHERE student_id = %s AND grade_value IS NOT NULL
             ORDER BY grade_date DESC, date_added DESC
             LIMIT 20
         ''', (student_id,))
@@ -127,7 +127,7 @@ def _get_prev_quarter_value(student_id: int, subject: str, quarter: int) -> Opti
         cursor = conn.cursor()
         cursor.execute('''
             SELECT raw_text FROM quarter_grades
-            WHERE student_id = ? AND subject = ? AND quarter = ?
+            WHERE student_id = %s AND subject = %s AND quarter = %s
         ''', (student_id, subject, quarter - 1))
         row = cursor.fetchone()
     return row['raw_text'] if row else None

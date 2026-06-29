@@ -17,7 +17,7 @@ def queue_notification(telegram_id: int, message: str):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO notification_queue (telegram_id, message) VALUES (?, ?)',
+            'INSERT INTO notification_queue (telegram_id, message) VALUES (%s, %s)',
             (telegram_id, message),
         )
 
@@ -27,12 +27,12 @@ def get_and_clear_queued_notifications(telegram_id: int) -> List[str]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT message FROM notification_queue WHERE telegram_id = ? ORDER BY created_at',
+            'SELECT message FROM notification_queue WHERE telegram_id = %s ORDER BY created_at',
             (telegram_id,),
         )
         messages = [row['message'] for row in cursor.fetchall()]
         cursor.execute(
-            'DELETE FROM notification_queue WHERE telegram_id = ?',
+            'DELETE FROM notification_queue WHERE telegram_id = %s',
             (telegram_id,),
         )
         return messages
@@ -62,7 +62,7 @@ def queue_group_notification(chat_id: int, message_thread_id: 'int | None',
         cursor = conn.cursor()
         cursor.execute(
             'INSERT INTO group_notification_queue '
-            '(chat_id, message_thread_id, message) VALUES (?, ?, ?)',
+            '(chat_id, message_thread_id, message) VALUES (%s, %s, %s)',
             (chat_id, message_thread_id, message),
         )
 
@@ -77,27 +77,27 @@ def get_and_clear_queued_group_notifications(
         if message_thread_id is None:
             cursor.execute(
                 'SELECT message FROM group_notification_queue '
-                'WHERE chat_id = ? AND message_thread_id IS NULL '
+                'WHERE chat_id = %s AND message_thread_id IS NULL '
                 'ORDER BY created_at',
                 (chat_id,),
             )
             messages = [row['message'] for row in cursor.fetchall()]
             cursor.execute(
                 'DELETE FROM group_notification_queue '
-                'WHERE chat_id = ? AND message_thread_id IS NULL',
+                'WHERE chat_id = %s AND message_thread_id IS NULL',
                 (chat_id,),
             )
         else:
             cursor.execute(
                 'SELECT message FROM group_notification_queue '
-                'WHERE chat_id = ? AND message_thread_id = ? '
+                'WHERE chat_id = %s AND message_thread_id = %s '
                 'ORDER BY created_at',
                 (chat_id, message_thread_id),
             )
             messages = [row['message'] for row in cursor.fetchall()]
             cursor.execute(
                 'DELETE FROM group_notification_queue '
-                'WHERE chat_id = ? AND message_thread_id = ?',
+                'WHERE chat_id = %s AND message_thread_id = %s',
                 (chat_id, message_thread_id),
             )
         return messages

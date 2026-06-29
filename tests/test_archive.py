@@ -9,13 +9,13 @@ def _seed_old_grade(student_id: int, days_ago: int):
         c.execute('''
             INSERT INTO grade_history
               (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
-            VALUES (?, 'Math', 5.0, '5', ?, date('now', ?))
-        ''', (student_id, f'Сегодня!Math:day-{days_ago}', f'-{days_ago} days'))
+            VALUES (%s, 'Math', 5.0, '5', %s, ((now() at time zone 'utc') - %s * interval '1 day')::date)
+        ''', (student_id, f'Сегодня!Math:day-{days_ago}', days_ago))
         c.execute('''
             UPDATE grade_history
-            SET date_added = datetime('now', ?)
-            WHERE cell_reference = ?
-        ''', (f'-{days_ago} days', f'Сегодня!Math:day-{days_ago}'))
+            SET date_added = (now() at time zone 'utc') - %s * interval '1 day'
+            WHERE cell_reference = %s
+        ''', (days_ago, f'Сегодня!Math:day-{days_ago}'))
 
 
 def test_archive_moves_old_grades(temp_db):
@@ -29,9 +29,9 @@ def test_archive_moves_old_grades(temp_db):
     # В архиве — одна, в основной таблице — одна
     with dbm.get_db_connection() as conn:
         c = conn.cursor()
-        c.execute("SELECT COUNT(*) as n FROM grade_history WHERE student_id = ?", (s_id,))
+        c.execute("SELECT COUNT(*) as n FROM grade_history WHERE student_id = %s", (s_id,))
         assert c.fetchone()['n'] == 1
-        c.execute("SELECT COUNT(*) as n FROM grade_history_archive WHERE student_id = ?", (s_id,))
+        c.execute("SELECT COUNT(*) as n FROM grade_history_archive WHERE student_id = %s", (s_id,))
         assert c.fetchone()['n'] == 1
 
 
