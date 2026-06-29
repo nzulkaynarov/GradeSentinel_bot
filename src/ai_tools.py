@@ -147,25 +147,33 @@ _PLAN_KEY_LABELS = {
 
 
 def _format_subscription_status(family_id: int, lang: str) -> str:
+    from datetime import date as _date
     from datetime import datetime
-    from src.database_manager import (
-        get_family_subscription, is_subscription_active, get_families_for_user,
-    )
+
+    from src.database_manager import get_family_subscription, is_subscription_active
+    from src.utils import to_date_str
     lbl = _labels(lang)
 
     sub = get_family_subscription(family_id)
     if not sub or not sub.get('subscription_end'):
         return lbl['subscription_no_data']
 
-    end_str = sub['subscription_end']
+    # psycopg отдаёт subscription_end (TIMESTAMP) как datetime-ОБЪЕКТ, не строку
+    # (после миграции на PG). Поддерживаем оба варианта (legacy/тесты дают строку).
+    end_val = sub['subscription_end']
     if is_subscription_active(family_id):
+        end_dt = None
         try:
-            end_dt = datetime.fromisoformat(end_str.replace(' ', 'T'))
-            now_dt = datetime.now()
-            days = max(0, (end_dt - now_dt).days)
+            if isinstance(end_val, datetime):
+                end_dt = end_val
+            elif isinstance(end_val, _date):
+                end_dt = datetime(end_val.year, end_val.month, end_val.day)
+            elif isinstance(end_val, str):
+                end_dt = datetime.fromisoformat(end_val.replace(' ', 'T'))
+            days = max(0, (end_dt - datetime.now()).days) if end_dt else '?'
         except (ValueError, TypeError):
             days = '?'
-        return lbl['subscription_active'].format(date=end_str[:10], days=days)
+        return lbl['subscription_active'].format(date=to_date_str(end_val), days=days)
     return lbl['subscription_inactive']
 
 
