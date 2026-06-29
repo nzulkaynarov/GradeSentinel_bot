@@ -4,7 +4,14 @@
 
 При старте сессии: `Claude, прочитай CLAUDE.md и Docs/CONTEXT.md`.
 
-**Последнее обновление:** 2026-05-21 (ночь — финальный role-toggle PR #60 после серии 6 PR навигации).
+**Последнее обновление:** 2026-06-29 (миграция на PostgreSQL + аудит/ресерч/план).
+
+> **СОСТОЯНИЕ 2026-06-29 (continue here):**
+> - ✅ **Миграция SQLite → PostgreSQL 17 завершена** (PR #91–#94 в `main`): psycopg v3 + пул, схема Alembic, DSN в `DATABASE_URL`. Бот живёт на PG (DB-VPS `10.0.0.2`, WireGuard). Тесты — Docker `postgres:17`, **444 зелёных**. Откат: `sentinel.db.pre-pg-*` (держать ≥недели). Деталь: `Docs/cutover-runbook-2026-06-29.md`.
+> - ✅ Пофикшены пост-миграционные date-object баги (панель/AI-тул/analytics) — `src/utils.to_date_str`.
+> - ✅ AI Tier 1/2 — уже в проде (этот файл синхронизирован): tool_use, стриминг, память диалога, 👍/👎.
+> - 📋 **ГЛАВНОЕ для продолжения:** аудит (техлид+продукт) + ресерч мировой практики → `Docs/audit-and-research-2026-06-29.md`; **приоритизированный план рефакторинга+продукта → `Docs/refactor-and-product-plan-2026-06-29.md`** (P0 надёжность → P1 архитектура+источник данных → P2 рост; стержень — развилка B2C/B2B + уход от скрейпинга Google Sheets).
+> - ⏳ ОТ ВЛАДЕЛЬЦА: решение B2C vs B2B; влить открытые ветки `feat/summer-mode` + `fix/weekly-reports-summer-false-alarm`; установить gradesentinel-бэкап на DB-VPS (`deploy/gradesentinel-db-backup.{sh,cron}`).
 
 ---
 
