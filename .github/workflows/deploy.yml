@@ -34,6 +34,7 @@ jobs:
           STARS_ENABLED=${{ secrets.STARS_ENABLED }}
           SENTRY_DSN=${{ secrets.SENTRY_DSN }}
           ENVIRONMENT=production
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
           EOF
           sudo /usr/bin/chmod 0640 /etc/gradesentinel/bot.env
           sudo /usr/bin/chown root:gradesentinel /etc/gradesentinel/bot.env
