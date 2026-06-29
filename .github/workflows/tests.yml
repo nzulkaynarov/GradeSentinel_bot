@@ -8,6 +8,24 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+
+    # PostgreSQL service — тесты идут против PG (миграция с SQLite, 2026-06-29).
+    # Без DATABASE_URL conftest.py пропускает ВСЕ БД-тесты → ложно-зелёный CI.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: gs
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: gstest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gs -d gstest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -26,10 +44,11 @@ jobs:
 
       - name: Run pytest
         env:
+          # Схему поднимает conftest.py (init_db → alembic upgrade head) при наличии
+          # DATABASE_URL; без него БД-тесты молча скипались бы (ложная безопасность).
+          DATABASE_URL: postgresql://gs:test@localhost:5432/gstest
           # BOT_TOKEN формата с ':' — bot_instance.py exit(1) при невалидном.
-          # Старые тесты (без импорта handlers/) этого не требовали, но новые
-          # тесты handler'ов (test_ai_chat_handler_history, test_streaming)
-          # импортируют src.handlers.ai_chat → bot_instance.
+          # Новые тесты handler'ов импортируют src.handlers.ai_chat → bot_instance.
           BOT_TOKEN: '12345:ci-test-token'
           ADMIN_ID: '0'
           ADMIN_GROUP_ID: '0'

@@ -1,0 +1,3 @@
+# GradeSentinel prod DB daily backup (PostgreSQL on DB-VPS). 02:35 — сразу после railtech (02:30).
+# Установка: install -m 0644 deploy/gradesentinel-db-backup.cron /etc/cron.d/gradesentinel-db-backup
+35 2 * * * root /usr/local/bin/gradesentinel-db-backup.sh >> /var/log/gradesentinel-db-backup.log 2>&1
