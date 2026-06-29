@@ -22,7 +22,7 @@
 
 - Python 3.12 (на проде, в CI пока 3.10 — но 3.12-совместим)
 - pyTelegramBotAPI (sync polling, не aiogram)
-- SQLite + WAL (`/var/lib/gradesentinel/sentinel.db` на проде, `data/sentinel.db` локально)
+- **PostgreSQL 17** (psycopg v3 + psycopg_pool) на DB-VPS `10.0.0.2` (WireGuard, `sslmode=require`); схема — Alembic (`migrations/`), DSN в env `DATABASE_URL`. Тесты — Docker `postgres:17` (`docker-compose.test.yml`). До 2026-06-29 был SQLite+WAL (`sentinel.db` оставлен как откат)
 - Google Sheets API v4 (Service Account, `/etc/gradesentinel/credentials.json` на проде)
 - Telegram Payments API
 - Anthropic SDK (`anthropic`)
@@ -41,7 +41,7 @@ src/
 ├── main.py              # Точка входа: /start, /help, авторизация, user panel,
 │                        #   rate limit (thread-safe + GC), heartbeat thread
 ├── bot_instance.py      # Singleton telebot
-├── database_manager.py  # ВСЁ SQL: схема, миграции, CRUD, авторизация (1500+ строк — нужно дробить)
+├── database_manager.py  # Фасад: get_db_connection (из src/db/pg.py) + init_db (Alembic) + re-export. Разбит → src/db/* (655 строк)
 ├── google_sheets.py     # Кэшированный сервис, get_sheet_data, get_spreadsheet_title
 ├── monitor_engine.py    # Polling-цикл (каждые 300с), детект новых/изменённых оценок,
 │                        #   ThreadPoolExecutor(8) для параллельного fetch'а
@@ -140,8 +140,8 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 ### Архитектурные
 
-1. **`get_db_connection()` — context manager в `database_manager.py:11`**.
-   Коммитит на успешном выходе, делает rollback при exception. `PRAGMA foreign_keys=ON`.
+1. **`get_db_connection()` — context manager в `src/db/pg.py`** (re-export через `src/db/connection.py` и `database_manager`).
+   psycopg v3 + `psycopg_pool` (проверка живости + реконнект); коммитит на успешном выходе, rollback при exception; соединение возвращается в пул. Плейсхолдеры — `%s` (не `?`). Row — sqlite3.Row-совместимый (и `row['c']`, и `row[0]`).
 
 2. **`pyTelegramBotAPI` синхронный**, polling-режим. Один main thread + scheduler thread (демон). Никаких корутин.
 
@@ -280,7 +280,7 @@ Watchdog: systemd timer раз в минуту проверяет `mtime` heartb
 # На VPS — основные команды:
 sudo systemctl status gradesentinel-bot gradesentinel-webapp
 sudo journalctl -u gradesentinel-bot -f
-sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db ".backup /tmp/backup.db"
+# БД на DB-VPS (PostgreSQL): дамп — ssh -i ~/.ssh/railtech_dbvps_ed25519 root@170.168.6.209 'sudo -u postgres pg_dump -Fc gradesentinel > /tmp/gs.dump'
 ```
 
 ### Переменные окружения (.env)

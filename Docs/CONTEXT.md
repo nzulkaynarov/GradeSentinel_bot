@@ -15,9 +15,9 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 - **Прод:** Ubuntu 24.04 VPS, bare-metal (без Docker), `grades.railtech.uz` через Caddy.
   IP/детали — в [deploy/README.md](../deploy/README.md), [Docs/web-rewrite-status.md](web-rewrite-status.md).
-- **БД:** SQLite + WAL в `/var/lib/gradesentinel/sentinel.db`. Локально `data/sentinel.db`.
+- **БД:** PostgreSQL 17 на DB-VPS `10.0.0.2` (WireGuard, `sslmode=require`), psycopg v3 + пул, схема Alembic, DSN в `DATABASE_URL`. Миграция с SQLite 2026-06-29 (`sentinel.db` — откат). Тесты: Docker `postgres:17`.
 - **Деплой:** GitHub Actions self-hosted runner → rsync `/opt/gradesentinel/` → `systemctl restart`. Каждый push в `main` = auto-deploy.
-- **Бэкап:** systemd-таймер `gradesentinel-backup.timer` ежедневно 03:30 TST → gzip в `/var/backups/gradesentinel/`, ротация >7 дней через `find -mtime`.
+- **Бэкап:** PostgreSQL дампится на DB-VPS суточным `pg_dump` (`deploy/gradesentinel-db-backup.sh`, рядом с railtech, 14-дн ротация). Старый sqlite-таймер `gradesentinel-backup.timer` после миграции бэкапит замороженный `sentinel.db` — можно отключить.
 
 Полная архитектура и конвенции — в [CLAUDE.md](../CLAUDE.md).
 

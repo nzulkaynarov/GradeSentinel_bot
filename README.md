@@ -1,5 +1,5 @@
 # GradeSentinel
-**v2.5** | Docker-based | Telegram Payments
+**v2.5** | PostgreSQL 17 | Telegram Payments
 
 **GradeSentinel** — система мониторинга школьной успеваемости. Бот отслеживает изменения в Google Таблицах (электронных дневниках) и мгновенно уведомляет родителей в Telegram о новых оценках.
 
@@ -124,7 +124,9 @@ src/
     └── invite.py            # Инвайт-ссылки для семей
 ```
 
-### База данных (SQLite)
+### База данных (PostgreSQL 17)
+
+> PostgreSQL 17 на отдельном DB-VPS (`10.0.0.2`, WireGuard, `sslmode=require`); драйвер `psycopg` v3 + пул, схема — Alembic (`migrations/`). Миграция с SQLite — 2026-06-29.
 
 | Таблица | Назначение |
 |---------|-----------|
