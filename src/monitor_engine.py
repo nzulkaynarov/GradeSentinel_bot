@@ -344,7 +344,9 @@ def _check_for_new_grades_impl():
 
         # Извлекаем оценки за сегодняшнюю дату из «Все оценки!».
         # Пустой список — нет колонки для today (учебный год не начался / выходной).
-        today_grades_pairs = _parse_master_sheet_for_date(data, tashkent_today_date)
+        today_grades_pairs = _parse_master_sheet_for_date(
+            data, tashkent_today_date, context=f"student={student_id} ({display_name})"
+        )
         if not today_grades_pairs:
             continue
 

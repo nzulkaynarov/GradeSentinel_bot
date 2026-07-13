@@ -23,11 +23,22 @@ from src.database_manager import get_db_connection
 logger = logging.getLogger(__name__)
 
 
+def _tashkent_now() -> datetime:
+    """Текущее «сейчас» по Ташкенту (UTC+5, без DST), наивный datetime.
+
+    Единый способ проекта: naive-UTC + 5ч (тот же, что в monitor_engine,
+    analytics_engine, database_manager). Вечером у сервера в UTC (~19:00-23:59 UTC)
+    по Ташкенту уже «завтра», поэтому год/сегодня НЕЛЬЗЯ брать из `datetime.now()`
+    (локальное/UTC время сервера): на границе учебного года (31 авг/1 сен,
+    31 дек/1 янв) это отнесло бы дату к соседнему учебному году."""
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
+
+
 def _tashkent_today_date():
     """Сегодняшняя дата по Ташкенту (UTC+5). Зона ответственности monitor'а —
     history-sync на эту дату НЕ пишет, чтобы не конфликтовать с двухфазным
     подтверждением (race из инцидента 13.05.2026)."""
-    return (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    return _tashkent_now().date()
 
 # Маппинг русских названий месяцев (полные формы + распространённые сокращения).
 # ВАЖНО: префиксы должны быть УНИКАЛЬНЫМИ — иначе 'март'.startswith('м') матчит
@@ -46,14 +57,15 @@ MONTH_MAP = {
 # Строки, которые НЕ являются предметами
 SKIP_SUBJECTS = {'посещаемость', '0', ''}
 
-# Текущий учебный год: сентябрь-декабрь = текущий/прошлый год, январь-август = следующий/текущий
-CURRENT_YEAR = datetime.now().year
 
-
-def _parse_russian_date(date_str: str) -> Optional[datetime]:
+def _parse_russian_date(date_str: str, now: Optional[datetime] = None) -> Optional[datetime]:
     """
     Парсит русскую дату вида '2 сентября', '14 март Сб', '1 октября' и т.д.
     Возвращает datetime или None.
+
+    `now` — «сейчас» для определения учебного года (default: сейчас по Ташкенту,
+    UTC+5). Параметр нужен для тестируемости границ учебного года и чтобы год
+    считался по Ташкенту, а не по локальному/UTC времени сервера (см. _tashkent_now).
     """
     if not date_str:
         return None
@@ -85,7 +97,11 @@ def _parse_russian_date(date_str: str) -> Optional[datetime]:
     # Определяем год по учебному году
     # Сентябрь-декабрь → год начала учебного года
     # Январь-август → следующий год
-    now = datetime.now()
+    # ВАЖНО: «сейчас» — по Ташкенту (UTC+5), не datetime.now() сервера. Иначе
+    # вечером UTC (уже «завтра» по Ташкенту) на границе учебного года дата уехала
+    # бы в соседний год → колонка «today» не находилась бы → тихий пропуск оценки.
+    if now is None:
+        now = _tashkent_now()
     if month >= 9:
         # Если сейчас январь-август, учебный год начался в прошлом году
         year = now.year if now.month >= 9 else now.year - 1
@@ -99,7 +115,25 @@ def _parse_russian_date(date_str: str) -> Optional[datetime]:
         return None
 
 
-def _parse_all_grades_sheet(data: List[List[str]]) -> List[Dict[str, Any]]:
+def _warn_if_header_dates_unparsed(date_row: List[Any], parsed_ok: int, context: str = "") -> None:
+    """Наблюдаемость (B13): лист ПОЛУЧЕН (не сетевой сбой), но при непустой шапке
+    ни одна колонка-дата не распозналась → это «тихий пропуск» оценок. Логируем
+    WARNING с тегом `[DATE_PARSE_FAIL]` (для отдельного грепа), один раз на проход.
+
+    NB: только логирование — Bot API из hot-path парсинга НЕ дёргаем.
+    """
+    non_empty = [str(c).strip() for c in date_row[1:] if c is not None and str(c).strip()]
+    if non_empty and parsed_ok == 0:
+        logger.warning(
+            f"[DATE_PARSE_FAIL] Шапка листа содержит {len(non_empty)} непустых "
+            f"дата-колонок, но НИ ОДНА не распозналась как дата"
+            f"{(' (' + context + ')') if context else ''}. "
+            f"Оценки за сегодня могут молча не записаться. "
+            f"Примеры шапки: {non_empty[:5]}"
+        )
+
+
+def _parse_all_grades_sheet(data: List[List[str]], context: str = "") -> List[Dict[str, Any]]:
     """
     Парсит данные листа "Все оценки" в список записей.
 
@@ -112,11 +146,16 @@ def _parse_all_grades_sheet(data: List[List[str]]) -> List[Dict[str, Any]]:
     # Строка 2 (index 1) — заголовки дат
     date_row = data[1]
     dates = []
+    parsed_ok = 0
     for col_idx, cell in enumerate(date_row):
         if col_idx == 0:
             continue  # Первый столбец — "Оценки"
         parsed = _parse_russian_date(str(cell).strip())
+        if parsed:
+            parsed_ok += 1
         dates.append((col_idx, parsed))
+
+    _warn_if_header_dates_unparsed(date_row, parsed_ok, context)
 
     records = []
     # Строки 3+ (index 2+) — предметы и оценки
@@ -204,7 +243,7 @@ def _import_from_sheet(
     if not data:
         return {'imported': 0, 'skipped': 0, 'total': 0}
 
-    records = _parse_all_grades_sheet(data)
+    records = _parse_all_grades_sheet(data, context=f"student={student_id}, sheet={sheet_label}")
     imported = 0
     skipped = 0
     today = _tashkent_today_date()
@@ -439,26 +478,38 @@ def _col_letter(col_index: int) -> str:
 MASTER_SHEET_RANGE = "Все оценки!A1:ZZ50"
 
 
-def _parse_master_sheet_for_date(data: List[List[Any]], target_date) -> List[Tuple[str, str]]:
+def _parse_master_sheet_for_date(
+    data: List[List[Any]], target_date, context: str = ""
+) -> List[Tuple[str, str]]:
     """Pure-функция (для тестов): находит колонку с `target_date` в шапке (row 2)
     и возвращает [(subject, raw_grade)] из этой колонки.
 
     Возвращает только непустые значения. Пропускает служебные строки
     («Посещаемость», числовые заголовки).
+
+    Наблюдаемость (B13): если шапка непустая, но НИ ОДНА колонка не распозналась
+    как дата — логируем WARNING (`[DATE_PARSE_FAIL]`), иначе тихий пропуск оценок
+    в monitor'е был бы невидим. `context` — для идентификации студента в логе.
     """
     if not data or len(data) < 3:
         return []
 
     # row 2 (index 1) — даты в шапке. Ищем колонку для target_date.
+    # Сканируем всю шапку (не break на первом матче), чтобы посчитать сколько
+    # колонок вообще распозналось — для [DATE_PARSE_FAIL] наблюдаемости.
     date_row = data[1]
     target_col = None
+    parsed_ok = 0
     for col_idx, cell in enumerate(date_row):
         if col_idx == 0:
             continue  # первый столбец — «Оценки»
         parsed = _parse_russian_date(str(cell).strip()) if cell else None
-        if parsed and parsed.date() == target_date:
-            target_col = col_idx
-            break
+        if parsed:
+            parsed_ok += 1
+            if parsed.date() == target_date and target_col is None:
+                target_col = col_idx
+
+    _warn_if_header_dates_unparsed(date_row, parsed_ok, context)
 
     if target_col is None:
         return []
@@ -501,4 +552,4 @@ def read_master_sheet_today_grades(spreadsheet_id: str) -> List[Tuple[str, str]]
     if data is None:
         return []
     today = _tashkent_today_date()  # уже date, не datetime
-    return _parse_master_sheet_for_date(data, today)
+    return _parse_master_sheet_for_date(data, today, context=f"spreadsheet={spreadsheet_id}")
