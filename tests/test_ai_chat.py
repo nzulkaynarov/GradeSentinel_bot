@@ -120,6 +120,44 @@ def test_user_message_includes_today_date(monkeypatch):
     assert _tashkent_today_str() in first_user
 
 
+def test_today_date_in_first_system_block(monkeypatch):
+    """Дата вынесена в ПЕРВЫЙ system-блок (высокая заметность) — при большом
+    grade-контексте, заканчивающемся месяцы назад, Haiku иначе терял дату,
+    зарытую наверху user-контекста, и галлюцинировал «сегодня» у конца данных.
+    Большой system_prompt при этом остаётся отдельным кэшируемым блоком."""
+    from src.analytics_engine import answer_parent_question, _tashkent_today_str
+    captured = {}
+
+    class FakeMessage:
+        def __init__(self):
+            self.content = [type('obj', (), {'text': 'ok'})()]
+            self.stop_reason = 'end_turn'
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured['system'] = kwargs.get('system')
+                return FakeMessage()
+
+    monkeypatch.setattr("src.analytics_engine._get_client", lambda: FakeClient())
+
+    answer_parent_question(
+        student_id=1, student_name="Test",
+        grades=[{"subject": "Алгебра", "grade_value": 5.0, "raw_text": "5",
+                 "grade_date": "2026-05-21"}],
+        question="какое сегодня число", lang='ru',
+    )
+    system = captured['system']
+    assert isinstance(system, list) and len(system) >= 2
+    # Первый блок — дата, высокая заметность, без cache_control (крошечный,
+    # меняется ежедневно), содержит именно сегодняшнюю дату.
+    assert _tashkent_today_str() in system[0]['text']
+    assert 'cache_control' not in system[0]
+    # Большой промпт остаётся отдельным кэшируемым блоком.
+    assert system[1].get('cache_control', {}).get('type') == 'ephemeral'
+
+
 def _flatten_content(content):
     """Склеивает text из content-блоков (или возвращает строку как есть)."""
     if isinstance(content, str):
