@@ -122,16 +122,24 @@ def on_bot_added_to_group(message: types.Message):
 def callback_group_cancel(call: types.CallbackQuery):
     """«Отмена» в group family-select. Раньше callback был без handler →
     silent fail (button hang). Audit fix: удаляем message и acknowledge."""
-    bot.answer_callback_query(call.id)
+    # Отвечаем на callback РОВНО один раз — ПОСЛЕ проверки инициатора.
+    # Раньше безусловный answer в начале «съедал» ack, и второй answer с
+    # текстом для не-инициатора Telegram молча игнорировал (тост не виден).
     try:
-        # Только тот кто инициировал может отменить
         parts = call.data.split('_', 1)
         inviter_id = int(parts[1]) if len(parts) > 1 else None
-        if inviter_id and call.from_user.id != inviter_id:
-            lang = get_user_lang(call.from_user.id)
-            bot.answer_callback_query(call.id, t("group_not_inviter", lang),
-                                       show_alert=False)
-            return
+    except (ValueError, IndexError):
+        inviter_id = None
+
+    # Только тот кто инициировал может отменить
+    if inviter_id and call.from_user.id != inviter_id:
+        lang = get_user_lang(call.from_user.id)
+        bot.answer_callback_query(call.id, t("group_not_inviter", lang),
+                                   show_alert=False)
+        return
+
+    bot.answer_callback_query(call.id)
+    try:
         bot.delete_message(call.message.chat.id, call.message.message_id)
     except Exception as e:
         logger.debug(f"gcancel cleanup failed: {e}")

@@ -3,6 +3,7 @@
 Поддержка: Click / Payme (Telegram Payments API) + ручной перевод на карту.
 """
 import os
+import copy
 import logging
 from telebot import types
 from src.bot_instance import bot
@@ -119,9 +120,14 @@ DEFAULT_PLANS = {
 
 
 def get_plans() -> dict:
-    """Возвращает актуальные тарифы из БД или дефолтные."""
+    """Возвращает актуальные тарифы из БД или дефолтные.
+
+    Возвращает deepcopy DEFAULT_PLANS, а не сам объект: `_process_price_input`
+    делает `plans[k]['amount'] = ...` in-place перед save_plans_to_db — без
+    копии это мутировало бы глобальный дефолт (и следующий вызов без БД-записи
+    отдал бы испорченные цены)."""
     db_plans = get_plans_from_db()
-    return db_plans if db_plans else DEFAULT_PLANS
+    return db_plans if db_plans else copy.deepcopy(DEFAULT_PLANS)
 
 
 # ═══════════════════════════════════════════

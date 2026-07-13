@@ -26,7 +26,7 @@ from src.database_manager import (
     clear_family_chat_history,
     save_feedback, get_message_owner,
 )
-from src.i18n import t
+from src.i18n import t, get_button_action
 from src.utils import to_date_str
 
 logger = logging.getLogger(__name__)
@@ -229,7 +229,11 @@ def _on_pick_family(call):
 
 
 @bot.message_handler(
-    func=lambda m: m.chat.type == 'private' and _is_ai_chat_state(m.from_user.id)
+    func=lambda m: (
+        m.chat.type == 'private'
+        and _is_ai_chat_state(m.from_user.id)
+        and get_button_action(m.text) is None
+    )
 )
 def _on_chat_message(message):
     """Любой текст в ai_chat_mode → вопрос для AI.
@@ -238,6 +242,14 @@ def _on_chat_message(message):
     родитель/админ оставался в ai_chat_mode и писал в группе, сообщение
     участника улетало в AI и бот отвечал (галлюцинировал) прямо в группе.
     Гейт chat.type == 'private' закрывает эту утечку.
+
+    B17: `get_button_action(m.text) is None` исключает метки reply-keyboard
+    главного меню (btn_grades «📈 Оценки», btn_user_menu «📱 Меню» и др.).
+    `handle_menu_buttons` в main.py регистрируется ПОЗЖЕ этого хендлера, так
+    что без исключения метка перехватывалась бы здесь и уходила в AI как
+    вопрос. Nav-метки ({Чат, Меню, Дашборд}) не в BUTTON_ACTIONS — их ловит
+    navigation.py, зарегистрированный РАНЬШЕ ai_chat. Дырки нет: любая метка
+    гарантированно доходит до своего хендлера.
 
     PR_G-hotfix: убран admin-блокировщик. Admin может legitimately быть в
     ai_chat_mode через «👨 Я родитель» (Tier 2) — там AI должен отвечать.

@@ -62,7 +62,7 @@ def _invalidate_panel_cache(chat_id: int):
 from src.bot_instance import bot
 from src.ui import send_menu_safe
 from src.database_manager import init_db, get_parent_by_phone, update_parent_telegram_id, update_parent_first_name, get_greeting_name, get_parent_role, get_user_lang
-from src.i18n import load_translations, t, BUTTON_ACTIONS
+from src.i18n import load_translations, t, get_button_action
 from src.monitor_engine import start_polling
 
 # Import handlers to register them
@@ -676,43 +676,6 @@ def _start_onboarding(chat_id: int, user_name: str):
                       reply_markup=markup, parse_mode='HTML')
 
 
-@bot.callback_query_handler(func=lambda call: call.data == 'up_grades')
-def callback_up_grades(call):
-    """Оценки из пользовательской панели."""
-    bot.answer_callback_query(call.id)
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception as e:
-        logger.debug(f"Could not delete panel message for grades: {e}")
-    get_grades_command(call.message)
-    _show_user_panel(call.message.chat.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == 'up_ai')
-def callback_up_ai(call):
-    """AI-анализ из пользовательской панели."""
-    bot.answer_callback_query(call.id)
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception as e:
-        logger.debug(f"Could not delete panel message for AI: {e}")
-    cmd_ai_report(call.message)
-    _show_user_panel(call.message.chat.id)
-
-
-@bot.callback_query_handler(func=lambda call: call.data == 'up_ai_chat')
-def callback_up_ai_chat(call):
-    """Запуск AI-чата прямо в Telegram. Открывает state ai_chat_mode,
-    далее ai_chat.py handler ловит все text-сообщения от юзера."""
-    bot.answer_callback_query(call.id)
-    try:
-        bot.delete_message(call.message.chat.id, call.message.message_id)
-    except Exception as e:
-        logger.debug(f"Could not delete panel message for AI chat: {e}")
-    from src.handlers.ai_chat import start_ai_chat
-    start_ai_chat(call.from_user.id)
-
-
 @bot.callback_query_handler(func=lambda call: call.data == 'up_family')
 def callback_up_family(call):
     """Управление семьёй из пользовательской панели."""
@@ -884,14 +847,18 @@ def callback_up_lang(call):
 # ═══════════════════════════════════════════
 
 @bot.message_handler(
-    func=lambda m: m.chat.type == 'private' and m.text in BUTTON_ACTIONS
+    func=lambda m: m.chat.type == 'private' and get_button_action(m.text) is not None
 )
 def handle_menu_buttons(message):
     """Обработчик нажатий на кнопки главного меню (мультиязычный).
 
     Только private: reply-keyboard кнопки живут лишь в личке. В группе
     совпадение текста не должно перехватываться (бот там — для уведомлений)."""
-    action = BUTTON_ACTIONS[message.text]
+    action = get_button_action(message.text)
+    if action is None:
+        # Гонка: язык сменился между func-проверкой и телом → метка уже
+        # не в актуальном маппинге. Молча выходим (юзер повторит тап).
+        return
     user_id = message.chat.id
     lang = get_user_lang(user_id)
 
