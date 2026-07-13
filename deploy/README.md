@@ -171,34 +171,44 @@ sudo journalctl -u caddy -f                    # reverse proxy
 sudo tail -f /var/log/caddy/grades.log         # access log JSON
 ```
 
-### Бэкап БД
+### Бэкап БД (PostgreSQL на DB-VPS)
+
+После миграции 2026-06-29 БД — PostgreSQL 17 на **отдельном DB-VPS**
+(`170.168.6.209` / внутр. `10.0.0.2` через WireGuard). Бэкапы делаются **там**,
+а не на app-VPS (на app-VPS БД больше нет — старые SQLite-юниты удалены).
+
+**Локальный суточный дамп** (уже настроен на DB-VPS):
+`gradesentinel-db-backup.sh` + `gradesentinel-db-backup.cron` — `pg_dump -Fc`
+(custom-формат, pg_restore-able) → `/var/backups/railtech-db/gradesentinel_<TS>.dump`,
+cron 02:35, ротация **14 дней**, файлы `root:600`.
 
 ```bash
-# На VPS, без остановки бота:
-sudo -u gradesentinel sqlite3 /var/lib/gradesentinel/sentinel.db \
-    ".backup /tmp/sentinel-$(date +%Y%m%d-%H%M%S).db"
-
-# Скачать на локалку:
-scp deploy@176.101.56.141:/tmp/sentinel-*.db ~/backups/
+# Разовый ручной дамп с локалки (через SSH на DB-VPS):
+ssh -i ~/.ssh/railtech_dbvps_ed25519 root@170.168.6.209 \
+    'sudo -u postgres pg_dump -Fc --no-owner --no-privileges gradesentinel' > ~/backups/gs-$(date +%F).dump
 ```
 
-Ежедневный локальный бэкап уже настроен: `gradesentinel-backup.timer` (22:30 UTC =
-03:30 TST) пишет gzip в `/var/backups/gradesentinel/`, ротация 7 дней.
+### Off-site бэкап (rclone → облако) — тоже на DB-VPS
 
-### Off-site бэкап (rclone → облако)
+Локальные дампы лежат на том же DB-VPS, где живёт БД — при его гибели теряются
+вместе с базой. `offsite-backup.sh` (устанавливается на DB-VPS как
+`/usr/local/bin/gradesentinel-offsite-backup.sh`, cron 03:05 — через 30 мин после
+локального дампа) зеркалит `/var/backups/railtech-db/gradesentinel_*.dump` в облако
+через `rclone`. **Скрипт мягко скипает, пока не сконфигурирован** — алертов не шлёт.
 
-Локальные бэкапы лежат на том же VPS — при его гибели теряются вместе с БД.
-`gradesentinel-offsite-backup.timer` (23:00 UTC = 04:00 TST) зеркалит папку
-бэкапов в облако через `rclone`. **Юнит уже установлен и enabled, но мягко
-скипает, пока не сконфигурирован** — алертов не шлёт.
-
-> ⚠️ **Privacy:** в БД — PII реальных родителей/детей (телефоны, имена, оценки).
+> ⚠️ **Privacy:** в дампе — PII реальных родителей/детей (телефоны, имена, оценки).
 > Используй rclone **crypt** remote (client-side шифрование) поверх B2/S3 —
 > провайдер будет хранить только зашифрованные блобы.
 
-**Провижининг (один раз, на VPS под root):**
+**Провижининг (один раз, на DB-VPS под root):**
 
 ```bash
+# 0. Скопировать скрипт + cron на DB-VPS (репо там не выкатывается автоматом —
+#    возьми файлы из deploy/ этого репо, напр. scp с локалки):
+install -m 0755 deploy/offsite-backup.sh /usr/local/bin/gradesentinel-offsite-backup.sh
+install -m 0644 deploy/gradesentinel-offsite-backup.cron /etc/cron.d/gradesentinel-offsite-backup
+mkdir -p /etc/gradesentinel && chmod 0700 /etc/gradesentinel
+
 # 1. Установить rclone
 curl https://rclone.org/install.sh | sudo bash
 
@@ -211,22 +221,44 @@ sudo rclone --config /etc/gradesentinel/rclone.conf config
 #   - remote 'secret'  : type=crypt, remote=b2raw:gradesentinel-db, задать пароли
 #   (crypt шифрует и имена файлов, и содержимое)
 
-# 4. Указать целевой remote и закрыть права (gradesentinel-юзер читает оба файла)
+# 4. Указать целевой remote (скрипт бежит как root — права root:600 достаточно)
 echo 'RCLONE_REMOTE=secret:' | sudo tee /etc/gradesentinel/offsite-backup.env
-sudo chown root:gradesentinel /etc/gradesentinel/offsite-backup.env /etc/gradesentinel/rclone.conf
-sudo chmod 0640               /etc/gradesentinel/offsite-backup.env /etc/gradesentinel/rclone.conf
+sudo chmod 0600 /etc/gradesentinel/offsite-backup.env /etc/gradesentinel/rclone.conf
 
 # 5. Прогнать вручную + проверить
-sudo systemctl start gradesentinel-offsite-backup.service
-journalctl -u gradesentinel-offsite-backup.service -n 20 --no-pager
+sudo /usr/local/bin/gradesentinel-offsite-backup.sh
 sudo rclone --config /etc/gradesentinel/rclone.conf ls secret:
 ```
 
-Off-site хранит то же 7-дневное окно, что и локально (`rclone sync`). Нужна более
-длинная история — включи versioning/lifecycle на стороне бакета.
+Off-site хранит то же 14-дневное окно, что и локально (`rclone sync` зеркалит).
+Нужна более длинная история — включи versioning/lifecycle на стороне бакета.
+Скрипт защищён от «пустого sync»: если локальный `pg_dump` сломался и дампов нет —
+sync **не** запускается (иначе снёс бы off-site копию).
 
-**Восстановление:** `rclone copy secret:sentinel-YYYYMMDD-HHMMSS.db.gz .` →
-`gunzip` → положить в `/var/lib/gradesentinel/sentinel.db` (бот остановлен).
+> ℹ️ Если на облачном remote остались старые SQLite-файлы `sentinel-*.db.gz` от
+> прежней (до-PG) схемы — удали их вручную: `rclone --config … delete secret: --include "sentinel-*.db.gz"`.
+
+**Восстановление (pg_restore):**
+
+```bash
+# 1. Достать нужный дамп из off-site (или взять локальный /var/backups/railtech-db/…):
+rclone --config /etc/gradesentinel/rclone.conf copy secret:gradesentinel_<TS>.dump .
+
+# 2. Восстановить на чистую/целевую БД (custom-формат → pg_restore, НЕ psql):
+sudo -u postgres pg_restore --clean --if-exists --no-owner --no-privileges \
+    -d gradesentinel gradesentinel_<TS>.dump
+```
+
+> ⚠️ **Обязательный периодический ручной тест (test-restore):** раз в квартал
+> прогоняй восстановление в **отдельную пустую** БД и сверяй целостность —
+> бэкап без проверенного restore не считается рабочим:
+> ```bash
+> sudo -u postgres createdb gs_restore_test
+> sudo -u postgres pg_restore --no-owner --no-privileges -d gs_restore_test gradesentinel_<TS>.dump
+> sudo -u postgres psql -d gs_restore_test -c '\dt'   # таблицы на месте?
+> sudo -u postgres psql -d gs_restore_test -c 'SELECT count(*) FROM parents; SELECT count(*) FROM grade_history;'
+> sudo -u postgres dropdb gs_restore_test
+> ```
 
 ### Откат к прошлой версии
 

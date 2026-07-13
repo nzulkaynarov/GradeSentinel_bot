@@ -1,0 +1,5 @@
+# GradeSentinel off-site backup sync (rclone → cloud). Работает на DB-VPS.
+# 03:05 — через 30 мин после локального pg_dump (gradesentinel-db-backup.cron, 02:35),
+# чтобы синкать уже свежий дамп. Мягко скипает, пока rclone не сконфигурирован.
+# Установка: install -m 0644 deploy/gradesentinel-offsite-backup.cron /etc/cron.d/gradesentinel-offsite-backup
+5 3 * * * root /usr/local/bin/gradesentinel-offsite-backup.sh >> /var/log/gradesentinel-offsite-backup.log 2>&1

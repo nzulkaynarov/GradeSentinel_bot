@@ -177,16 +177,11 @@ install -m 0644 "${REPO_DIR}/deploy/gradesentinel-bot.service" /etc/systemd/syst
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-webapp.service" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.service" /etc/systemd/system/
 install -m 0644 "${REPO_DIR}/deploy/gradesentinel-heartbeat.timer" /etc/systemd/system/
-install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.service" /etc/systemd/system/
-install -m 0644 "${REPO_DIR}/deploy/gradesentinel-backup.timer" /etc/systemd/system/
-# Off-site бэкап (rclone → облако). Юнит мягко скипает, пока не сконфигурирован
-# (/etc/gradesentinel/offsite-backup.env + rclone.conf — provision вручную,
-# см. README). Поэтому таймер можно enable'ить сразу — он не будет шуметь.
-install -m 0644 "${REPO_DIR}/deploy/gradesentinel-offsite-backup.service" /etc/systemd/system/
-install -m 0644 "${REPO_DIR}/deploy/gradesentinel-offsite-backup.timer" /etc/systemd/system/
-
-# Каталог для бэкапов БД (gradesentinel:gradesentinel 0750).
-install -d -o gradesentinel -g gradesentinel -m 0750 /var/backups/gradesentinel
+# Бэкапы БД (локальный pg_dump + off-site rclone) живут НЕ здесь, а на DB-VPS —
+# там же, где PostgreSQL. См. deploy/gradesentinel-db-backup.{sh,cron} (локальный)
+# и deploy/offsite-backup.sh + gradesentinel-offsite-backup.cron (off-site),
+# устанавливаются на DB-VPS вручную как root — см. deploy/README.md.
+# На app-VPS после миграции на PostgreSQL БД нет → локальных SQLite-бэкапов тоже.
 
 # Sudoers: visudo -c проверяет синтаксис; падаем если невалиден
 visudo -cf "${REPO_DIR}/deploy/deploy-sudoers" >/dev/null \
@@ -195,8 +190,7 @@ install -m 0440 -o root -g root "${REPO_DIR}/deploy/deploy-sudoers" /etc/sudoers
 
 systemctl daemon-reload
 systemctl enable gradesentinel-heartbeat.timer
-systemctl enable gradesentinel-backup.timer
-systemctl enable gradesentinel-offsite-backup.timer
+# Бэкап-таймеров на app-VPS больше нет — бэкапы БД делаются на DB-VPS (см. выше).
 # bot/webapp юниты НЕ enable'ятся здесь — их активирует первый деплой
 # (раньше бы пытались стартовать без кода в /opt/gradesentinel и упали).
 
