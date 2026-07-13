@@ -66,7 +66,8 @@ def test_cmd_subscription_active_sub_pg_datetime(temp_db):
 
     message = _types.SimpleNamespace(chat=_types.SimpleNamespace(id=200001))
 
-    with patch.object(sub_mod, "bot") as mock_bot:
+    # cmd_subscription живёт в submodule `ui` (PR-M2) — патчим bot там.
+    with patch.object(sub_mod.ui, "bot") as mock_bot:
         sub_mod.cmd_subscription(message)  # не должно бросить TypeError
 
     assert mock_bot.send_message.called, "cmd_subscription не отправил сообщение"

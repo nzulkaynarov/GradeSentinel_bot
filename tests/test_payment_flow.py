@@ -77,20 +77,30 @@ def _make_payment_message(user_id, payload, charge_id="charge_1",
 
 @pytest.fixture
 def sub_mod(monkeypatch):
-    """Импортирует handlers.subscription и глушит внешние эффекты (bot/notify)."""
+    """Импортирует handlers.subscription и глушит внешние эффекты (bot/notify).
+
+    subscription — теперь пакет (PR-M2): денежный путь живёт в submodule'ах
+    (payments/promo/…). Патчим внешние зависимости во ВСЕХ подмодулях, где они
+    объявлены, одним и тем же объектом — чтобы `sub_mod.bot` и `payments.bot`
+    указывали на общий mock, а тела тестов остались без изменений."""
     from src.handlers import subscription as mod
 
     calls = {"send_content": [], "admin_alert": [], "notify_family": [], "refund": []}
-
-    monkeypatch.setattr(mod, "send_content",
-                        lambda *a, **k: calls["send_content"].append((a, k)))
-    monkeypatch.setattr(mod, "_alert_admin_payment",
-                        lambda text: calls["admin_alert"].append(text))
-    monkeypatch.setattr(mod, "_notify_family_about_subscription",
-                        lambda *a, **k: calls["notify_family"].append((a, k)))
-
     fake_bot = MagicMock()
-    monkeypatch.setattr(mod, "bot", fake_bot)
+
+    _targets = [mod, mod._common, mod.plans, mod.ui, mod.payments, mod.promo, mod.grant]
+
+    def _patch_all(name, value):
+        for tgt in _targets:
+            if tgt is mod or hasattr(tgt, name):
+                monkeypatch.setattr(tgt, name, value, raising=False)
+
+    _patch_all("send_content", lambda *a, **k: calls["send_content"].append((a, k)))
+    _patch_all("_alert_admin_payment", lambda text: calls["admin_alert"].append(text))
+    _patch_all("_notify_family_about_subscription",
+               lambda *a, **k: calls["notify_family"].append((a, k)))
+    _patch_all("bot", fake_bot)
+
     mod._test_calls = calls  # удобный доступ из теста
     yield mod
     if hasattr(mod, "_test_calls"):

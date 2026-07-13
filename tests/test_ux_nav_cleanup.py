@@ -129,7 +129,8 @@ def test_callback_add_member_answers_callback():
 # ─────────────────────────── item 8: DEFAULT_PLANS deepcopy ──────────────────────
 def test_get_plans_returns_deepcopy_of_default():
     import src.handlers.subscription as sub
-    with patch.object(sub, "get_plans_from_db", return_value=None):
+    # get_plans/DEFAULT_PLANS живут в submodule `plans` (PR-M2) — патчим там.
+    with patch.object(sub.plans, "get_plans_from_db", return_value=None):
         plans = sub.get_plans()
         plans["monthly"]["amount"] = 1  # мутируем возвращённое
     assert sub.DEFAULT_PLANS["monthly"]["amount"] == 29900_00  # дефолт цел
@@ -141,12 +142,13 @@ def test_process_price_input_does_not_mutate_default():
     saved = {}
     fake_bot = MagicMock()
     msg = SimpleNamespace(chat=SimpleNamespace(id=555), text="50000")
-    with patch.object(sub, "bot", fake_bot), \
-         patch.object(sub, "get_plans_from_db", return_value=None), \
-         patch.object(sub, "save_plans_to_db", side_effect=lambda p: saved.update(p)), \
-         patch.object(sub, "get_user_lang", return_value="ru"), \
+    # _process_price_input + его зависимости живут в submodule `plans` (PR-M2).
+    with patch.object(sub.plans, "bot", fake_bot), \
+         patch.object(sub.plans, "get_plans_from_db", return_value=None), \
+         patch.object(sub.plans, "save_plans_to_db", side_effect=lambda p: saved.update(p)), \
+         patch.object(sub.plans, "get_user_lang", return_value="ru"), \
          patch("src.database_manager.clear_user_state"), \
-         patch.object(sub, "send_content"):
+         patch.object(sub.plans, "send_content"):
         sub._process_price_input(msg, "monthly")
     # Глобальный дефолт не тронут…
     assert sub.DEFAULT_PLANS["monthly"]["amount"] == original_amount
