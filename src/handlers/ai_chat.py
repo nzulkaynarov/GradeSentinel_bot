@@ -27,6 +27,7 @@ from src.database_manager import (
     save_feedback, get_message_owner,
 )
 from src.i18n import t, get_button_action
+from src.rate_limiter import is_rate_limited
 from src.utils import to_date_str
 
 logger = logging.getLogger(__name__)
@@ -267,6 +268,13 @@ def _on_chat_message(message):
         return
     if len(question) > 500:
         bot.send_message(user_id, t("ai_chat_too_long", lang))
+        return
+    # B16: гейтим спам. Раньше проверялась только длина → неограниченный поток
+    # вопросов, каждый = до MAX_TOOL_ITERATIONS+1 вызовов Anthropic. Тот же
+    # per-user лимит что и в main.py (5 req / 10 сек), переиспользуем ключ
+    # "rate_limited".
+    if is_rate_limited(user_id):
+        bot.send_message(user_id, t("rate_limited", lang))
         return
     _ask_ai(user_id, question, lang, state)
 

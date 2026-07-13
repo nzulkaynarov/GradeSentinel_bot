@@ -206,3 +206,55 @@ def test_ask_ai_empty_history_passes_empty_list(monkeypatch):
     _ask_ai(user_id=123, question="Первый Q", lang='ru', state=state)
 
     assert captured['ai_calls'][0]['prev_messages'] == []
+
+
+# ─── B16: rate limit в _on_chat_message ──────────────────────────
+def _make_message(user_id=555, text="Вопрос?"):
+    msg = type("M", (), {})()
+    msg.from_user = type("U", (), {"id": user_id})()
+    msg.text = text
+    msg.chat = type("C", (), {"type": "private"})()
+    return msg
+
+
+def test_on_chat_message_rate_limited_blocks(monkeypatch):
+    """B16: при срабатывании rate limit вопрос отклоняется мягким сообщением,
+    _ask_ai (и, значит, вызовы Anthropic) НЕ происходят."""
+    import src.handlers.ai_chat as m
+
+    sends = []
+    monkeypatch.setattr(m, "get_user_lang", lambda _: 'ru')
+    monkeypatch.setattr(m, "get_user_state",
+                        lambda _: {"state": "ai_chat_mode", "data": "{}"})
+    monkeypatch.setattr(m, "is_rate_limited", lambda _: True)
+    monkeypatch.setattr(m.bot, "send_message",
+                        lambda uid, text, **kw: sends.append(text),
+                        raising=False)
+    called = {"ask": False}
+    monkeypatch.setattr(m, "_ask_ai",
+                        lambda *a, **kw: called.__setitem__("ask", True))
+
+    m._on_chat_message(_make_message())
+
+    assert called["ask"] is False, "_ask_ai не должен вызываться при rate limit"
+    from src.i18n import t
+    assert sends == [t("rate_limited", 'ru')]
+
+
+def test_on_chat_message_allowed_calls_ask(monkeypatch):
+    """B16: когда rate limit НЕ сработал — вопрос идёт в _ask_ai как раньше."""
+    import src.handlers.ai_chat as m
+
+    monkeypatch.setattr(m, "get_user_lang", lambda _: 'ru')
+    monkeypatch.setattr(m, "get_user_state",
+                        lambda _: {"state": "ai_chat_mode", "data": "{}"})
+    monkeypatch.setattr(m, "is_rate_limited", lambda _: False)
+    monkeypatch.setattr(m.bot, "send_message",
+                        lambda *a, **kw: None, raising=False)
+    called = {"ask": False}
+    monkeypatch.setattr(m, "_ask_ai",
+                        lambda *a, **kw: called.__setitem__("ask", True))
+
+    m._on_chat_message(_make_message())
+
+    assert called["ask"] is True

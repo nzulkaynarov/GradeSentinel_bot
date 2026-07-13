@@ -467,26 +467,56 @@ def generate_summer_activity(student_name: str, subject: str,
 #  AI chat — родитель спрашивает про оценки ученика
 # ════════════════════════════════════════════════════════════
 
-_CHAT_MAX_TOKENS = 600
-# 600 = достаточно для года (типичная нагрузка ~400-500 оценок/год для
-# одного ученика). Claude Haiku 200K context съест без проблем.
-_CHAT_MAX_GRADES_IN_CONTEXT = 600
+# B20: 600 молча обрезало «подробный разбор» (stop_reason='max_tokens'), и
+# обрезок сохранялся в историю. 1500 даёт место для полноценного ответа;
+# Haiku output $5/1M → ~$0.0075 worst-case на ответ. Если всё равно упёрлись
+# в потолок — добавляем пометку (_CHAT_TRUNCATION_NOTICE) вместо тихого обрыва.
+_CHAT_MAX_TOKENS = 1500
+
+# B21: cap на РЕБЁНКА, а не суммарный. Раньше grades[:600] резал 600 оценок
+# СУММАРНО по всем детям семьи → у семьи с 4-5 детьми старые оценки части
+# детей молча терялись. Теперь каждый ребёнок получает до N последних оценок,
+# поэтому вопрос про конкретного ребёнка всегда имеет его данные.
+# 300 ≈ покрывает активный учебный год одного ученика; для семьи из 5 детей —
+# до 1500 оценок в контексте (Haiku 200K справится, prompt caching дешевит).
+_CHAT_MAX_GRADES_PER_STUDENT = 300
 
 
-def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_IN_CONTEXT) -> str:
+# Пометка при обрезке ответа по max_tokens (B20). Inline-dict (не locale-ключ) —
+# тот же паттерн что _CHAT_SYSTEM_PROMPTS / _YEAR_INSIGHT_PROMPTS, чтобы не
+# трогать locale-sync тесты.
+_CHAT_TRUNCATION_NOTICE = {
+    'ru': "\n\n…(ответ длинный и был сокращён — уточните вопрос, чтобы получить остальное)",
+    'uz': "\n\n…(javob uzun bo'lgani uchun qisqartirildi — qolganini olish uchun savolni aniqlashtiring)",
+    'en': "\n\n…(the answer was long and got truncated — narrow your question to see the rest)",
+}
+
+
+def _format_grades_context(grades: list, max_count: int = _CHAT_MAX_GRADES_PER_STUDENT) -> str:
     """Компактное представление оценок для prompt'а. По убыванию даты.
 
     NAV-001 (family-scoped): если grade dict содержит поле 'student_name',
     оно добавляется в префиксе строки [Имя]. Без поля — backward-compat
-    формат для single-student режима (webapp dashboard и legacy callers)."""
+    формат для single-student режима (webapp dashboard и legacy callers).
+
+    B21: `max_count` — cap на РЕБЁНКА (по полю student_name), не суммарный.
+    Ожидается что `grades` уже отсортированы newest-first — так каждый ребёнок
+    получает свои самые свежие оценки. Для single-student (без student_name)
+    всё падает в один bucket и cap работает как раньше."""
     if not grades:
         return "(пусто — оценок в БД пока нет)"
     lines = []
-    for g in grades[:max_count]:
+    per_student_counts: dict = {}
+    for g in grades:
+        student_name = g.get("student_name")
+        bucket = student_name or "__single__"
+        seen = per_student_counts.get(bucket, 0)
+        if seen >= max_count:
+            continue
+        per_student_counts[bucket] = seen + 1
         date_str = to_date_str(g.get("grade_date") or g.get("date_added"))
         subj = g.get("subject", "?")
         raw = g.get("raw_text", "?")
-        student_name = g.get("student_name")
         prefix = f"[{student_name}] " if student_name else ""
         lines.append(f"  {date_str}  {prefix}{subj}: {raw}")
     return "\n".join(lines)
@@ -704,6 +734,42 @@ def _extract_text_from_response(response) -> Optional[str]:
     return None
 
 
+def _sanitize_conversation(messages: list) -> list:
+    """B15: приводит историю к валидному для Anthropic Messages API виду.
+
+    Anthropic требует: первое сообщение = user, роли строго чередуются.
+    Наша история может нарушать это по двум причинам:
+      - Осиротевший user в конце: user-вопрос сохраняется ДО вызова AI; при
+        падении AI assistant-ответ не сохраняется → на следующем вопросе в
+        истории два user подряд.
+      - Ведущий assistant: окно последних 20 сообщений может начинаться с
+        assistant (обрезано посреди пары) → первое сообщение не user.
+
+    Оба нарушают контракт → 400 → пользователь видит ошибку, а orphan остаётся
+    в истории → устойчивый отказ до clear_history. Санитайзер лечит это:
+      - отбрасывает ведущие assistant-сообщения;
+      - схлопывает подряд идущие одинаковые роли, оставляя ПОСЛЕДНее (так
+        свежий вопрос вытесняет осиротевший, а retry не даёт дубль).
+
+    Ожидается content = str (история из БД — только текст; tool-блоки
+    добавляются позже, уже после санитайза)."""
+    cleaned: list = []
+    for m in messages:
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant") or content is None:
+            continue
+        if not cleaned:
+            if role != "user":
+                continue  # отбрасываем ведущий assistant
+            cleaned.append({"role": role, "content": content})
+        elif role == cleaned[-1]["role"]:
+            cleaned[-1] = {"role": role, "content": content}  # keep latest
+        else:
+            cleaned.append({"role": role, "content": content})
+    return cleaned
+
+
 def answer_parent_question(
     student_id: int,
     student_name: str,
@@ -746,46 +812,48 @@ def answer_parent_question(
     system_prompt = _CHAT_SYSTEM_PROMPTS.get(lang, _CHAT_SYSTEM_PROMPTS['ru'])
     context = _format_grades_context(grades)
 
-    # Для первого turn'а — даём весь контекст с оценками в user message.
-    # Для follow-up — контекст уже в истории, новый вопрос лаконичнее.
-    if prev_messages:
-        # Multi-turn: prev_messages — это [{"role": "user"|"assistant", "content": "..."}, ...]
-        # уже в правильном chronological порядке для Anthropic API.
-        # Sanity: первое сообщение должно быть user (Anthropic требование).
-        first_user_idx = next((i for i, m in enumerate(prev_messages) if m["role"] == "user"), None)
-        if first_user_idx is None:
-            # Странно — history без user сообщений; падаем в single-turn.
-            prev_messages = None
+    # B16 prompt caching: system prompt стабилен для каждого запроса (один на
+    # язык) → cache_control кэширует tools + system вместе (render order —
+    # tools → system → messages). Переживает смену grade-контекста (отдельный
+    # tier), так что даже при новых оценках system остаётся из кэша.
+    system_blocks = [{
+        "type": "text",
+        "text": system_prompt,
+        "cache_control": {"type": "ephemeral"},
+    }]
 
-    if prev_messages:
-        # Контекст оценок добавляем в самый ПЕРВЫЙ user message (важно для
-        # Anthropic — system + user пара). Дальше — серия turn'ов как есть.
-        messages_array = []
-        first_user_done = False
-        for m in prev_messages:
-            if m["role"] == "user" and not first_user_done:
-                # Вшиваем grade-контекст в первое user-сообщение
-                enriched = (
-                    f"Сегодня: {_tashkent_today_str()} (Tashkent TZ)\n"
-                    f"Ученик: {student_name}\n"
-                    f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
-                    f"Вопрос родителя: {m['content']}"
-                )
-                messages_array.append({"role": "user", "content": enriched})
-                first_user_done = True
-            else:
-                messages_array.append({"role": m["role"], "content": m["content"]})
-        # Текущий новый вопрос — последний user turn
-        messages_array.append({"role": "user", "content": question})
-    else:
-        # Single-turn (старое поведение)
-        user_message = (
-            f"Сегодня: {_tashkent_today_str()} (Tashkent TZ)\n"
-            f"Ученик: {student_name}\n"
-            f"История оценок за учебный год (от новых к старым):\n{context}\n\n"
-            f"Вопрос родителя: {question}"
-        )
-        messages_array = [{"role": "user", "content": user_message}]
+    # B15: собираем полную беседу [история..., текущий вопрос] и санитайзим одним
+    # проходом — гарантия «первое=user, строгое чередование» независимо от того,
+    # что лежит в истории (orphan-user в конце, ведущий assistant и т.п.).
+    conversation = _sanitize_conversation(
+        (prev_messages or []) + [{"role": "user", "content": question}]
+    )
+    # conversation[0] после санитайза всегда user (либо пусто — но мы только что
+    # добавили текущий вопрос, так что минимум один user есть).
+
+    # Grade-контекст + сегодняшняя дата вшиваются в ПЕРВОЕ user-сообщение.
+    # B16: разбиваем его на два content-блока — стабильный (контекст, cache_control)
+    # и волатильный (сам вопрос). Стабильный блок кэширует tools+system+контекст
+    # одной точкой; переживает рост беседы (первый user на фиксированной позиции).
+    first = conversation[0]
+    stable_context = (
+        f"Сегодня: {_tashkent_today_str()} (Tashkent TZ)\n"
+        f"Ученик: {student_name}\n"
+        f"История оценок за учебный год (от новых к старым):\n{context}"
+    )
+    first_question = first["content"]
+    conversation[0] = {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": stable_context,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {"type": "text", "text": f"Вопрос родителя: {first_question}"},
+        ],
+    }
+    messages_array = conversation
 
     # Tool-use loop (PR_E2). Cap MAX_TOOL_ITERATIONS+1 — последняя итерация
     # должна вернуть text. Streaming (PR_H4) применяется только к итерациям
@@ -801,7 +869,7 @@ def answer_parent_question(
                 with client.messages.stream(
                     model="claude-haiku-4-5",
                     max_tokens=_CHAT_MAX_TOKENS,
-                    system=system_prompt,
+                    system=system_blocks,
                     tools=TOOL_DEFINITIONS,
                     messages=messages_array,
                 ) as stream:
@@ -816,7 +884,7 @@ def answer_parent_question(
                 response = client.messages.create(
                     model="claude-haiku-4-5",
                     max_tokens=_CHAT_MAX_TOKENS,
-                    system=system_prompt,
+                    system=system_blocks,
                     tools=TOOL_DEFINITIONS,
                     messages=messages_array,
                 )
@@ -824,7 +892,19 @@ def answer_parent_question(
             stop_reason = getattr(response, 'stop_reason', None)
             if stop_reason != 'tool_use':
                 # Финальный ответ — извлекаем текст
-                return _extract_text_from_response(response)
+                text = _extract_text_from_response(response)
+                # B20: если ответ упёрся в max_tokens — он обрезан. Не отдаём
+                # обрубок как полноценный ответ: добавляем пометку, чтобы юзер
+                # (и сохранённая история) видели, что ответ неполный.
+                if text and stop_reason == 'max_tokens':
+                    notice = _CHAT_TRUNCATION_NOTICE.get(
+                        lang, _CHAT_TRUNCATION_NOTICE['ru'])
+                    logger.info(
+                        f"answer_parent_question truncated at max_tokens "
+                        f"(student={student_id}, family={family_id})"
+                    )
+                    text = text + notice
+                return text
 
             # Claude хочет вызвать tools. Добавляем assistant turn с
             # tool_use блоками и user turn с tool_result.
