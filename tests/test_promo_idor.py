@@ -52,15 +52,23 @@ def _payment_rows(family_id):
 
 @pytest.fixture
 def sub_mod(monkeypatch):
-    """handlers.subscription с заглушенными внешними эффектами (bot/notify)."""
+    """handlers.subscription с заглушенными внешними эффектами (bot/notify).
+
+    subscription — пакет (PR-M2): промо-путь живёт в submodule `promo`. Патчим
+    зависимости во всех подмодулях, где они объявлены (тела тестов без изменений)."""
     from src.handlers import subscription as mod
 
     calls = {"send_content": []}
-    monkeypatch.setattr(mod, "send_content",
-                        lambda *a, **k: calls["send_content"].append((a, k)))
-    monkeypatch.setattr(mod, "_notify_family_about_subscription",
-                        lambda *a, **k: None)
-    monkeypatch.setattr(mod, "bot", MagicMock())
+    _targets = [mod, mod._common, mod.plans, mod.ui, mod.payments, mod.promo, mod.grant]
+
+    def _patch_all(name, value):
+        for tgt in _targets:
+            if tgt is mod or hasattr(tgt, name):
+                monkeypatch.setattr(tgt, name, value, raising=False)
+
+    _patch_all("send_content", lambda *a, **k: calls["send_content"].append((a, k)))
+    _patch_all("_notify_family_about_subscription", lambda *a, **k: None)
+    _patch_all("bot", MagicMock())
     mod._test_calls = calls
     yield mod
     if hasattr(mod, "_test_calls"):
@@ -125,7 +133,9 @@ def test_promo_admin_can_apply_to_any_family(temp_db, sub_mod):
 def test_promo_input_rate_limited(temp_db, sub_mod, monkeypatch):
     """N+1-й ввод промокода за окно отклоняется без обработки кода."""
     calls = {"applied": 0}
-    monkeypatch.setattr(sub_mod, "_apply_promo_to_family",
+    # _process_promo_code живёт в submodule `promo` и резолвит эти имена в его
+    # namespace — патчим там (PR-M2).
+    monkeypatch.setattr(sub_mod.promo, "_apply_promo_to_family",
                         lambda *a, **k: calls.__setitem__("applied", calls["applied"] + 1))
     # Промо валидный, семья одна — без rate-limit код бы применился.
     fam = _make_family("RLFam")
@@ -133,7 +143,7 @@ def test_promo_input_rate_limited(temp_db, sub_mod, monkeypatch):
     dbm.link_parent_to_family(fam, pid)
     dbm.create_promo_code("RL1", "monthly", free_months=1, max_uses=5)
 
-    monkeypatch.setattr(sub_mod, "is_rate_limited", lambda uid: True)
+    monkeypatch.setattr(sub_mod.promo, "is_rate_limited", lambda uid: True)
 
     msg = SimpleNamespace(text="RL1", chat=SimpleNamespace(id=800004))
     sub_mod._process_promo_code(msg)
@@ -146,14 +156,14 @@ def test_promo_input_rate_limited(temp_db, sub_mod, monkeypatch):
 def test_promo_input_not_rate_limited_processes(temp_db, sub_mod, monkeypatch):
     """При отсутствии троттлинга код обрабатывается нормально (регрессия)."""
     calls = {"applied": 0}
-    monkeypatch.setattr(sub_mod, "_apply_promo_to_family",
+    monkeypatch.setattr(sub_mod.promo, "_apply_promo_to_family",
                         lambda *a, **k: calls.__setitem__("applied", calls["applied"] + 1))
     fam = _make_family("OKFam")
     pid = _make_parent("998900020005", 800005)
     dbm.link_parent_to_family(fam, pid)
     dbm.create_promo_code("OK1", "monthly", free_months=1, max_uses=5)
 
-    monkeypatch.setattr(sub_mod, "is_rate_limited", lambda uid: False)
+    monkeypatch.setattr(sub_mod.promo, "is_rate_limited", lambda uid: False)
 
     msg = SimpleNamespace(text="OK1", chat=SimpleNamespace(id=800005))
     sub_mod._process_promo_code(msg)
