@@ -101,6 +101,29 @@ def _set_marker(job: str, marker: str):
         _marker_cache[job] = marker
 
 
+# ── Per-recipient идемпотентность рассылок (PR-F2, B10) ──────────────────────
+# Джобовый маркер (_check_marker) ставится ТОЛЬКО после полного прохода → при
+# частичном сбое рассылки следующий tick в окне (minute<6, sleep 180) перезапускал
+# джоб с нуля → часть родителей получала сводку дважды. Per-recipient чек-пойнт
+# (по образцу sub_expiry_sent_* в _check_subscription_expiry) хранит «кому и в
+# какой день уже отправлено» в settings и проверяется ПЕРЕД каждым адресатом.
+# Ключ без даты (значение = день) → одна строка на (job, recipient), не растёт.
+def _recipient_marker_key(job: str, recipient: int) -> str:
+    return f"{job}_sent_{recipient}"
+
+
+def _recipient_already_sent(job: str, recipient: int, day: str) -> bool:
+    """True, если этому адресату сводка данного job'а уже уходила сегодня."""
+    from src.database_manager import get_setting
+    return get_setting(_recipient_marker_key(job, recipient)) == day
+
+
+def _mark_recipient_sent(job: str, recipient: int, day: str):
+    """Отмечает адресата доставленным (после подтверждённой отправки)."""
+    from src.database_manager import set_setting
+    set_setting(_recipient_marker_key(job, recipient), day)
+
+
 def _track_ai_outcome(job_name: str, success: bool):
     """NAV-010: трекать AI fail/success по scheduler job'у.
 
@@ -268,7 +291,8 @@ def _dedup_preserve_order(messages):
 def _flush_quiet_hours_queue():
     """Утренняя сводка: агрегирует ночные оценки по ученикам вместо свалки сырых сообщений."""
     from src.database_manager import (
-        get_all_queued_telegram_ids, get_and_clear_queued_notifications,
+        get_all_queued_telegram_ids, get_queued_notifications,
+        delete_queued_notifications,
         get_user_lang, get_students_for_parent, get_overnight_grades_for_student,
     )
     from src.notification_helpers import get_emotional_header
@@ -283,18 +307,27 @@ def _flush_quiet_hours_queue():
 
     logger.info(f"Flushing quiet hours queue for {len(tg_ids)} users.")
 
+    day = _get_local_now().date().isoformat()
+
     for tg_id in tg_ids:
-        # Очищаем очередь (обязательно, даже если сводка пустая)
-        queued_messages = get_and_clear_queued_notifications(tg_id)
-        if not queued_messages:
+        # PR-F2 (B10): per-recipient чек-пойнт. Если сегодня уже отправляли этому
+        # родителю (частичный сбой + повторный tick) — не дублируем сводку.
+        if _recipient_already_sent('morning', tg_id, day):
             continue
+
+        # PR-F2 (B9): читаем очередь БЕЗ удаления. Удалим по id ТОЛЬКО после
+        # подтверждённой отправки — краш отправки не теряет сообщения.
+        queued = get_queued_notifications(tg_id)
+        if not queued:
+            continue
+        queued_ids = [q['id'] for q in queued]
 
         # Defense in depth: дедуплицируем сообщения с сохранением порядка.
         # Если когда-нибудь monitor / другой writer положит одну оценку
         # несколько раз (как в инциденте 2026-05-21), родитель не получит
         # 14 копий — только одну. Этот fallback path рендерится без
         # агрегации по предметам, так что dedup здесь — последняя защита.
-        queued_messages = _dedup_preserve_order(queued_messages)
+        queued_messages = _dedup_preserve_order([q['message'] for q in queued])
 
         lang = get_user_lang(tg_id)
 
@@ -333,6 +366,10 @@ def _flush_quiet_hours_queue():
 
             student_blocks.append("\n".join(lines))
 
+        # delivered=True только если ВСЕ под-отправки прошли без исключения —
+        # тогда удаляем очередь и ставим per-recipient маркер. Иначе оставляем в
+        # очереди без маркера → следующий tick повторит (для этого родителя).
+        delivered = False
         if student_blocks:
             header = t("quiet_morning_header", lang, count=total_grades)
             msg = header + "\n\n" + "\n\n".join(student_blocks)
@@ -347,12 +384,14 @@ def _flush_quiet_hours_queue():
                         _bot.send_message(tg_id, block, parse_mode='HTML',
                                           disable_web_page_preview=True)
                         time.sleep(0.05)
+                    delivered = True
                 except Exception as e:
                     logger.error(f"Failed to send morning summary to {tg_id}: {e}")
             else:
                 try:
                     _bot.send_message(tg_id, msg, parse_mode='HTML',
                                       disable_web_page_preview=True)
+                    delivered = True
                 except Exception as e:
                     logger.error(f"Failed to send morning summary to {tg_id}: {e}")
         else:
@@ -371,15 +410,21 @@ def _flush_quiet_hours_queue():
                 else:
                     _bot.send_message(tg_id, combined, parse_mode='HTML',
                                       disable_web_page_preview=True)
+                delivered = True
             except Exception as e:
                 logger.error(f"Failed to send fallback morning messages to {tg_id}: {e}")
+
+        if delivered:
+            delete_queued_notifications(queued_ids)
+            _mark_recipient_sent('morning', tg_id, day)
 
     # Параллельный flush для групповых чатов. Inline-markup не сохраняли —
     # шлём plain HTML, и без агрегации по предметам (текст уже отформатирован
     # monitor'ом при queue). Это «дамп всё что накопилось» — допустимый UX
     # для семейного чата (там и так шумно), цель — не потерять сообщения.
     from src.database_manager import (
-        get_all_queued_group_targets, get_and_clear_queued_group_notifications,
+        get_all_queued_group_targets, get_queued_group_notifications,
+        delete_group_notification,
     )
     group_targets = get_all_queued_group_targets()
     if group_targets:
@@ -387,20 +432,33 @@ def _flush_quiet_hours_queue():
     for tgt in group_targets:
         chat_id = tgt['chat_id']
         thread_id = tgt['message_thread_id']
-        messages = get_and_clear_queued_group_notifications(chat_id, thread_id)
-        # Defense in depth: дедуп для групп — см. комментарий выше.
-        messages = _dedup_preserve_order(messages)
-        if not messages:
+        # PR-F2 (B9): читаем БЕЗ удаления, удаляем каждое сообщение ТОЛЬКО после
+        # подтверждённой отправки. Групповая очередь не реконструируется из
+        # grade_history, поэтому потеря при крахе была бы безвозвратной.
+        queued = get_queued_group_notifications(chat_id, thread_id)
+        if not queued:
             continue
-        for m in messages:
+        seen = set()
+        for item in queued:
+            m = item['message']
+            # Defense in depth: точный дубль — дропаем без повторной отправки.
+            if m in seen:
+                try:
+                    delete_group_notification(item['id'])
+                except Exception as e:
+                    logger.debug(f"Failed to drop duplicate group notification: {e}")
+                continue
+            seen.add(m)
             try:
                 kwargs = {'parse_mode': 'HTML', 'disable_web_page_preview': True}
                 if thread_id is not None:
                     kwargs['message_thread_id'] = thread_id
                 _bot.send_message(chat_id, m, **kwargs)
+                delete_group_notification(item['id'])  # удаляем после доставки
                 time.sleep(0.05)
             except Exception as e:
-                # Бот мог быть кикнут / тема удалена — не блокируем остальные.
+                # Бот мог быть кикнут / тема удалена — не блокируем остальные,
+                # сообщение остаётся в очереди → повторим на следующем tick'е.
                 logger.warning(
                     f"Failed to flush group notification to chat={chat_id} thread={thread_id}: {e}"
                 )
@@ -431,7 +489,13 @@ def _send_daily_evening_summary():
     for row in parent_data:
         parents_map[row['telegram_id']].append(row)
 
+    day = _get_local_now().date().isoformat()
+
     for tg_id, children in parents_map.items():
+        # PR-F2 (B10): per-recipient чек-пойнт — при частичном сбое рассылки
+        # повторный tick не отправит вечернюю сводку этому родителю дважды.
+        if _recipient_already_sent('evening', tg_id, day):
+            continue
         lang = get_user_lang(tg_id)
         summaries = []
         for child in children:
@@ -482,7 +546,8 @@ def _send_daily_evening_summary():
             continue
 
         msg = t("daily_summary_title", lang) + "\n\n" + "\n\n".join(summaries)
-        sender.send(tg_id, msg, ntype=NotificationType.EVENING_SUMMARY)
+        if sender.send(tg_id, msg, ntype=NotificationType.EVENING_SUMMARY):
+            _mark_recipient_sent('evening', tg_id, day)
         time.sleep(0.1)
 
     logger.info("Daily evening summaries sent.")
@@ -624,12 +689,17 @@ def _send_weekly_text_digest():
         by_parent[row['telegram_id']].append(row)
 
     today = _get_local_now()
+    day = today.date().isoformat()
     week_start = (today - timedelta(days=7)).strftime('%d.%m')
     week_end = today.strftime('%d.%m')
     week_range = f"{week_start}–{week_end}"
 
     sent = 0
     for tg_id, children in by_parent.items():
+        # PR-F2 (B10): per-recipient чек-пойнт — при частичном сбое рассылки
+        # повторный tick в окне не отправит дайджест этому родителю дважды.
+        if _recipient_already_sent('weekly_text_digest', tg_id, day):
+            continue
         lang = get_user_lang(tg_id)
         sections = []
         for child in children:
@@ -664,6 +734,7 @@ def _send_weekly_text_digest():
         msg = "\n\n".join(sections) + t("weekly_digest_premium_hint", lang)
         from src.notifications import get_sender, NotificationType
         if get_sender().send(tg_id, msg, ntype=NotificationType.WEEKLY_DIGEST):
+            _mark_recipient_sent('weekly_text_digest', tg_id, day)
             sent += 1
         time.sleep(0.05)
     logger.info(f"Weekly text digest sent to {sent} parents.")

@@ -38,6 +38,37 @@ def get_and_clear_queued_notifications(telegram_id: int) -> List[str]:
         return messages
 
 
+def get_queued_notifications(telegram_id: int) -> List[dict]:
+    """Читает отложенные уведомления БЕЗ удаления (PR-F2, B9).
+
+    Возвращает [{'id', 'message'}] в порядке created_at. Удалять — отдельно через
+    delete_queued_notifications ПОСЛЕ подтверждённой отправки, чтобы краш flush'а
+    не терял сообщения (get_and_clear удалял в той же транзакции, что и SELECT,
+    commit ДО отправки → безвозвратная потеря групповой очереди)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT id, message FROM notification_queue '
+            'WHERE telegram_id = %s ORDER BY created_at',
+            (telegram_id,),
+        )
+        return [{'id': row['id'], 'message': row['message']} for row in cursor.fetchall()]
+
+
+def delete_queued_notifications(ids: List[int]) -> int:
+    """Удаляет отложенные уведомления по списку id (после доставки). Возвращает
+    число удалённых. Пустой список — no-op."""
+    if not ids:
+        return 0
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'DELETE FROM notification_queue WHERE id = ANY(%s)',
+            (list(ids),),
+        )
+        return cursor.rowcount
+
+
 def get_all_queued_telegram_ids() -> List[int]:
     """Уникальные telegram_id с отложенными уведомлениями. Для morning flush."""
     with get_db_connection() as conn:
@@ -103,6 +134,44 @@ def get_and_clear_queued_group_notifications(
         return messages
 
 
+def get_queued_group_notifications(
+    chat_id: int, message_thread_id: 'int | None'
+) -> List[dict]:
+    """Читает отложенные групповые сообщения БЕЗ удаления (PR-F2, B9).
+
+    Возвращает [{'id', 'message'}] в порядке created_at. Удалять — по одному через
+    delete_group_notification ПОСЛЕ подтверждённой отправки: групповая очередь НЕ
+    реконструируется из grade_history, поэтому удаление до отправки = потеря."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if message_thread_id is None:
+            cursor.execute(
+                'SELECT id, message FROM group_notification_queue '
+                'WHERE chat_id = %s AND message_thread_id IS NULL '
+                'ORDER BY created_at',
+                (chat_id,),
+            )
+        else:
+            cursor.execute(
+                'SELECT id, message FROM group_notification_queue '
+                'WHERE chat_id = %s AND message_thread_id = %s '
+                'ORDER BY created_at',
+                (chat_id, message_thread_id),
+            )
+        return [{'id': row['id'], 'message': row['message']} for row in cursor.fetchall()]
+
+
+def delete_group_notification(notif_id: int) -> bool:
+    """Удаляет одно групповое сообщение по id (после доставки)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'DELETE FROM group_notification_queue WHERE id = %s',
+            (notif_id,),
+        )
+        return cursor.rowcount > 0
+
+
 def get_all_queued_group_targets() -> List[dict]:
     """Уникальные (chat_id, thread_id) с отложенными сообщениями. Для morning flush."""
     with get_db_connection() as conn:
@@ -119,8 +188,12 @@ def get_all_queued_group_targets() -> List[dict]:
 __all__ = [
     "queue_notification",
     "get_and_clear_queued_notifications",
+    "get_queued_notifications",
+    "delete_queued_notifications",
     "get_all_queued_telegram_ids",
     "queue_group_notification",
     "get_and_clear_queued_group_notifications",
+    "get_queued_group_notifications",
+    "delete_group_notification",
     "get_all_queued_group_targets",
 ]
