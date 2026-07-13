@@ -39,8 +39,12 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Ставим строго из lock (B18) с проверкой хешей — CI гоняет РОВНО тот
+          # набор версий, что уедет в прод. requirements.txt остаётся как
+          # «source» верхнеуровневых зависимостей; requirements.lock —
+          # фактически устанавливаемый (regenerate: см. requirements.lock header).
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --require-hashes -r requirements.lock
 
       - name: Run pytest
         env:
