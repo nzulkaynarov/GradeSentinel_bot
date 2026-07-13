@@ -152,8 +152,16 @@ Smoke check всех путей после деплоя — все 200 OK, Mini 
 
 ## Constraints (нерушимые правила)
 
-1. `src/main.py`, `src/bot_instance.py`, `src/monitor_engine.py` — НЕ ТРОГАЕМ
-2. `webapp/app.py` + Mini App — НЕ ТРОГАЕМ (любая правка ломает прод)
+> **ОБНОВЛЕНО 2026-07-13:** пункты 1-2 (заморозка `src/main.py`/`monitor_engine.py`/`webapp/app.py`)
+> **СНЯТЫ.** Эти правила ставились в мае как защита во время web-rewrite Phase 0/1, когда у кода не было
+> тестов и CI-гейта. С тех пор: 521 тест, branch protection (`pytest`), атомарный деплой с авто-откатом,
+> `main.py` и `monitor_engine.py` уже безопасно рефакторились (PR-M3, PR-F1). `webapp/app.py` прошёл аудит
+> 2026-07-13 и подлежит модуляризации (см. `Docs/plans/2026-07-13-tech-debt-and-modularization-tz.md`
+> и RFC/аудит webapp). Правки этих файлов — как везде: через PR + зелёный CI + ревью owner. Осторожность
+> сохраняется (прод), но абсолютного запрета нет.
+
+1. ~~`src/main.py`, `src/bot_instance.py`, `src/monitor_engine.py` — НЕ ТРОГАЕМ~~ — снято (см. выше), правки через PR+CI.
+2. ~~`webapp/app.py` + Mini App — НЕ ТРОГАЕМ~~ — снято (см. выше); модуляризация запланирована после аудита.
 3. Существующие таблицы БД — только `ALTER TABLE ADD COLUMN`, никаких `DROP`/`RENAME`
 4. Все правки на проде — через PR + CI rsync. Руками только: `mkdir`/`chown` новых путей, чтение логов, backup БД, установка нового sudoers
 5. Перед миграциями БД — обязательный backup
