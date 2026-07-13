@@ -55,6 +55,24 @@ def test_format_grades_context_handles_missing_grade_date():
     assert "2026-05-15" in out
 
 
+def test_format_grades_context_caps_per_student_not_total():
+    """B21: cap на РЕБЁНКА, не суммарный. У семьи с несколькими детьми
+    оценки КАЖДОГО ребёнка должны попадать в контекст — старый grades[:N]
+    молча дропал детей за общим лимитом."""
+    grades = []
+    for i in range(5):
+        grades.append({"subject": f"A{i}", "raw_text": "5",
+                       "grade_date": "2026-05-21", "student_name": "Заур"})
+    for i in range(5):
+        grades.append({"subject": f"B{i}", "raw_text": "4",
+                       "grade_date": "2026-05-20", "student_name": "Лола"})
+    out = _format_grades_context(grades, max_count=3)
+    # Каждый ребёнок capped до 3 — оба присутствуют (6 строк), НЕ суммарно 3.
+    # Старая логика (grades[:3]) дала бы 3 строки только Заура, Лола исчезла бы.
+    assert out.count("[Заур]") == 3
+    assert out.count("[Лола]") == 3
+
+
 def test_tashkent_today_str_format():
     """Регрессия: _tashkent_today_str возвращает ISO дату YYYY-MM-DD по UTC+5.
 
@@ -95,9 +113,20 @@ def test_user_message_includes_today_date(monkeypatch):
         lang='ru',
     )
     assert 'messages' in captured
-    first_user = captured['messages'][0]['content']
+    # B16: первое user-сообщение теперь content-блоки (стабильный контекст с
+    # cache_control + волатильный вопрос), а не строка.
+    first_user = _flatten_content(captured['messages'][0]['content'])
     assert "Сегодня:" in first_user
     assert _tashkent_today_str() in first_user
+
+
+def _flatten_content(content):
+    """Склеивает text из content-блоков (или возвращает строку как есть)."""
+    if isinstance(content, str):
+        return content
+    return "\n".join(
+        b.get("text", "") for b in content if isinstance(b, dict)
+    )
 
 
 # ─── Integration: rate limit endpoint ─────────────────────────
@@ -138,3 +167,146 @@ def test_rate_limit_clears_after_window(monkeypatch):
     # Через 61 секунду — должно опять пройти
     fake_time[0] = base + 61
     assert _check_chat_rate_limit(20001)
+
+
+# ─── B15: санитайз истории (orphan-user / leading-assistant) ──────
+def _capturing_client(captured, text="ok", stop_reason="end_turn"):
+    """FakeClient, захватывающий messages/system/max_tokens из вызова create."""
+    class FakeMessage:
+        def __init__(self):
+            self.stop_reason = stop_reason
+            self.content = [type('Blk', (), {'type': 'text', 'text': text})()]
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                captured['messages'] = kwargs.get('messages')
+                captured['system'] = kwargs.get('system')
+                captured['max_tokens'] = kwargs.get('max_tokens')
+                return FakeMessage()
+    return FakeClient()
+
+
+def _roles(messages):
+    return [m['role'] for m in messages]
+
+
+def test_history_with_trailing_orphan_user_builds_valid_messages(monkeypatch):
+    """B15: история заканчивается осиротевшим user (AI упал, assistant не
+    сохранён). Следующий вопрос собирает ВАЛИДНЫЙ messages_array — первое=user,
+    строгое чередование, без ДВУХ user подряд, без краха."""
+    captured = {}
+    monkeypatch.setattr("src.analytics_engine._get_client",
+                        lambda: _capturing_client(captured))
+    from src.analytics_engine import answer_parent_question
+
+    prev = [
+        {"role": "user", "content": "Q1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "Q2 orphan"},  # AI упал → orphan
+    ]
+    result = answer_parent_question(
+        student_id=1, student_name="T",
+        grades=[{"subject": "X", "raw_text": "5", "grade_date": "2026-05-21"}],
+        question="Q3", lang='ru', prev_messages=prev, family_id=10,
+    )
+    assert result == "ok"
+    roles = _roles(captured['messages'])
+    assert roles[0] == 'user', roles
+    for a, b in zip(roles, roles[1:]):
+        assert a != b, f"consecutive same-role: {roles}"
+
+
+def test_history_starting_with_assistant_drops_leading(monkeypatch):
+    """B15: окно истории начинается с assistant (обрезано посреди пары) →
+    ведущие assistant отбрасываются, первое сообщение = user."""
+    captured = {}
+    monkeypatch.setattr("src.analytics_engine._get_client",
+                        lambda: _capturing_client(captured))
+    from src.analytics_engine import answer_parent_question
+
+    prev = [
+        {"role": "assistant", "content": "A0 leading"},
+        {"role": "user", "content": "Q1"},
+        {"role": "assistant", "content": "A1"},
+    ]
+    answer_parent_question(
+        student_id=1, student_name="T",
+        grades=[{"subject": "X", "raw_text": "5", "grade_date": "2026-05-21"}],
+        question="Q2", lang='ru', prev_messages=prev, family_id=10,
+    )
+    msgs = captured['messages']
+    roles = _roles(msgs)
+    assert roles[0] == 'user', roles
+    for a, b in zip(roles, roles[1:]):
+        assert a != b, f"consecutive same-role: {roles}"
+    # "A0 leading" не должно попасть в контекст (ведущий assistant отброшен)
+    assert all(
+        "A0 leading" not in _flatten_content(m['content']) for m in msgs
+    )
+
+
+# ─── B16: prompt caching markers ─────────────────────────────────
+def test_prompt_caching_markers_present(monkeypatch):
+    """B16: system идёт как список с cache_control; первый (стабильный) блок
+    grade-контекста тоже помечен cache_control; max_tokens поднят до 1500."""
+    captured = {}
+    monkeypatch.setattr("src.analytics_engine._get_client",
+                        lambda: _capturing_client(captured))
+    from src.analytics_engine import answer_parent_question, _CHAT_MAX_TOKENS
+
+    answer_parent_question(
+        student_id=1, student_name="T",
+        grades=[{"subject": "X", "raw_text": "5", "grade_date": "2026-05-21"}],
+        question="?", lang='ru', family_id=10,
+    )
+    system = captured['system']
+    assert isinstance(system, list)
+    assert system[-1].get('cache_control') == {"type": "ephemeral"}
+
+    first_content = captured['messages'][0]['content']
+    assert isinstance(first_content, list)
+    # Стабильный блок (контекст) кэшируется, волатильный (вопрос) — нет
+    assert first_content[0].get('cache_control') == {"type": "ephemeral"}
+    assert 'cache_control' not in first_content[1]
+
+    assert captured['max_tokens'] == _CHAT_MAX_TOKENS == 1500
+
+
+# ─── B20: обрезка по max_tokens ──────────────────────────────────
+def test_max_tokens_truncation_appends_notice(monkeypatch):
+    """B20: stop_reason='max_tokens' → к ответу добавляется пометка об обрезке,
+    а не тихо сохраняется обрубок."""
+    captured = {}
+    monkeypatch.setattr(
+        "src.analytics_engine._get_client",
+        lambda: _capturing_client(captured, text="частичный ответ",
+                                  stop_reason="max_tokens"))
+    from src.analytics_engine import answer_parent_question, _CHAT_TRUNCATION_NOTICE
+
+    result = answer_parent_question(
+        student_id=1, student_name="T",
+        grades=[{"subject": "X", "raw_text": "5", "grade_date": "2026-05-21"}],
+        question="Подробно разбери всё", lang='ru', family_id=10,
+    )
+    assert result.startswith("частичный ответ")
+    assert _CHAT_TRUNCATION_NOTICE['ru'].strip() in result
+
+
+def test_normal_answer_has_no_truncation_notice(monkeypatch):
+    """Регресс: обычный (end_turn) ответ НЕ получает пометку об обрезке."""
+    captured = {}
+    monkeypatch.setattr(
+        "src.analytics_engine._get_client",
+        lambda: _capturing_client(captured, text="полный ответ",
+                                  stop_reason="end_turn"))
+    from src.analytics_engine import answer_parent_question, _CHAT_TRUNCATION_NOTICE
+
+    result = answer_parent_question(
+        student_id=1, student_name="T",
+        grades=[{"subject": "X", "raw_text": "5", "grade_date": "2026-05-21"}],
+        question="?", lang='ru', family_id=10,
+    )
+    assert result == "полный ответ"
+    assert _CHAT_TRUNCATION_NOTICE['ru'].strip() not in result
