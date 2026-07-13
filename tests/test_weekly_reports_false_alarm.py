@@ -25,7 +25,7 @@ def _seed_recent(sid, subject, value, days_ago):
         conn.cursor().execute(
             "INSERT INTO grade_history "
             "(student_id, subject, grade_value, raw_text, cell_reference, grade_date) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (sid, subject, value, str(value), "X", gd),
         )
 
