@@ -467,6 +467,25 @@ def generate_summer_activity(student_name: str, subject: str,
 #  AI chat — родитель спрашивает про оценки ученика
 # ════════════════════════════════════════════════════════════
 
+# Высоко-заметная строка с сегодняшней датой — ПЕРВЫЙ system-блок (см.
+# answer_parent_question). Единственный источник истины о «сегодня» для модели:
+# оценки в контексте могут заканчиваться месяцы назад, и без явного акцента
+# Haiku отсчитывал «сегодня» от конца данных. {today} = ISO-дата (Ташкент).
+_CHAT_TODAY_LINE = {
+    'ru': ("❗ СЕГОДНЯШНЯЯ ДАТА: {today} (Ташкент, UTC+5). Это ЕДИНСТВЕННЫЙ "
+           "источник истины о текущей дате. Все относительные периоды («сегодня», "
+           "«недавно», «месяц назад», «летом») отсчитывай ТОЛЬКО от неё, а не от "
+           "дат в оценках — оценки могут заканчиваться много недель назад."),
+    'uz': ("❗ BUGUNGI SANA: {today} (Toshkent, UTC+5). Bu — joriy sana haqidagi "
+           "YAGONA haqiqat manbai. Barcha nisbiy davrlarni («bugun», «yaqinda», "
+           "«bir oy oldin», «yozda») FAQAT shundan hisobla, baholardagi sanalardan "
+           "emas — baholar ko‘p hafta oldin tugagan bo‘lishi mumkin."),
+    'en': ("❗ TODAY'S DATE: {today} (Tashkent, UTC+5). This is the ONLY source of "
+           "truth about the current date. Compute all relative periods («today», "
+           "«recently», «a month ago», «in summer») ONLY from it, not from the "
+           "dates in the grades — grades may end many weeks ago."),
+}
+
 # B20: 600 молча обрезало «подробный разбор» (stop_reason='max_tokens'), и
 # обрезок сохранялся в историю. 1500 даёт место для полноценного ответа;
 # Haiku output $5/1M → ~$0.0075 worst-case на ответ. Если всё равно упёрлись
@@ -812,15 +831,29 @@ def answer_parent_question(
     system_prompt = _CHAT_SYSTEM_PROMPTS.get(lang, _CHAT_SYSTEM_PROMPTS['ru'])
     context = _format_grades_context(grades)
 
+    # Высоко-заметная строка с сегодняшней датой ПЕРВЫМ system-блоком. Раньше
+    # дата жила только одной строкой наверху большого grade-контекста (user-
+    # блок) — при полном контексте (сотни оценок, заканчивающихся месяцы назад)
+    # Haiku изредка терял её и галлюцинировал дату у конца данных («конец
+    # июня» при последних оценках в мае). System-блок модель читает раньше и
+    # с высшим приоритетом. Отдельный НЕкэшируемый блок (крошечный, меняется
+    # ежедневно) → большой system_prompt остаётся стабильно кэшируемым.
+    today_line = _CHAT_TODAY_LINE.get(lang, _CHAT_TODAY_LINE['ru']).format(
+        today=_tashkent_today_str()
+    )
+
     # B16 prompt caching: system prompt стабилен для каждого запроса (один на
     # язык) → cache_control кэширует tools + system вместе (render order —
     # tools → system → messages). Переживает смену grade-контекста (отдельный
     # tier), так что даже при новых оценках system остаётся из кэша.
-    system_blocks = [{
-        "type": "text",
-        "text": system_prompt,
-        "cache_control": {"type": "ephemeral"},
-    }]
+    system_blocks = [
+        {"type": "text", "text": today_line},
+        {
+            "type": "text",
+            "text": system_prompt,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
 
     # B15: собираем полную беседу [история..., текущий вопрос] и санитайзим одним
     # проходом — гарантия «первое=user, строгое чередование» независимо от того,
