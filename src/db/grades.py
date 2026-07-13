@@ -27,12 +27,19 @@ logger = logging.getLogger(__name__)
 # ─── Write path (monitor + history_importer) ────────────────────────
 def add_grade(student_id: int, subject: str, grade_value: Optional[float],
               raw_text: str, cell_reference: str,
-              grade_date: Optional[str] = None) -> bool:
+              grade_date: Optional[str] = None,
+              notify_pending: bool = True) -> bool:
     """Добавляет новую оценку в БД, если такой ещё нет.
     True — добавлена, False — дубликат по UNIQUE(student, subject, grade_date, raw_text).
 
     grade_date — фактическая дата оценки (YYYY-MM-DD). После этапа 1C NOT NULL.
     Если caller не передал — дефолт на сегодня по Ташкенту (зона monitor'а).
+
+    notify_pending (PR-F1 outbox):
+      • True (default, monitor) → notified_at = NULL: строка попадает в outbox,
+        monitor обязан её доставить и пометить (иначе sweeper дошлёт).
+      • False → notified_at = DEFAULT now(): «уже доставлено», sweeper игнорирует.
+        Для writer'ов, которые НЕ шлют уведомлений (импорт истории, бэкап, seed).
     """
     if grade_date is None:
         grade_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
@@ -42,12 +49,22 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
         # (student, subject, grade_date, raw_text) и legacy (student, cell_reference).
         # В PG нельзя ловить IntegrityError внутри транзакции и продолжать (tx aborts),
         # поэтому дубликат определяем по cursor.rowcount == 0.
-        cursor.execute('''
-            INSERT INTO grade_history
-              (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT DO NOTHING
-        ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
+        if notify_pending:
+            cursor.execute('''
+                INSERT INTO grade_history
+                  (student_id, subject, grade_value, raw_text, cell_reference,
+                   grade_date, notified_at)
+                VALUES (%s, %s, %s, %s, %s, %s, NULL)
+                ON CONFLICT DO NOTHING
+            ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
+        else:
+            # notified_at не указываем → DEFAULT now() (доставлено, вне outbox).
+            cursor.execute('''
+                INSERT INTO grade_history
+                  (student_id, subject, grade_value, raw_text, cell_reference, grade_date)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            ''', (student_id, subject, grade_value, raw_text, cell_reference, grade_date))
         return cursor.rowcount > 0
 
 
@@ -104,18 +121,87 @@ def get_existing_grade_by_content(student_id: int, subject: str,
 
 
 def update_grade_by_content(student_id: int, subject: str, grade_date: str,
-                            grade_value: Optional[float], raw_text: str) -> bool:
+                            grade_value: Optional[float], raw_text: str,
+                            mark_unnotified: bool = False) -> bool:
     """Обновляет значение оценки по content-key. True если обновлено.
     `cell_reference` не трогаем — он остался как metadata «откуда пришло»
-    (debug-only после этапа 1C, не identity-ключ)."""
+    (debug-only после этапа 1C, не identity-ключ).
+
+    mark_unnotified=True сбрасывает `notified_at = NULL` — используется когда
+    оценка изменилась и по ней ПОЙДЁТ новое уведомление (кладём строку обратно
+    в outbox, чтобы sweeper дослал её при крахе фазы отправки). При «тихом»
+    обновлении (trim без уведомления) — оставляем notified_at как есть (False)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if mark_unnotified:
+            cursor.execute('''
+                UPDATE grade_history
+                SET grade_value = %s, raw_text = %s,
+                    date_added = (now() at time zone 'utc'),
+                    notified_at = NULL
+                WHERE student_id = %s AND subject = %s AND grade_date = %s
+            ''', (grade_value, raw_text, student_id, subject, grade_date))
+        else:
+            cursor.execute('''
+                UPDATE grade_history
+                SET grade_value = %s, raw_text = %s,
+                    date_added = (now() at time zone 'utc')
+                WHERE student_id = %s AND subject = %s AND grade_date = %s
+            ''', (grade_value, raw_text, student_id, subject, grade_date))
+        return cursor.rowcount > 0
+
+
+# ─── Outbox уведомлений (PR-F1) ─────────────────────────────────────
+# grade_history.notified_at: NULL = уведомление ещё не доставлено (в outbox),
+# timestamp = доставлено (или поставлено в персистентную очередь тихих часов).
+# add_grade вставляет строку с notified_at=NULL по умолчанию; monitor проставляет
+# метку после подтверждённой отправки, а sweeper добивает «повисшие» строки.
+def mark_grade_notified_by_content(student_id: int, subject: str,
+                                   grade_date: str) -> int:
+    """Помечает доставленными все ещё-не-доставленные строки за (student, subject,
+    date). Возвращает число обновлённых строк. Идемпотентно (WHERE notified_at
+    IS NULL) — повторный вызов ничего не трогает."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE grade_history
-            SET grade_value = %s, raw_text = %s, date_added = (now() at time zone 'utc')
+            SET notified_at = now()
             WHERE student_id = %s AND subject = %s AND grade_date = %s
-        ''', (grade_value, raw_text, student_id, subject, grade_date))
+              AND notified_at IS NULL
+        ''', (student_id, subject, grade_date))
+        return cursor.rowcount
+
+
+def mark_grade_notified(grade_id: int) -> bool:
+    """Помечает конкретную строку оценки доставленной (по id). Для sweeper'а."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE grade_history SET notified_at = now() WHERE id = %s',
+            (grade_id,),
+        )
         return cursor.rowcount > 0
+
+
+def get_unnotified_grades(limit: int = 500) -> List[Dict[str, Any]]:
+    """Строки оценок с notified_at IS NULL (outbox) + метаданные ученика.
+
+    Для sweeper'а в начале polling-цикла: добить уведомления, не ушедшие из-за
+    краха между записью и отправкой. JOIN на students даёт display_name/fio/
+    spreadsheet_id для форматирования. Сортировка по (student, date_added) —
+    чтобы группировать по ученику и держать хронологию."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT gh.id, gh.student_id, gh.subject, gh.grade_value, gh.raw_text,
+                   gh.grade_date, s.display_name, s.fio, s.spreadsheet_id
+            FROM grade_history gh
+            JOIN students s ON gh.student_id = s.id
+            WHERE gh.notified_at IS NULL
+            ORDER BY gh.student_id, gh.date_added, gh.id
+            LIMIT %s
+        ''', (limit,))
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def update_grade(student_id: int, cell_reference: str,
@@ -352,6 +438,9 @@ __all__ = [
     "get_existing_grade_by_content",
     "update_grade",
     "update_grade_by_content",
+    "mark_grade_notified_by_content",
+    "mark_grade_notified",
+    "get_unnotified_grades",
     "upsert_quarter_grade",
     "get_quarter_grades",
     "get_grade_history_for_student",
