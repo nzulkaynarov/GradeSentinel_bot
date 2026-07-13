@@ -16,6 +16,7 @@ from src.database_manager import (
     get_family_members_telegram_ids,
 )
 from src.i18n import t
+from src.utils import to_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ def cmd_subscription(message):
 
         if active:
             lines.append(t("sub_family_active", lang,
-                           family=fam['family_name'], end=sub_end[:10]))
+                           family=fam['family_name'], end=to_date_str(sub_end)))
         else:
             has_inactive = True
             lines.append(t("sub_family_inactive", lang,
@@ -690,7 +691,7 @@ def cmd_grant_subscription(message):
     for fam in families:
         active = is_subscription_active(fam['id'])
         sub = get_family_subscription(fam['id'])
-        sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "—"
+        sub_end = to_date_str(sub['subscription_end']) if sub and sub.get('subscription_end') else "—"
         status = "✅" if active else "❌"
         label = f"{status} #{fam['id']} {fam['family_name']} ({fam.get('head_fio', '?')}) → {sub_end}"
         markup.add(types.InlineKeyboardButton(
@@ -951,7 +952,7 @@ def cmd_cancel_sub(message):
     markup = types.InlineKeyboardMarkup(row_width=1)
     for fam in active_fams:
         sub = get_family_subscription(fam['id'])
-        sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "—"
+        sub_end = to_date_str(sub['subscription_end']) if sub and sub.get('subscription_end') else "—"
         label = f"❌ #{fam['id']} {fam['family_name']} (до {sub_end})"
         markup.add(types.InlineKeyboardButton(
             label, callback_data=f"csub_confirm_{fam['id']}"))
@@ -1327,7 +1328,7 @@ def _process_promo_discount(message):
 def _notify_family_about_subscription(family_id: int, months: int):
     """Уведомляет всех членов семьи о том, что подписка активирована."""
     sub = get_family_subscription(family_id)
-    sub_end = sub['subscription_end'][:10] if sub and sub.get('subscription_end') else "?"
+    sub_end = to_date_str(sub['subscription_end']) if sub and sub.get('subscription_end') else "?"
 
     tg_ids = get_family_members_telegram_ids(family_id)
     for tg_id in tg_ids:

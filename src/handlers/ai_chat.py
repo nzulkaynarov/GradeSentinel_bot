@@ -27,6 +27,7 @@ from src.database_manager import (
     save_feedback, get_message_owner,
 )
 from src.i18n import t
+from src.utils import to_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +323,7 @@ def _ask_ai(user_id: int, question: str, lang: str, state: dict,
             all_grades.append(gg)
     # Sort by grade_date DESC across all students (по убыванию даты — свежие первыми)
     all_grades.sort(
-        key=lambda g: g.get('grade_date') or (g.get('date_added') or '')[:10],
+        key=lambda g: to_date_str(g.get('grade_date') or g.get('date_added')),
         reverse=True,
     )
 

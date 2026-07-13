@@ -157,7 +157,7 @@ def backfill(
             cur = conn.cursor()
             for rid, gd in plan:
                 cur.execute(
-                    "UPDATE grade_history SET grade_date = ? WHERE id = ?",
+                    "UPDATE grade_history SET grade_date = %s WHERE id = %s",
                     (gd, rid),
                 )
             counters['updated'] = len(plan)

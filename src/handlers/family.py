@@ -9,6 +9,7 @@ from src.database_manager import (
 )
 from src.db.auth import can_manage_family
 from src.i18n import t
+from src.utils import to_date_str
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def _send_family_manage_menu(chat_id, f_id, message_id_to_edit=None):
         active = is_subscription_active(f_id)
         sub = get_family_subscription(f_id)
         if active and sub and sub.get('subscription_end'):
-            sub_label = t("family_sub_btn_active", lang, end=sub['subscription_end'][:10])
+            sub_label = t("family_sub_btn_active", lang, end=to_date_str(sub['subscription_end']))
         else:
             sub_label = t("family_sub_btn_inactive", lang)
         markup.add(types.InlineKeyboardButton(sub_label, callback_data=f"admin_sub_{f_id}"))
