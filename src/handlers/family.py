@@ -219,6 +219,9 @@ def callback_gen_invite(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_child_'))
 def callback_add_child(call):
+    # Гасим спиннер сразу: дальше ставим state и шлём НОВОЕ сообщение, а не
+    # редактируем текущее → без ack inline-кнопка крутится до таймаута.
+    bot.answer_callback_query(call.id)
     args = _parse_int_args(call.data, 'add_child_', 1)
     if not args:
         return
@@ -529,6 +532,9 @@ def callback_relink_cancel(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('add_member_'))
 def callback_add_member(call):
+    # Гасим спиннер сразу: дальше ставим state и шлём НОВОЕ сообщение, а не
+    # редактируем текущее → без ack inline-кнопка крутится до таймаута.
+    bot.answer_callback_query(call.id)
     args = _parse_int_args(call.data, 'add_member_', 1)
     if not args:
         return
@@ -723,7 +729,10 @@ def callback_show_grades(call):
         for s in students:
             _show_student_grades(chat_id, s)
     else:
-        student_id = int(data_part)
+        args = _parse_int_args(call.data, 'show_grades_', 1)
+        if not args:
+            return
+        student_id = args[0]
         students = get_students_for_parent(call.from_user.id)
         student = next((s for s in students if s['id'] == student_id), None)
         if student:
@@ -750,8 +759,11 @@ def callback_grade_today(call):
     lang = get_user_lang(call.from_user.id)
     chat_id = call.message.chat.id
 
-    student_id = int(call.data.replace('grade_today_', ''))
     bot.answer_callback_query(call.id)
+    args = _parse_int_args(call.data, 'grade_today_', 1)
+    if not args:
+        return
+    student_id = args[0]
 
     students = get_students_for_parent(call.from_user.id)
     student = next((s for s in students if s['id'] == student_id), None)

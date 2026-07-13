@@ -13,8 +13,8 @@ class NotificationType(str, Enum):
     MORNING_FLUSH = "morning_flush"          # 07:00, накопленное за тихие
     BOT_ALIVE = "bot_alive"                  # 15:00, "бот работает"
     SUBSCRIPTION_EXPIRY = "sub_expiry"       # 10:00, за 7д/1д/0д
-    WEEKLY_DIGEST = "weekly_digest"          # Вс 09:00
-    PROACTIVE_ALERT = "proactive_alert"      # ежечасно, AI-аномалии
+    WEEKLY_DIGEST = "weekly_digest"          # Вс 18:00 (бесплатный текстовый)
+    PROACTIVE_ALERT = "proactive_alert"      # раз в день 17:00, AI-аномалии
     SUMMER_ACTIVITY = "summer_activity"      # каникулы: еженедельный AI-нэдж родителю
 
     # Admin/operational

@@ -117,7 +117,10 @@ def receive_support_message(message):
 # ====================
 # Ответ из группы (Админ -> Пользователь)
 # ====================
-@bot.message_handler(func=lambda msg: msg.chat.id == get_admin_group_id() and msg.reply_to_message is not None)
+@bot.message_handler(
+    func=lambda msg: msg.chat.id == get_admin_group_id() and msg.reply_to_message is not None,
+    content_types=['text', 'photo', 'document', 'video', 'sticker', 'voice', 'audio', 'animation']
+)
 def reply_from_admin_group(message):
     original_msg = message.reply_to_message
 
@@ -145,8 +148,14 @@ def reply_from_admin_group(message):
 def send_reply_to_user(message, target_user_id):
     lang = get_user_lang(target_user_id)
     try:
-        reply_text = t("support_admin_reply", lang, text=message.text)
-        bot.send_message(target_user_id, reply_text, parse_mode="HTML")
+        if message.content_type == 'text':
+            reply_text = t("support_admin_reply", lang, text=message.text)
+            bot.send_message(target_user_id, reply_text, parse_mode="HTML")
+        else:
+            # Не-текстовый ответ админа (фото/стикер/документ/видео/голос):
+            # message.text is None → в шаблоне получилось бы «None». Копируем
+            # само сообщение — юзер получает медиа как есть.
+            bot.copy_message(target_user_id, message.chat.id, message.message_id)
         bot.reply_to(message, t("support_reply_ok", "ru"))
     except Exception as e:
         logger.error(f"Failed to send reply to user {target_user_id}: {e}")

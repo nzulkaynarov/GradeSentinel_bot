@@ -17,7 +17,12 @@ API:
 import logging
 from typing import Any, Dict, List, Optional
 
-from src.db.connection import IntegrityError, UniqueViolation, get_db_connection
+from src.db.connection import (
+    IntegrityError,
+    UniqueViolation,
+    conn_or_new,
+    get_db_connection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +78,18 @@ def get_promo_code(code: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def use_promo_code(code: str) -> bool:
-    """Увеличивает счётчик использований промокода. True если был свободный слот."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+def use_promo_code(code: str, conn=None) -> bool:
+    """Увеличивает счётчик использований промокода. True если был свободный слот.
+
+    Атомарный guard `WHERE used_count < max_uses` — при max_uses=1 два
+    одновременных вызова: первый вернёт True, второй (rowcount=0) вернёт False,
+    поэтому начислять подписку МОЖНО только если этот вызов вернул True.
+
+    `conn` — опционально: чтобы занять слот в той же транзакции, что и
+    extend_subscription/record_payment (см. _apply_promo_to_family).
+    """
+    with conn_or_new(conn) as c:
+        cursor = c.cursor()
         cursor.execute('''
             UPDATE promo_codes SET used_count = used_count + 1
             WHERE code = %s AND used_count < max_uses

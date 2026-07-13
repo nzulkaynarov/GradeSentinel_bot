@@ -148,3 +148,22 @@ def get_db_connection():
     pool = _get_pool()
     with pool.connection() as conn:
         yield conn
+
+
+@contextmanager
+def conn_or_new(conn=None):
+    """Позволяет db-функции работать либо в переданной транзакции, либо в своей.
+
+    Если `conn` передан — используем его (commit/rollback владеет ВНЕШНИЙ
+    `with get_db_connection()`, вложенная функция ничего не коммитит). Это
+    даёт атомарность нескольких db-операций в одной транзакции (напр.
+    record_payment + extend_subscription).
+
+    Если `conn is None` — открываем собственное соединение из пула (обычное
+    поведение автономного вызова: commit на чистом выходе).
+    """
+    if conn is not None:
+        yield conn
+    else:
+        with get_db_connection() as new_conn:
+            yield new_conn

@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from src.db.connection import get_db_connection
+from src.db.connection import conn_or_new, get_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -35,44 +35,49 @@ def get_family_subscription(family_id: int) -> Optional[Dict[str, Any]]:
         return {'subscription_end': row['subscription_end']}
 
 
-def extend_subscription(family_id: int, months: int = 1):
-    """Продлевает подписку на N месяцев. Если текущая ещё активна — от её
-    конца, иначе от now. Если семьи нет — silent no-op."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            'SELECT subscription_end FROM families WHERE id = %s',
-            (family_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return
+def extend_subscription(family_id: int, months: int = 1, conn=None):
+    """Продлевает подписку на N месяцев. Если текущая ещё активна — прибавляем
+    к её концу; если истекла/NULL — считаем от now. Если семьи нет — silent no-op.
 
-        current_end = row['subscription_end']
-        if current_end:
-            cursor.execute('''
-                UPDATE families SET subscription_end =
-                    CASE
-                        WHEN subscription_end > (now() at time zone 'utc')
-                        THEN subscription_end + %s * interval '1 month'
-                        ELSE (now() at time zone 'utc') + %s * interval '1 month'
-                    END
-                WHERE id = %s
-            ''', (months, months, family_id))
-        else:
-            cursor.execute(
-                "UPDATE families SET subscription_end = (now() at time zone 'utc') + %s * interval '1 month' WHERE id = %s",
-                (months, family_id),
-            )
+    Единый аддитивный UPDATE (без предварительного SELECT-ветвления) —
+    защита от гонки двух одновременных «первых» оплат: под row-lock второй
+    UPDATE перечитывает уже закоммиченный subscription_end и прибавляет к нему,
+    а не слепо перезаписывает от now (иначе семья получила бы 1 месяц за 2 оплаты).
+
+    GREATEST(COALESCE(subscription_end, now), now):
+      • активна (end>now)   → база = end   → продлеваем от конца;
+      • истекла (end<=now)  → база = now   → продлеваем от now;
+      • NULL (первая)       → база = now   → продлеваем от now.
+
+    `conn` — опционально: если передан, работаем в его транзакции (для
+    атомарности с record_payment). Иначе — своё соединение.
+    """
+    with conn_or_new(conn) as c:
+        cursor = c.cursor()
+        cursor.execute('''
+            UPDATE families SET subscription_end =
+                GREATEST(
+                    COALESCE(subscription_end, (now() at time zone 'utc')),
+                    (now() at time zone 'utc')
+                ) + %s * interval '1 month'
+            WHERE id = %s
+        ''', (months, family_id))
 
 
-def record_payment(family_id: int, paid_by_parent_id: int, amount: int,
+def record_payment(family_id: int, paid_by_parent_id: Optional[int], amount: int,
                    currency: str, plan: str, months: int,
                    telegram_charge_id: str = None,
-                   provider_charge_id: str = None):
-    """Записывает платёж в audit-log таблицу payments."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+                   provider_charge_id: str = None, conn=None):
+    """Записывает платёж в audit-log таблицу payments.
+
+    `paid_by_parent_id` может быть None (плательщик без строки parents) —
+    после миграции 0002 колонка paid_by nullable, аудит платежа не теряется.
+    `conn` — опционально: см. extend_subscription (атомарность денежного пути).
+    Может бросить UniqueViolation при дубле telegram_payment_charge_id
+    (идемпотентность: повторная доставка successful_payment).
+    """
+    with conn_or_new(conn) as c:
+        cursor = c.cursor()
         cursor.execute('''
             INSERT INTO payments (family_id, paid_by, amount, currency, plan, months,
                                   telegram_payment_charge_id, provider_payment_charge_id)
