@@ -9,7 +9,7 @@ from src.bot_instance import bot
 from src.ui import send_menu_safe, send_content
 from src.database_manager import (
     get_parent_role, get_students_for_parent, get_active_spreadsheets,
-    get_parents_for_student, get_user_lang
+    get_parents_for_student, get_user_lang, get_grade_history_for_student_all
 )
 from src.analytics_engine import analyze_student_grades, generate_weekly_summary, AIAnalyticsError
 from src.i18n import t
@@ -113,6 +113,15 @@ def _send_weekly_reports():
     for student in students:
         student_id = student['student_id']
         display_name = student.get('display_name') or student['fio']
+
+        # Лето/каникулы: нет свежих оценок за неделю → отчёт пустой
+        # (analyze_student_grades вернёт None ДО вызова Anthropic). Пропускаем,
+        # НЕ считая за AI-fail — иначе пустота шлёт ложный admin-алерт «Check
+        # ANTHROPIC_API_KEY» (так было 3 воскресенья подряд: 31.05/07.06/14.06).
+        # Порог зеркалит guard анализатора (7 дней, ≥2 числовых оценки).
+        recent = get_grade_history_for_student_all(student_id, days=7)
+        if len([g for g in recent if g.get('grade_value') is not None]) < 2:
+            continue
 
         parent_ids = get_parents_for_student(student_id)
         for tg_id in parent_ids:
