@@ -9,11 +9,13 @@ from src.db.pg import (  # noqa: F401
     IntegrityError,
     OperationalError,
     UniqueViolation,
+    conn_or_new,
     get_db_connection,
 )
 
 __all__ = [
     "get_db_connection",
+    "conn_or_new",
     "IntegrityError",
     "UniqueViolation",
     "ForeignKeyViolation",

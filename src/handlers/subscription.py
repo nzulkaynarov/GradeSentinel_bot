@@ -3,6 +3,7 @@
 Поддержка: Click / Payme (Telegram Payments API) + ручной перевод на карту.
 """
 import os
+import copy
 import logging
 from telebot import types
 from src.bot_instance import bot
@@ -15,10 +16,56 @@ from src.database_manager import (
     get_promo_code, use_promo_code, cancel_subscription,
     get_family_members_telegram_ids,
 )
+from src.db.connection import UniqueViolation, get_db_connection
 from src.i18n import t
 from src.utils import to_date_str
+from src.rate_limiter import is_rate_limited
 
 logger = logging.getLogger(__name__)
+
+
+def _alert_admin_payment(text: str):
+    """Best-effort алерт админу по денежному пути (деньги уже у Telegram)."""
+    try:
+        from src.notifications import NotificationType, get_sender
+        get_sender().send_to_admin(text, ntype=NotificationType.PAYMENT_SUCCESS)
+    except Exception as e:
+        logger.error(f"Admin payment alert failed: {e}")
+
+
+def _maybe_refund_stars(payment, user_id: int):
+    """Возврат Telegram Stars при неудачной обработке (только currency=XTR).
+
+    UZS-платежи (Click/Payme) через provider — рефанд руками провайдера, не API.
+    """
+    if getattr(payment, 'currency', None) != 'XTR':
+        return
+    charge_id = getattr(payment, 'telegram_payment_charge_id', None)
+    if not charge_id:
+        return
+    try:
+        bot.refund_star_payment(user_id, charge_id)
+        logger.info(f"Refunded star payment charge={charge_id} user={user_id}")
+    except Exception as e:
+        logger.error(f"Star refund failed charge={charge_id} user={user_id}: {e}")
+
+
+def _notify_payment_success(user_id: int, lang: str, months: int, family_id: int):
+    """Уведомление юзеру об активной подписке — best-effort (деньги уже списаны,
+    подписка уже активна). Сбой здесь НЕ откатывает транзакцию."""
+    try:
+        send_content(user_id, t("sub_payment_success", lang, months=months))
+    except Exception as e:
+        logger.error(
+            f"Payment notify failed for user={user_id} family={family_id}: {e}. "
+            f"Subscription is active despite notification failure."
+        )
+        _alert_admin_payment(
+            f"⚠️ <b>Payment notify failed</b>\n\n"
+            f"family={family_id} user={user_id} months={months}\n"
+            f"Subscription активирована, но юзер не получил подтверждение.\n"
+            f"Err: <code>{e}</code>"
+        )
 
 # ─── Конфигурация провайдеров из .env ───
 
@@ -73,9 +120,14 @@ DEFAULT_PLANS = {
 
 
 def get_plans() -> dict:
-    """Возвращает актуальные тарифы из БД или дефолтные."""
+    """Возвращает актуальные тарифы из БД или дефолтные.
+
+    Возвращает deepcopy DEFAULT_PLANS, а не сам объект: `_process_price_input`
+    делает `plans[k]['amount'] = ...` in-place перед save_plans_to_db — без
+    копии это мутировало бы глобальный дефолт (и следующий вызов без БД-записи
+    отдал бы испорченные цены)."""
     db_plans = get_plans_from_db()
-    return db_plans if db_plans else DEFAULT_PLANS
+    return db_plans if db_plans else copy.deepcopy(DEFAULT_PLANS)
 
 
 # ═══════════════════════════════════════════
@@ -604,55 +656,101 @@ def handle_pre_checkout(pre_checkout_query):
 
 @bot.message_handler(content_types=['successful_payment'])
 def handle_successful_payment(message):
-    """Обработка успешного платежа — активация подписки."""
+    """Обработка успешного платежа — активация подписки.
+
+    Деньги УЖЕ у Telegram → любой сбой в денежном пути обязан оставить след
+    (admin alert) и по возможности рефанд (Stars). Ключевые гарантии:
+      • payload парсится защищённо (3 части, int в try) — иначе алерт + рефанд;
+      • record_payment + extend_subscription — ОДНА транзакция (атомарность);
+      • дубль charge_id (повторная доставка) ловится UniqueViolation → no-op,
+        подписка не двоится;
+      • paid_by=NULL допустим (payer без строки parents) — аудит не теряется.
+    """
     payment = message.successful_payment
     user_id = message.chat.id
     lang = get_user_lang(user_id)
 
-    payload = payment.invoice_payload
+    # ── 1. Защищённый парсинг server-controlled payload ──
+    payload = payment.invoice_payload or ""
     parts = payload.split(':')
-    family_id = int(parts[0])
-    plan_key = parts[1]
-    months = int(parts[2])
+    try:
+        if len(parts) != 3:
+            raise ValueError(f"expected 3 parts, got {len(parts)}")
+        family_id = int(parts[0])
+        plan_key = parts[1]
+        months = int(parts[2])
+    except (ValueError, TypeError) as e:
+        logger.error(
+            f"Malformed invoice_payload {payload!r} from user={user_id}: {e}. "
+            f"Money taken by Telegram — alerting admin + refund (if Stars)."
+        )
+        _alert_admin_payment(
+            f"🔴 <b>Malformed payment payload</b>\n\n"
+            f"user={user_id} payload=<code>{payload}</code>\n"
+            f"Деньги списаны Telegram, подписка НЕ активирована.\n"
+            f"Err: <code>{e}</code>"
+        )
+        _maybe_refund_stars(payment, user_id)
+        return
 
+    # ── 2. Резолвим плательщика (может отсутствовать в parents) ──
     parent_id = get_parent_id_by_telegram(user_id)
+    if parent_id is None:
+        logger.warning(
+            f"Payer user={user_id} has no parents row — recording payment with "
+            f"paid_by=NULL (family={family_id})."
+        )
+        _alert_admin_payment(
+            f"⚠️ <b>Payment from unregistered payer</b>\n\n"
+            f"user={user_id} family={family_id} months={months}\n"
+            f"Записываем платёж с paid_by=NULL, подписка активируется."
+        )
 
-    record_payment(
-        family_id=family_id,
-        paid_by_parent_id=parent_id,
-        amount=payment.total_amount,
-        currency=payment.currency,
-        plan=plan_key,
-        months=months,
-        telegram_charge_id=payment.telegram_payment_charge_id,
-        provider_charge_id=payment.provider_payment_charge_id,
-    )
+    # ── 3. Денежный путь: record_payment + extend_subscription в ОДНОЙ транзакции ──
+    try:
+        with get_db_connection() as conn:
+            record_payment(
+                family_id=family_id,
+                paid_by_parent_id=parent_id,
+                amount=payment.total_amount,
+                currency=payment.currency,
+                plan=plan_key,
+                months=months,
+                telegram_charge_id=payment.telegram_payment_charge_id,
+                provider_charge_id=payment.provider_payment_charge_id,
+                conn=conn,
+            )
+            extend_subscription(family_id, months, conn=conn)
+    except UniqueViolation:
+        # Дубль telegram_payment_charge_id → повторная доставка того же
+        # successful_payment. Подписка уже активирована первой доставкой —
+        # НЕ продлеваем повторно. Юзеру шлём подтверждение идемпотентно.
+        logger.info(
+            f"Duplicate successful_payment ignored: "
+            f"charge={payment.telegram_payment_charge_id} family={family_id} user={user_id}"
+        )
+        _notify_payment_success(user_id, lang, months, family_id)
+        return
+    except Exception as e:
+        logger.exception(
+            f"Payment DB path failed: family={family_id} user={user_id} "
+            f"charge={payment.telegram_payment_charge_id}: {e}. "
+            f"Money taken by Telegram — alerting admin + refund (if Stars)."
+        )
+        _alert_admin_payment(
+            f"🔴 <b>Payment DB failure — money at risk</b>\n\n"
+            f"family={family_id} user={user_id} months={months}\n"
+            f"charge=<code>{payment.telegram_payment_charge_id}</code>\n"
+            f"Деньги списаны, подписка НЕ активирована. Требуется ручная проверка.\n"
+            f"Err: <code>{e}</code>"
+        )
+        _maybe_refund_stars(payment, user_id)
+        return
 
-    extend_subscription(family_id, months)
     logger.info(f"Payment successful: family={family_id}, plan={plan_key}, "
                 f"months={months}, user={user_id}")
 
-    # Уведомление юзеру — best-effort. Подписка уже активирована, поэтому
-    # любой сбой здесь НЕ должен валить транзакцию. Если send упадёт — admin
-    # alert в логи + Telegram, юзер обнаружит активную подписку при /subscription.
-    try:
-        send_content(user_id, t("sub_payment_success", lang, months=months))
-    except Exception as e:
-        logger.error(
-            f"Payment notify failed for user={user_id} family={family_id}: {e}. "
-            f"Subscription is active despite notification failure."
-        )
-        try:
-            from src.notifications import get_sender, NotificationType
-            get_sender().send_to_admin(
-                f"⚠️ <b>Payment notify failed</b>\n\n"
-                f"family={family_id} user={user_id} months={months}\n"
-                f"Subscription активирована, но юзер не получил подтверждение.\n"
-                f"Err: <code>{e}</code>",
-                ntype=NotificationType.PAYMENT_SUCCESS,
-            )
-        except Exception as ee:
-            logger.error(f"Admin alert for payment notify failure also failed: {ee}")
+    _notify_payment_success(user_id, lang, months, family_id)
 
 
 # ═══════════════════════════════════════════
@@ -827,6 +925,13 @@ def _process_promo_code(message):
     from src.database_manager import clear_user_state
     user_id = message.chat.id
     lang = get_user_lang(user_id)
+
+    # S3: троттлинг ввода промокода — защита от перебора кодов.
+    # Состояние НЕ чистим, чтобы юзер мог повторить после паузы.
+    if is_rate_limited(user_id):
+        send_content(user_id, t("rate_limited", lang))
+        return
+
     code = message.text.strip() if message.text else ""
     clear_user_state(user_id)
 
@@ -882,38 +987,81 @@ def _process_promo_code(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('sub_promo_apply_'))
 def callback_promo_apply(call):
     """Применение промокода к семье."""
+    # callback_data: sub_promo_apply_{family_id}_{code}. Код может содержать
+    # '_' → берём family_id из parts[3], а код — остаток после 4-го '_'.
     parts = call.data.split('_')
-    family_id = int(parts[3])
-    code = parts[4]
+    if len(parts) < 5:
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        family_id = int(parts[3])
+    except ValueError:
+        bot.answer_callback_query(call.id)
+        return
+    code = '_'.join(parts[4:])
     user_id = call.from_user.id
     lang = get_user_lang(user_id)
+
+    # S1 (IDOR): тот же гейт, что у платёжных путей sub_pay_/sub_fam_.
+    # Без него crafted callback продлевал чужую подписку и жёг max_uses промо.
+    # _check_user_can_pay_for_family сам отвечает alert'ом при отказе.
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
+
     bot.answer_callback_query(call.id)
     _apply_promo_to_family(user_id, family_id, get_promo_code(code), lang)
 
 
 def _apply_promo_to_family(user_id: int, family_id: int, promo: dict, lang: str):
-    """Применяет промокод с бесплатными месяцами к семье."""
+    """Применяет промокод с бесплатными месяцами к семье.
+
+    Порядок критичен: СНАЧАЛА занимаем слот промокода (атомарный guard
+    `use_promo_code` под `WHERE used_count < max_uses`), и ТОЛЬКО при успехе —
+    продлеваем подписку + пишем платёж. Иначе гонка при max_uses=1 давала
+    двойное начисление. Всё в ОДНОЙ транзакции — при сбое откатывается и слот."""
     if not promo:
         send_content(user_id, t("sub_promo_invalid", lang))
         return
 
-    months = promo['free_months']
-    extend_subscription(family_id, months)
-    use_promo_code(promo['code'])
+    # S1 (IDOR) defense-in-depth: даже если сюда попали в обход callback-гейта,
+    # применить промо можно только к своей семье (или админом). Оба вызова
+    # выше уже проверены, но эта функция трогает деньги — гейт обязателен.
+    from src.db.auth import is_member_of_family, get_parent_role
+    if get_parent_role(user_id) != 'admin' and not is_member_of_family(user_id, family_id):
+        logger.warning(
+            f"Blocked promo IDOR: user={user_id} not member of family={family_id}"
+        )
+        send_content(user_id, t("admin_no_access", lang))
+        return
 
+    months = promo['free_months']
+    code = promo['code']
     parent_id = get_parent_id_by_telegram(user_id)
-    record_payment(
-        family_id=family_id,
-        paid_by_parent_id=parent_id,
-        amount=0,
-        currency='UZS',
-        plan=f'promo_{promo["code"]}',
-        months=months,
-    )
+
+    try:
+        with get_db_connection() as conn:
+            # Занимаем слот ДО начисления. Если исчерпан (гонка/повтор) — стоп.
+            if not use_promo_code(code, conn=conn):
+                send_content(user_id, t("sub_promo_invalid", lang))
+                return
+            extend_subscription(family_id, months, conn=conn)
+            record_payment(
+                family_id=family_id,
+                paid_by_parent_id=parent_id,
+                amount=0,
+                currency='UZS',
+                plan=f'promo_{code}',
+                months=months,
+                conn=conn,
+            )
+    except Exception as e:
+        logger.exception(f"Promo apply failed code={code} family={family_id} user={user_id}: {e}")
+        send_content(user_id, t("sub_promo_invalid", lang))
+        return
 
     _notify_family_about_subscription(family_id, months)
-    send_content(user_id, t("sub_promo_success", lang, months=months, code=promo['code']))
-    logger.info(f"Promo {promo['code']} applied: family={family_id}, months={months}, user={user_id}")
+    send_content(user_id, t("sub_promo_success", lang, months=months, code=code))
+    logger.info(f"Promo {code} applied: family={family_id}, months={months}, user={user_id}")
 
 
 # ═══════════════════════════════════════════

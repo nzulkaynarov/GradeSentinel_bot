@@ -15,7 +15,8 @@ User=gradesentinel
 Group=gradesentinel
 WorkingDirectory=/opt/gradesentinel
 EnvironmentFile=/etc/gradesentinel/bot.env
-Environment="DATABASE_PATH=/var/lib/gradesentinel/sentinel.db"
+# БД — PostgreSQL на DB-VPS, DSN приходит из bot.env (DATABASE_URL).
+# Вестигиальный DATABASE_PATH (SQLite) удалён — код его не читает.
 Environment="GOOGLE_CREDENTIALS_PATH=/etc/gradesentinel/credentials.json"
 Environment="HEARTBEAT_PATH=/var/lib/gradesentinel/.heartbeat"
 Environment="PYTHONPATH=/opt/gradesentinel"

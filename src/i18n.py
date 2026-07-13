@@ -34,9 +34,15 @@ def load_translations():
 
 
 def _build_button_actions():
-    """Строит маппинг текстов кнопок на action-ключи для всех языков."""
+    """Строит маппинг текстов кнопок на action-ключи для всех языков.
+
+    Строит НОВЫЙ dict и присваивает его атомарно (rebind), а не мутирует
+    существующий через clear()+заполнение. Причина: бот синхронный, но
+    threaded=True (апдейты в пуле потоков) — смена языка (`callback_set_lang`)
+    может пересобирать маппинг параллельно с чтением из message-хендлера
+    (`get_button_action`). Мутация in-place дала бы гонку (KeyError/промах);
+    rebind ссылки атомарен, читатель всегда видит целостный dict."""
     global BUTTON_ACTIONS
-    BUTTON_ACTIONS.clear()
 
     button_keys = {
         'btn_status': 'status',
@@ -53,11 +59,26 @@ def _build_button_actions():
         'btn_user_menu': 'user_menu',
     }
 
+    new_map = {}
     for lang in SUPPORTED_LANGS:
         for key, action in button_keys.items():
             text = t(key, lang)
             if text != key:  # Не добавляем ключ если перевод не найден
-                BUTTON_ACTIONS[text] = action
+                new_map[text] = action
+
+    BUTTON_ACTIONS = new_map  # атомарный rebind
+
+
+def get_button_action(text: Optional[str]) -> Optional[str]:
+    """Возвращает action-ключ для текста reply-кнопки, либо None.
+
+    Единственная точка доступа к BUTTON_ACTIONS для потребителей: читает
+    module-global через `.get()`, поэтому корректно видит rebound-dict после
+    смены языка (не устаревшую копию, как было бы при `from ... import
+    BUTTON_ACTIONS`) и не бросает KeyError на гонке."""
+    if text is None:
+        return None
+    return BUTTON_ACTIONS.get(text)
 
 
 def t(key: str, lang: str = DEFAULT_LANG, **kwargs) -> str:

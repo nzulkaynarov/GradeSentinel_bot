@@ -1,19 +1,44 @@
 name: Deploy to VPS
 
+# ГЕЙТ НА ТЕСТЫ (B2): деплой НЕ триггерится напрямую на push:main.
+# Вместо этого ждёт завершения workflow "Tests" (tests.yml) и запускается
+# ТОЛЬКО если он зелёный. Так красные тесты блокируют выкатку в прод.
+#
+# ВАЖНО: workflow_run запускается в контексте default-ветки, а checkout по
+# умолчанию берёт её HEAD — поэтому явно чекаутим ИМЕННО тот SHA, который
+# прошёл тесты (github.event.workflow_run.head_sha).
+#
+# Плюс к этому в настройках репозитория нужно включить branch protection
+# «Require status checks to pass before merging» → Tests (это НЕ в коде,
+# см. deploy/README.md и описание PR).
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Tests"]
+    types: [completed]
+    branches: [main]
+
+# Не даём двум деплоям пересекаться — иначе .new/.old-каталоги атомарного
+# свапа могут наехать друг на друга.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: self-hosted
+    # Запускаемся ТОЛЬКО если Tests завершился успехом на ветке main.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     # Self-hosted runner живёт на VPS под юзером 'deploy'.
     # 'deploy' имеет узкий passwordless sudo (см. deploy/deploy-sudoers).
 
     steps:
-      - name: Checkout code
+      - name: Checkout протестированного коммита
         uses: actions/checkout@v4
+        with:
+          # Деплоим РОВНО тот commit, что прошёл тесты, а не текущий HEAD main.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Записать секреты в /etc/gradesentinel/
         run: |
@@ -47,21 +72,48 @@ jobs:
           sudo /usr/bin/chmod 0640 /etc/gradesentinel/credentials.json
           sudo /usr/bin/chown root:gradesentinel /etc/gradesentinel/credentials.json
 
-      - name: Синхронизировать код в /opt/gradesentinel
+      # ── Атомарный деплой (B19) ────────────────────────────────────────
+      # Раньше rsync --delete шёл ПРЯМО в живой /opt/gradesentinel → прерывание
+      # оставляло полусостояние и restart-луп без отката. Теперь:
+      #   stage (.new) → venv+deps из lock → smoke-компиляция → atomic mv → restart.
+      # Прошлый релиз сохраняется в /opt/gradesentinel.old для быстрого отката.
+      - name: Stage — синхронизировать код в /opt/gradesentinel.new
         run: |
-          # rsync исключает venv (живёт отдельно), .git (большой), data/config (не нужны)
+          # Чистим возможный хвост от прерванного прошлого деплоя (идемпотентно).
+          sudo /usr/bin/rm -rf /opt/gradesentinel.new
+          # rsync исключает venv (собираем per-release ниже), .git, data/config,
+          # .github/tests. Живой /opt/gradesentinel не трогается — при обрыве
+          # rsync портится только staging, прод продолжает работать.
           sudo /usr/bin/rsync -a --delete \
             --exclude=venv --exclude=.git \
             --exclude=data --exclude=config \
             --exclude=.github --exclude=tests \
-            "${GITHUB_WORKSPACE}/" /opt/gradesentinel/
-          sudo /usr/bin/chown -R gradesentinel:gradesentinel /opt/gradesentinel
+            "${GITHUB_WORKSPACE}/" /opt/gradesentinel.new/
+          sudo /usr/bin/chown -R gradesentinel:gradesentinel /opt/gradesentinel.new
 
-      - name: Обновить venv (только если нужно)
+      - name: Stage — собрать per-release venv строго из requirements.lock
         run: |
-          # pip install быстрый если ничего не изменилось — кэш wheel'ов
-          sudo -u gradesentinel /opt/gradesentinel/venv/bin/pip install --upgrade pip
-          sudo -u gradesentinel /opt/gradesentinel/venv/bin/pip install -r /opt/gradesentinel/requirements.txt
+          # Свежий venv внутри релиза → релиз самодостаточен. Ставим из lock с
+          # проверкой хешей — в прод приезжает РОВНО проверенный CI набор (B18).
+          # (откат вернёт код и ровно те зависимости, что соответствуют коду).
+          sudo -u gradesentinel /usr/bin/python3.12 -m venv /opt/gradesentinel.new/venv
+          sudo -u gradesentinel /opt/gradesentinel.new/venv/bin/pip install --upgrade pip
+          sudo -u gradesentinel /opt/gradesentinel.new/venv/bin/pip install --require-hashes -r /opt/gradesentinel.new/requirements.lock
+
+      - name: Smoke — компиляция нового кода ДО переключения
+        run: |
+          # Ловим синтаксис/битые модули на новом коде+venv, пока прод ещё
+          # крутит старый релиз. Падение здесь = деплой красный, прод цел.
+          sudo -u gradesentinel /opt/gradesentinel.new/venv/bin/python -m compileall -q /opt/gradesentinel.new/src /opt/gradesentinel.new/webapp
+
+      - name: Switch — атомарно переключить релиз
+        run: |
+          # Освобождаем слот отката и свапаем каталоги (rename в пределах одной
+          # ФС атомарен). Окно «нет /opt/gradesentinel» между двумя mv —
+          # доли секунды, сервисы в этот момент ещё не рестартятся.
+          sudo /usr/bin/rm -rf /opt/gradesentinel.old
+          sudo /usr/bin/mv /opt/gradesentinel /opt/gradesentinel.old
+          sudo /usr/bin/mv /opt/gradesentinel.new /opt/gradesentinel
 
       - name: Обновить systemd-юниты и Caddyfile
         run: |
@@ -89,22 +141,37 @@ jobs:
           sudo /usr/bin/systemctl restart gradesentinel-bot.service
           sudo /usr/bin/systemctl restart gradesentinel-webapp.service
 
-      - name: Smoke check
+      - name: Smoke check + авто-откат при провале
         run: |
           # Дать сервисам секунд 8 на старт
           sleep 8
 
-          # is-active падает с non-zero если юнит не active → шаг падает → workflow красный
-          sudo /usr/bin/systemctl is-active gradesentinel-bot.service
-          sudo /usr/bin/systemctl is-active gradesentinel-webapp.service
+          ok=1
+          sudo /usr/bin/systemctl is-active gradesentinel-bot.service || ok=0
+          sudo /usr/bin/systemctl is-active gradesentinel-webapp.service || ok=0
 
-          # WebApp /health через локальный loopback — Caddy не нужен для этого теста
-          for i in 1 2 3 4 5; do
-            if curl -fsS http://127.0.0.1:8443/health > /dev/null; then
-              echo "WebApp /health OK"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "WebApp /health не отвечает после 10 секунд"
-          exit 1
+          if [ "$ok" = "1" ]; then
+            # WebApp /health через локальный loopback — Caddy не нужен для этого теста
+            health=0
+            for i in 1 2 3 4 5; do
+              if curl -fsS http://127.0.0.1:8443/health > /dev/null; then
+                health=1
+                break
+              fi
+              sleep 2
+            done
+            [ "$health" = "1" ] || ok=0
+          fi
+
+          if [ "$ok" != "1" ]; then
+            echo "Smoke провалился — откатываемся на предыдущий релиз (.old)"
+            # Возвращаем свап: битый релиз → .new, прошлый (.old) → живой.
+            sudo /usr/bin/mv /opt/gradesentinel /opt/gradesentinel.new
+            sudo /usr/bin/mv /opt/gradesentinel.old /opt/gradesentinel
+            sudo /usr/bin/systemctl restart gradesentinel-bot.service
+            sudo /usr/bin/systemctl restart gradesentinel-webapp.service
+            echo "Откат выполнен. Деплой помечаем красным."
+            exit 1
+          fi
+
+          echo "Deploy OK — WebApp /health отвечает, сервисы active"

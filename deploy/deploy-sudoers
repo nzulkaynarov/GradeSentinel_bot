@@ -21,11 +21,22 @@ deploy ALL=(root) NOPASSWD: /usr/bin/chmod 0640 /etc/gradesentinel/credentials.j
 deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/bot.env
 deploy ALL=(root) NOPASSWD: /usr/bin/chown root\:gradesentinel /etc/gradesentinel/credentials.json
 
-# Синхронизация кода в /opt/gradesentinel — exact match с deploy.yml.
+# ── Атомарный деплой (B19): stage(.new) → swap → .old для отката ──────────
+# Синхронизация кода в STAGING /opt/gradesentinel.new — exact match с deploy.yml.
 # Source path жёстко зафиксирован структурой actions-runner _work/<repo>/<repo>.
-# Destination /opt/gradesentinel/ не может быть изменён → нет privilege escalation.
-deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete --exclude=venv --exclude=.git --exclude=data --exclude=config --exclude=.github --exclude=tests /home/deploy/actions-runner/_work/GradeSentinel_bot/GradeSentinel_bot/ /opt/gradesentinel/
-deploy ALL=(root) NOPASSWD: /usr/bin/chown -R gradesentinel\:gradesentinel /opt/gradesentinel
+# Destination-пути фиксированы (.new/.old/live) → нет privilege escalation.
+deploy ALL=(root) NOPASSWD: /usr/bin/rm -rf /opt/gradesentinel.new
+deploy ALL=(root) NOPASSWD: /usr/bin/rsync -a --delete --exclude=venv --exclude=.git --exclude=data --exclude=config --exclude=.github --exclude=tests /home/deploy/actions-runner/_work/GradeSentinel_bot/GradeSentinel_bot/ /opt/gradesentinel.new/
+deploy ALL=(root) NOPASSWD: /usr/bin/chown -R gradesentinel\:gradesentinel /opt/gradesentinel.new
+
+# Атомарный свап каталогов (rename в пределах одной ФС) + освобождение слота отката.
+# Обе стороны свапа whitelisted, чтобы деплой мог и переключиться, и откатиться.
+deploy ALL=(root) NOPASSWD: /usr/bin/rm -rf /opt/gradesentinel.old
+deploy ALL=(root) NOPASSWD: /usr/bin/mv /opt/gradesentinel /opt/gradesentinel.old
+deploy ALL=(root) NOPASSWD: /usr/bin/mv /opt/gradesentinel.new /opt/gradesentinel
+# Откат: битый релиз → .new, прошлый (.old) → живой.
+deploy ALL=(root) NOPASSWD: /usr/bin/mv /opt/gradesentinel /opt/gradesentinel.new
+deploy ALL=(root) NOPASSWD: /usr/bin/mv /opt/gradesentinel.old /opt/gradesentinel
 
 # Установка systemd-юнитов (после rsync они могли обновиться)
 deploy ALL=(root) NOPASSWD: /usr/bin/install -m 0644 /opt/gradesentinel/deploy/gradesentinel-bot.service /etc/systemd/system/gradesentinel-bot.service
@@ -47,9 +58,13 @@ deploy ALL=(root) NOPASSWD: /usr/bin/systemctl enable gradesentinel-heartbeat.ti
 deploy ALL=(root) NOPASSWD: /usr/bin/systemctl is-active gradesentinel-bot.service
 deploy ALL=(root) NOPASSWD: /usr/bin/systemctl is-active gradesentinel-webapp.service
 
-# Запуск pip в venv от юзера gradesentinel (для установки/обновления зависимостей)
-deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel/venv/bin/pip install --upgrade pip
-deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel/venv/bin/pip install -r /opt/gradesentinel/requirements.txt
+# Per-release venv в STAGING от юзера gradesentinel. Собираем свежий venv в
+# .new, ставим строго из lock с проверкой хешей, затем smoke-компиляция —
+# всё ДО атомарного свапа, живой релиз не трогается.
+deploy ALL=(gradesentinel) NOPASSWD: /usr/bin/python3.12 -m venv /opt/gradesentinel.new/venv
+deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel.new/venv/bin/pip install --upgrade pip
+deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel.new/venv/bin/pip install --require-hashes -r /opt/gradesentinel.new/requirements.lock
+deploy ALL=(gradesentinel) NOPASSWD: /opt/gradesentinel.new/venv/bin/python -m compileall -q /opt/gradesentinel.new/src /opt/gradesentinel.new/webapp
 
 # Валидация Caddyfile до reload
 deploy ALL=(root) NOPASSWD: /usr/bin/caddy validate --config /etc/caddy/Caddyfile

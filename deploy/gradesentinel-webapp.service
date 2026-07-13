@@ -12,7 +12,8 @@ User=gradesentinel
 Group=gradesentinel
 WorkingDirectory=/opt/gradesentinel
 EnvironmentFile=/etc/gradesentinel/bot.env
-Environment="DATABASE_PATH=/var/lib/gradesentinel/sentinel.db"
+# БД — PostgreSQL на DB-VPS, DSN приходит из bot.env (DATABASE_URL).
+# Вестигиальный DATABASE_PATH (SQLite) удалён — код его не читает.
 Environment="GOOGLE_CREDENTIALS_PATH=/etc/gradesentinel/credentials.json"
 Environment="WEBAPP_PORT=8443"
 Environment="WEBAPP_HOST=127.0.0.1"
@@ -21,7 +22,13 @@ Environment="PYTHONPATH=/opt/gradesentinel"
 # 2 worker x 4 threads = 8 одновременных запросов на 2 vCPU VPS.
 # --timeout 30 — для медленных Anthropic вызовов в будущем (сейчас не используется в webapp).
 # --access-logfile - выключаем (Caddy уже логирует), --error-logfile — в stderr (journalctl).
-ExecStart=/opt/gradesentinel/venv/bin/gunicorn \
+#
+# Запуск через `python -m gunicorn.app.wsgiapp`, НЕ через console-script
+# /opt/gradesentinel/venv/bin/gunicorn: атомарный деплой собирает venv в
+# /opt/gradesentinel.new/venv и делает mv в live, из-за чего shebang
+# console-скрипта указывал бы на несуществующий .new-путь. Бинарь python в
+# venv — симлинк на системный интерпретатор, поэтому `python -m` переживает mv.
+ExecStart=/opt/gradesentinel/venv/bin/python -m gunicorn.app.wsgiapp \
     --bind 127.0.0.1:8443 \
     --workers 2 \
     --threads 4 \
@@ -40,7 +47,8 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-# WebApp пишет в БД через тот же sqlite (init_db создаёт схему если нет).
+# ReadWritePaths нужен для .heartbeat/локальных файлов в /var/lib. БД — внешний
+# PostgreSQL (DATABASE_URL), init_db прогоняет alembic upgrade на старте.
 ReadWritePaths=/var/lib/gradesentinel
 ProtectKernelTunables=true
 ProtectKernelModules=true

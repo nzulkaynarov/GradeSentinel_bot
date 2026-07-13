@@ -11,6 +11,7 @@ GradeSentinel WebApp — Telegram Mini App для родителей.
 
 import os
 import sys
+import time
 import hmac
 import hashlib
 import json
@@ -71,6 +72,12 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
+# S2: TTL свежести initData. Валидный HMAC вечен, поэтому утёкшая ссылка на
+# дашборд без TTL = бессрочный доступ к детской PII. Telegram кладёт auth_date
+# (unix ts) в initData; принимаем подпись не старше суток.
+INIT_DATA_MAX_AGE = 24 * 60 * 60          # 24 часа
+INIT_DATA_CLOCK_SKEW = 5 * 60             # допуск на рассинхрон часов (5 мин в будущее)
+
 
 # ════════════════════════════════════════════════════════════
 #  AUTH
@@ -103,6 +110,21 @@ def validate_init_data(init_data: str) -> dict:
 
     if computed_hash != check_hash:
         raise ValueError("Invalid hash")
+
+    # S2: подпись верна — теперь проверяем свежесть auth_date (replay-защита).
+    auth_date_raw = parsed.get("auth_date", [None])[0]
+    if not auth_date_raw:
+        raise ValueError("No auth_date in initData")
+    try:
+        auth_date = int(auth_date_raw)
+    except (ValueError, TypeError):
+        raise ValueError("Invalid auth_date")
+    age = time.time() - auth_date
+    if age > INIT_DATA_MAX_AGE:
+        raise ValueError("initData expired")
+    if age < -INIT_DATA_CLOCK_SKEW:
+        # auth_date заметно в будущем — подделка/битые часы клиента.
+        raise ValueError("auth_date in future")
 
     user_json = parsed.get("user", [None])[0]
     if user_json:
