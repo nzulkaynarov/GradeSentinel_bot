@@ -77,6 +77,10 @@ def _run_cycle(sheet_data):
         for tg in tg_ids:
             msg = message[tg] if isinstance(message, dict) else message
             sent.append({'tg_id': tg, 'msg': msg})
+        # PR-F1: send_notification теперь возвращает bool «доставлено». Мок должен
+        # его честно отдать — иначе monitor не проставит notified_at и sweeper
+        # на следующем цикле дошлёт оценку повторно.
+        return True
 
     with patch('src.monitor_engine.get_sheet_data', return_value=sheet_data), \
          patch('src.monitor_engine.get_spreadsheet_title', return_value="Kid Display"), \
@@ -328,9 +332,11 @@ def test_monitor_skips_grade_already_written_by_history_importer(setup_student, 
     from datetime import datetime, timedelta, timezone
     tashkent_today = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
 
-    # Эмулируем history_importer: оценка уже в БД с cell_reference из «Все оценки!»
+    # Эмулируем history_importer: оценка уже в БД с cell_reference из «Все оценки!».
+    # notify_pending=False → строка «доставлена» (importer не шлёт уведомлений и
+    # не кладёт в outbox), иначе sweeper дошлёт её как «повисшую».
     dbm.add_grade(info['student_id'], "Алгебра", 4.0, "4", "Все оценки!JC7",
-                  grade_date=tashkent_today)
+                  grade_date=tashkent_today, notify_pending=False)
 
     # Monitor читает «Сегодня!» и видит ту же оценку
     sent_1 = _run_cycle(_make_sheet({"Алгебра": "4"}))

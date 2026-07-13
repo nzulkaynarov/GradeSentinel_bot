@@ -11,7 +11,8 @@ from src.database_manager import (
     update_student_display_name, queue_notification, get_user_lang,
     get_existing_grade_by_content, update_grade_by_content,
     get_active_spreadsheets_with_subscription,
-    upsert_quarter_grade, get_db_connection, get_notify_mode
+    upsert_quarter_grade, get_db_connection, get_notify_mode,
+    mark_grade_notified_by_content, mark_grade_notified, get_unnotified_grades,
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade, sanitize_cell
@@ -130,7 +131,7 @@ def _make_grade_inline_keyboard(student_id: int, lang: str = 'ru') -> types.Inli
     return markup
 
 def send_notification(telegram_ids, message, inline_markup=None, force=False,
-                      ntype=None):
+                      ntype=None) -> bool:
     """Backward-compat обёртка над unified Sender.
 
     Отправляет уведомление. В тихие часы (22:00-07:00) копит в очередь.
@@ -140,6 +141,11 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False,
 
     ntype: NotificationType (default GRADE_INSTANT). Для quarter передавать
     QUARTER_GRADE — это влияет на structured-логи и quiet hours policy.
+
+    Возвращает True, если ВСЕ адресаты получили доставку (отправлено, поставлено
+    в очередь тихих часов или пропущено по summary_only — всё это «доставлено, не
+    повисло»). False, если хоть один адресат зафейлился или Sender не готов —
+    outbox (notified_at) тогда не проставляется и sweeper дошлёт позже.
     """
     from src.notifications import get_sender, NotificationType
     try:
@@ -148,14 +154,17 @@ def send_notification(telegram_ids, message, inline_markup=None, force=False,
         logger.warning("Sender not initialized. Falling back to log placeholder.")
         for tg_id in telegram_ids:
             logger.info(f"[PLACEHOLDER -> {tg_id}]")
-        return
+        return False
 
     nt = ntype or NotificationType.GRADE_INSTANT
 
+    all_delivered = True
     for tg_id in telegram_ids:
         msg_text = message[tg_id] if isinstance(message, dict) else message
         kb = inline_markup[tg_id] if isinstance(inline_markup, dict) else inline_markup
-        sender.send(tg_id, msg_text, ntype=nt, kb=kb, force=force)
+        ok = sender.send(tg_id, msg_text, ntype=nt, kb=kb, force=force)
+        all_delivered = all_delivered and bool(ok)
+    return all_delivered
 
 
 def _send_to_groups_for_student(student_id: int, message, inline_markup, parent_tg_ids):
@@ -291,6 +300,119 @@ def _fetch_student_sheet(student: dict, range_name: str) -> "_FetchResult":
     return _FetchResult(student, data, display_name, persist_display_name)
 
 
+def _format_grade_message(meta: dict, grades: list, student_id: int, lang: str) -> str:
+    """Форматирует уведомление об оценках ученика: детальное для одной оценки,
+    батч-сообщение для нескольких. Общий код для основного пути и sweeper'а."""
+    if len(grades) == 1:
+        g = grades[0]
+        if g['change_type'] == 'changed':
+            return format_grade_change_notification(
+                meta['display_name'], g['subject'], g['old_text'], g['clean_text'],
+                g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
+            )
+        return format_grade_notification(
+            meta['display_name'], g['subject'], g['clean_text'],
+            g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
+        )
+    return format_batched_notification(
+        meta['display_name'], grades, meta['spreadsheet_id'], student_id, lang=lang
+    )
+
+
+def _dispatch_student_notifications(student_id: int, meta: dict,
+                                    parent_grades: dict) -> bool:
+    """Шлёт собранные за студента оценки родителям и в семейные групповые чаты.
+
+    Возвращает True, если ВСЕ личные уведомления доставлены (отправлены /
+    поставлены в очередь тихих часов / пропущены по summary_only) — тогда caller
+    проставит notified_at. Групповая отправка best-effort (личное уведомление —
+    первично; группа уважает свою персистентную очередь) и на результат не влияет.
+
+    parent_grades пуст (у ученика нет родителей) → доставлять некому, ничего не
+    «повисло» → True (иначе sweeper крутил бы такую оценку вечно)."""
+    if not parent_grades:
+        return True
+
+    all_delivered = True
+    for tg_id, grades in parent_grades.items():
+        lang = get_user_lang(tg_id)
+        msg = _format_grade_message(meta, grades, student_id, lang)
+        kb = _make_grade_inline_keyboard(student_id, lang)
+        ok = send_notification([tg_id], {tg_id: msg}, inline_markup={tg_id: kb})
+        all_delivered = all_delivered and ok
+
+    # Групповые чаты — один проход на ученика (представительный родитель для
+    # языка/клавиатуры), чтобы группа не получила N копий по числу родителей.
+    rep_tg_id = next(iter(parent_grades))
+    lang = get_user_lang(rep_tg_id)
+    msg = _format_grade_message(meta, parent_grades[rep_tg_id], student_id, lang)
+    kb = _make_grade_inline_keyboard(student_id, lang)
+    _send_to_groups_for_student(student_id, msg, kb, parent_tg_ids=[rep_tg_id])
+
+    return all_delivered
+
+
+def _sweep_unnotified_grades():
+    """Outbox sweeper (PR-F1): дошлёт оценки, чьи уведомления не ушли в прошлых
+    циклах (крах между записью в БД и отправкой). Вызывается ПЕРВЫМ в цикле.
+
+    Читает строки с `notified_at IS NULL`, группирует по ученику, шлёт одним
+    батч-сообщением на родителя и помечает доставленные (`mark_grade_notified`).
+    Не ушедшее (send failed) остаётся notified_at IS NULL → следующий цикл.
+
+    Recovery-путь форматирует всё как 'new' (old_text недоступен после факта) —
+    родитель увидит текущее значение ячейки; это приемлемо для добивки."""
+    try:
+        rows = get_unnotified_grades()
+    except Exception as e:
+        logger.error(f"Outbox sweep: failed to fetch unnotified grades: {e}")
+        return
+    if not rows:
+        return
+
+    logger.info(f"Outbox sweep: {len(rows)} unnotified grade(s) to resend.")
+
+    by_student = defaultdict(list)
+    for r in rows:
+        by_student[r['student_id']].append(r)
+
+    for student_id, grade_rows in by_student.items():
+        first = grade_rows[0]
+        meta = {
+            'display_name': first['display_name'] or first['fio'],
+            'spreadsheet_id': first['spreadsheet_id'],
+        }
+        grade_entries = [{
+            'subject': r['subject'],
+            'clean_text': r['raw_text'],
+            'grade_value': r['grade_value'],
+            'change_type': 'new',
+            'old_text': None,
+        } for r in grade_rows]
+
+        try:
+            parents_ids = get_parents_for_student(student_id)
+        except Exception as e:
+            logger.warning(f"Outbox sweep: get_parents failed (student={student_id}): {e}")
+            continue
+
+        parent_grades = {tg_id: grade_entries for tg_id in parents_ids}
+        try:
+            delivered = _dispatch_student_notifications(student_id, meta, parent_grades)
+        except Exception as e:
+            logger.warning(f"Outbox sweep: dispatch failed (student={student_id}): {e}")
+            continue
+
+        if delivered:
+            for r in grade_rows:
+                try:
+                    mark_grade_notified(r['id'])
+                except Exception as e:
+                    logger.warning(
+                        f"Outbox sweep: mark_grade_notified failed (id={r['id']}): {e}"
+                    )
+
+
 def check_for_new_grades():
     if not _polling_lock.acquire(blocking=False):
         logger.warning("Previous polling cycle still running, skipping this iteration")
@@ -317,8 +439,12 @@ def _check_for_new_grades_impl():
     # колонку для сегодняшней даты через _parse_master_sheet_for_date.
     from src.history_importer import MASTER_SHEET_RANGE, _parse_master_sheet_for_date
 
-    # Smart Batching: собираем все оценки за цикл, отправляем сгруппированно
-    batch = defaultdict(list)
+    # Outbox sweeper (PR-F1): добить уведомления, не ушедшие в прошлых циклах
+    # из-за краха между записью оценки и отправкой. Идёт ПЕРВЫМ под _polling_lock
+    # — текущий цикл ещё ничего не записал, поэтому в outbox только реально
+    # «повисшие» строки прошлых циклов (нет гонки с записью этого цикла).
+    _sweep_unnotified_grades()
+
     # Метаданные для каждого студента
     student_meta = {}  # student_id -> {display_name, spreadsheet_id}
 
@@ -377,6 +503,12 @@ def _check_for_new_grades_impl():
         if not today_grades_pairs:
             continue
 
+        # Собираем уведомления ЭТОГО студента (ключ — tg_id родителя) и список
+        # записанных за цикл оценок. Отправка идёт сразу после цикла по предметам
+        # (не откладываем на конец обработки всех студентов) — см. dispatch ниже.
+        parent_grades = defaultdict(list)
+        written_keys = []  # [(subject, grade_date)] — записали, шлём уведомление
+
         for subject, raw_grade in today_grades_pairs:
             if not raw_grade:
                 continue
@@ -432,9 +564,11 @@ def _check_for_new_grades_impl():
 
             # Подтверждено — пишем в БД.
             # grade_date = tashkent_today: дата оценки по факту.
+            # notified_at сбрасывается в NULL (outbox) — проставим после доставки.
             if existing:
                 update_grade_by_content(student_id, subject, tashkent_today,
-                                        new_grade_value, new_clean_text)
+                                        new_grade_value, new_clean_text,
+                                        mark_unnotified=True)
                 logger.info(
                     f"[GRADE CHANGED] {display_name}: {subject} "
                     f"'{old_clean_text}' -> '{new_clean_text}' (added: {[t for _, t in added]})"
@@ -449,84 +583,40 @@ def _check_for_new_grades_impl():
             added_nums = [g for g, _ in added if g is not None]
             emo_grade_value = (sum(added_nums) / len(added_nums)) if added_nums else None
 
-            parents_ids = get_parents_for_student(student_id)
-            for tg_id in parents_ids:
-                if old_clean_text:
-                    # «2» → «2/5»: показываем переход полной ячейки
-                    batch[(tg_id, student_id)].append({
-                        'subject': subject,
-                        'clean_text': new_clean_text,
-                        'grade_value': emo_grade_value,
-                        'change_type': 'changed',
-                        'old_text': old_clean_text,
-                    })
-                else:
-                    # «» → «2/5»: новая запись, отображаем полную ячейку
-                    batch[(tg_id, student_id)].append({
-                        'subject': subject,
-                        'clean_text': new_clean_text,
-                        'grade_value': emo_grade_value,
-                        'change_type': 'new',
-                        'old_text': None,
-                    })
+            # Оценка записана и по ней пойдёт уведомление → регистрируем ключ для
+            # outbox. notified_at проставим ТОЛЬКО после подтверждённой доставки.
+            written_keys.append((subject, tashkent_today))
 
-    # Отправляем собранные уведомления
-    for (tg_id, student_id), grades in batch.items():
-        meta = student_meta[student_id]
-        lang = get_user_lang(tg_id)
+            grade_entry = {
+                'subject': subject,
+                'clean_text': new_clean_text,
+                'grade_value': emo_grade_value,
+                # «2» → «2/5»: показываем переход; «» → «2/5»: новая запись.
+                'change_type': 'changed' if old_clean_text else 'new',
+                'old_text': old_clean_text if old_clean_text else None,
+            }
+            for tg_id in get_parents_for_student(student_id):
+                parent_grades[tg_id].append(grade_entry)
 
-        if len(grades) == 1:
-            # Одна оценка — детальное уведомление (как раньше)
-            g = grades[0]
-            if g['change_type'] == 'changed':
-                msg = format_grade_change_notification(
-                    meta['display_name'], g['subject'], g['old_text'], g['clean_text'],
-                    g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
-                )
-            else:
-                msg = format_grade_notification(
-                    meta['display_name'], g['subject'], g['clean_text'],
-                    g['grade_value'], meta['spreadsheet_id'], student_id, lang=lang
-                )
-        else:
-            # 2+ оценок — батч-сообщение
-            msg = format_batched_notification(
-                meta['display_name'], grades,
-                meta['spreadsheet_id'], student_id, lang=lang
+        # ── Отправка ПО ЭТОМУ студенту сразу (PR-F1 outbox) ──────────────
+        # Раньше все уведомления копились в глобальный batch и слались двумя
+        # проходами в конце цикла всех студентов → exception в фазе отправки
+        # терял уведомления навсегда (оценки уже в БД, diff на след. цикле пуст).
+        # Теперь шлём здесь и проставляем notified_at только на доставленное;
+        # «повисшее» добьёт sweeper на следующем цикле.
+        if written_keys:
+            delivered = _dispatch_student_notifications(
+                student_id, student_meta[student_id], parent_grades
             )
-
-        kb = _make_grade_inline_keyboard(student_id, lang)
-        send_notification([tg_id], {tg_id: msg}, inline_markup={tg_id: kb})
-
-    # Рассылка в семейные групповые чаты — отдельным проходом по уникальным
-    # студентам, чтобы группа не получила N копий одного уведомления (по числу
-    # родителей). Берём представительного родителя для языка/клавиатуры.
-    seen_students = {}
-    for (tg_id, sid), grades in batch.items():
-        if sid not in seen_students:
-            seen_students[sid] = (tg_id, grades)
-    for sid, (rep_tg_id, grades) in seen_students.items():
-        meta = student_meta[sid]
-        lang = get_user_lang(rep_tg_id)
-        if len(grades) == 1:
-            g = grades[0]
-            if g['change_type'] == 'changed':
-                msg = format_grade_change_notification(
-                    meta['display_name'], g['subject'], g['old_text'], g['clean_text'],
-                    g['grade_value'], meta['spreadsheet_id'], sid, lang=lang
-                )
-            else:
-                msg = format_grade_notification(
-                    meta['display_name'], g['subject'], g['clean_text'],
-                    g['grade_value'], meta['spreadsheet_id'], sid, lang=lang
-                )
-        else:
-            msg = format_batched_notification(
-                meta['display_name'], grades,
-                meta['spreadsheet_id'], sid, lang=lang
-            )
-        kb = _make_grade_inline_keyboard(sid, lang)
-        _send_to_groups_for_student(sid, msg, kb, parent_tg_ids=[rep_tg_id])
+            if delivered:
+                for subj, gdate in written_keys:
+                    try:
+                        mark_grade_notified_by_content(student_id, subj, gdate)
+                    except Exception as e:
+                        logger.warning(
+                            f"mark_grade_notified failed (student={student_id}, "
+                            f"subject={subj}): {e}"
+                        )
 
 SKIP_SUBJECTS = {'посещаемость', '0', ''}
 
