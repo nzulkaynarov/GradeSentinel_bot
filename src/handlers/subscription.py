@@ -18,6 +18,7 @@ from src.database_manager import (
 from src.db.connection import UniqueViolation, get_db_connection
 from src.i18n import t
 from src.utils import to_date_str
+from src.rate_limiter import is_rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -918,6 +919,13 @@ def _process_promo_code(message):
     from src.database_manager import clear_user_state
     user_id = message.chat.id
     lang = get_user_lang(user_id)
+
+    # S3: троттлинг ввода промокода — защита от перебора кодов.
+    # Состояние НЕ чистим, чтобы юзер мог повторить после паузы.
+    if is_rate_limited(user_id):
+        send_content(user_id, t("rate_limited", lang))
+        return
+
     code = message.text.strip() if message.text else ""
     clear_user_state(user_id)
 
@@ -973,11 +981,27 @@ def _process_promo_code(message):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('sub_promo_apply_'))
 def callback_promo_apply(call):
     """Применение промокода к семье."""
+    # callback_data: sub_promo_apply_{family_id}_{code}. Код может содержать
+    # '_' → берём family_id из parts[3], а код — остаток после 4-го '_'.
     parts = call.data.split('_')
-    family_id = int(parts[3])
-    code = parts[4]
+    if len(parts) < 5:
+        bot.answer_callback_query(call.id)
+        return
+    try:
+        family_id = int(parts[3])
+    except ValueError:
+        bot.answer_callback_query(call.id)
+        return
+    code = '_'.join(parts[4:])
     user_id = call.from_user.id
     lang = get_user_lang(user_id)
+
+    # S1 (IDOR): тот же гейт, что у платёжных путей sub_pay_/sub_fam_.
+    # Без него crafted callback продлевал чужую подписку и жёг max_uses промо.
+    # _check_user_can_pay_for_family сам отвечает alert'ом при отказе.
+    if not _check_user_can_pay_for_family(call, family_id):
+        return
+
     bot.answer_callback_query(call.id)
     _apply_promo_to_family(user_id, family_id, get_promo_code(code), lang)
 
@@ -991,6 +1015,17 @@ def _apply_promo_to_family(user_id: int, family_id: int, promo: dict, lang: str)
     двойное начисление. Всё в ОДНОЙ транзакции — при сбое откатывается и слот."""
     if not promo:
         send_content(user_id, t("sub_promo_invalid", lang))
+        return
+
+    # S1 (IDOR) defense-in-depth: даже если сюда попали в обход callback-гейта,
+    # применить промо можно только к своей семье (или админом). Оба вызова
+    # выше уже проверены, но эта функция трогает деньги — гейт обязателен.
+    from src.db.auth import is_member_of_family, get_parent_role
+    if get_parent_role(user_id) != 'admin' and not is_member_of_family(user_id, family_id):
+        logger.warning(
+            f"Blocked promo IDOR: user={user_id} not member of family={family_id}"
+        )
+        send_content(user_id, t("admin_no_access", lang))
         return
 
     months = promo['free_months']

@@ -192,7 +192,10 @@ def test_successful_payment_stars_refund_on_bad_payload(temp_db, sub_mod):
 
 def test_promo_applied_exactly_once(temp_db, sub_mod):
     fam = _make_family()
-    _make_parent("998900010006", 700006)
+    parent_id = _make_parent("998900010006", 700006)
+    # PR-C: _apply_promo_to_family теперь имеет IDOR-гейт (член семьи/админ).
+    # В проде юзер сюда попадает только для СВОЕЙ семьи — линкуем как в реальности.
+    dbm.link_parent_to_family(fam, parent_id)
     dbm.create_promo_code("GIFT2", "monthly", free_months=2, max_uses=1)
     promo = dbm.get_promo_code("GIFT2")
 

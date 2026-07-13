@@ -126,6 +126,14 @@ def send_welcome(message):
 
     # Проверяем deep link (инвайт)
     args = message.text.split(maxsplit=1)
+
+    # S3: троттлинг deeplink-диспатча (inv_/ai_) — защита от перебора
+    # инвайт-кодов и спама AI-чатом через /start <payload>.
+    if len(args) > 1 and (args[1].startswith('inv_') or args[1].startswith('ai_')):
+        if is_rate_limited(user_id):
+            bot.send_message(user_id, t("rate_limited", lang))
+            return
+
     if len(args) > 1 and args[1].startswith('inv_'):
         invite_code = args[1][4:]
         from src.handlers.invite import handle_invite_deeplink
