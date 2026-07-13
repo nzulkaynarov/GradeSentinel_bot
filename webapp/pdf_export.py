@@ -25,7 +25,16 @@ from reportlab.platypus import (
     KeepTogether, PageBreak,
 )
 
+from src.utils import to_date_str
+
 logger = logging.getLogger(__name__)
+
+
+def _grade_date_str(g: Dict[str, Any]) -> str:
+    """'YYYY-MM-DD' для оценки: grade_date (date-объект из PG) либо fallback
+    date_added (datetime). Всегда строка — чтобы не смешивать date/str типы
+    при сортировке и рендере ячеек reportlab (пост-миграция sqlite→PG)."""
+    return to_date_str(g.get('grade_date') or g.get('date_added'))
 
 # Кандидаты на шрифт с кириллической поддержкой. Ubuntu base ставит DejaVu
 # через fonts-dejavu (пакет в зависимостях reportlab под Debian не входит,
@@ -362,7 +371,7 @@ def _recent_table(grades: List[Dict[str, Any]], lang: str,
     ]
     rows = [header]
     for g in grades[:max_rows]:
-        date_str = g.get('grade_date') or (g.get('date_added') or '')[:10]
+        date_str = _grade_date_str(g)
         rows.append([
             date_str,
             g.get('subject', '?'),
@@ -455,11 +464,10 @@ def _full_history_table(grades: List[Dict[str, Any]], lang: str,
         _localize('col_grade', lang),
     ]
     # ASC по дате — для чтения сверху-вниз как timeline
-    sorted_grades = sorted(grades, key=lambda g: g.get('grade_date') or
-                            (g.get('date_added') or '')[:10])
+    sorted_grades = sorted(grades, key=_grade_date_str)
     rows = [header]
     for g in sorted_grades:
-        date_str = g.get('grade_date') or (g.get('date_added') or '')[:10]
+        date_str = _grade_date_str(g)
         rows.append([
             date_str,
             g.get('subject', '?'),
