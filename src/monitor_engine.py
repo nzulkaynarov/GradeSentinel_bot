@@ -3,7 +3,7 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, namedtuple
 from typing import List, Optional, Tuple
 from telebot import types
 from src.database_manager import (
@@ -246,14 +246,32 @@ def _record_student_success(student_id: int):
         _student_failure_counts.pop(student_id, None)
 
 
-def _fetch_student_sheet(student: dict, range_name: str):
-    """Worker: загружает данные таблицы одного ученика. Возвращает (student, data, display_name).
-    Гарантирует что одна сломанная таблица не валит весь цикл — все исключения ловятся."""
+# Результат fetch-воркера. `persist_display_name` — флаг «display_name был
+# вычислен из заголовка таблицы, его нужно записать в БД». Запись и учёт
+# success/failure выполняются в ПОСЛЕДОВАТЕЛЬНОЙ фазе (см. _fetch_student_sheet).
+_FetchResult = namedtuple(
+    "_FetchResult", ["student", "data", "display_name", "persist_display_name"]
+)
+
+
+def _fetch_student_sheet(student: dict, range_name: str) -> "_FetchResult":
+    """Worker: ТОЛЬКО сетевые операции (Google Sheets), БЕЗ обращений к БД.
+
+    Крутится внутри ThreadPoolExecutor(FETCH_WORKERS=8). Раньше воркер писал в БД
+    (update_student_display_name, _record_student_failure) → 8 параллельных потоков
+    брали соединения из пула (DB_POOL_MAX=5) одновременно с main-хендлерами /
+    scheduler'ом / heartbeat'ом → риск PoolTimeout (B12). Теперь все DB-операции
+    вынесены в последовательную фазу после as_completed — воркеры только сеть.
+
+    Возвращает _FetchResult; ошибки чтения ловятся здесь (одна сломанная таблица
+    не валит цикл), но реакция на них (failure-счётчик) — уже в вызывающем коде.
+    """
     student_id = student['student_id']
     fio = student['fio']
     spreadsheet_id = student['spreadsheet_id']
 
     display_name = student.get('display_name')
+    persist_display_name = False
     if not display_name:
         try:
             sheet_title = get_spreadsheet_title(spreadsheet_id)
@@ -261,24 +279,16 @@ def _fetch_student_sheet(student: dict, range_name: str):
             logger.error(f"Title fetch failed for student {student_id}: {e}")
             sheet_title = None
         display_name = clean_student_name(sheet_title) if sheet_title else fio
-        try:
-            update_student_display_name(student_id, display_name)
-        except Exception as e:
-            logger.error(f"Failed to update display_name for {student_id}: {e}")
+        # Запишем в БД в последовательной фазе (не из воркера).
+        persist_display_name = True
 
     try:
         data = get_sheet_data(spreadsheet_id, range_name)
     except Exception as e:
         logger.error(f"Unexpected error fetching data for {display_name} (id={student_id}): {e}")
-        _record_student_failure(student_id, display_name)
-        return student, None, display_name
+        return _FetchResult(student, None, display_name, persist_display_name)
 
-    if data is None:
-        _record_student_failure(student_id, display_name)
-    else:
-        _record_student_success(student_id)
-
-    return student, data, display_name
+    return _FetchResult(student, data, display_name, persist_display_name)
 
 
 def check_for_new_grades():
@@ -328,17 +338,34 @@ def _check_for_new_grades_impl():
     tashkent_today_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
     tashkent_today = tashkent_today_date.isoformat()
 
-    # Дальнейшая обработка — последовательная (все DB-операции)
-    for student, data, display_name in fetched:
+    # Дальнейшая обработка — последовательная (все DB-операции). Сюда же вынесены
+    # запись display_name и учёт success/failure: раньше они шли внутри
+    # fetch-воркеров (8 потоков) → конкуренция за пул БД (B12). Теперь БД трогает
+    # только этот единственный (monitor) поток → пул не истощается, а мутация
+    # _student_failure_counts перестала быть многопоточной (бонус к thread-safety).
+    for result in fetched:
+        student = result.student
+        data = result.data
+        display_name = result.display_name
         student_id = student['student_id']
         fio = student['fio']
         spreadsheet_id = student['spreadsheet_id']
 
+        # display_name, вычисленный воркером из заголовка таблицы, записываем тут.
+        if result.persist_display_name:
+            try:
+                update_student_display_name(student_id, display_name)
+            except Exception as e:
+                logger.error(f"Failed to update display_name for {student_id}: {e}")
+
         student_meta[student_id] = {'display_name': display_name, 'spreadsheet_id': spreadsheet_id}
 
         if data is None:
+            _record_student_failure(student_id, display_name)
             logger.warning(f"Data fetch returned None for {display_name}. Skipping this cycle.")
             continue
+
+        _record_student_success(student_id)
 
         logger.info(f"Processing sheet for student: {display_name} (ID: {student_id})")
 
