@@ -317,6 +317,8 @@ from src.db.families import (  # noqa: E402, F401
     is_student_under_active_subscription,
     add_family,
     add_student,
+    get_student_academic_year,
+    set_student_academic_year,
     update_student_display_name,
     update_student_spreadsheet,
     set_family_head,

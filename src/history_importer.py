@@ -40,6 +40,64 @@ def _tashkent_today_date():
     подтверждением (race из инцидента 13.05.2026)."""
     return _tashkent_now().date()
 
+
+# ─── Учебный год ─────────────────────────────────────────────────────
+# Учебный год идентифицируется годом его НАЧАЛА: 2025 = 2025/26.
+# Даты в шапке листов без года («2 сентября»), поэтому год берётся из
+# `students.academic_year` (RFC 2026-09-02), а не от текущей даты. Иначе в
+# сентябре прошлогодняя таблица даёт колонку «2 сентября» = сегодня → монитор
+# рассылает прошлогодние оценки как новые (инцидент 2026-09-02).
+
+ACADEMIC_YEAR_START_MONTH = 9
+# Месяцы «весеннего» полугодия, в которых бывают оценки: январь–май (в июне
+# уже каникулы). Колонка с оценкой в этих месяцах = лист охватывает весну.
+_SPRING_MONTHS = frozenset(range(1, 7))
+# С августа новая ссылка на таблицу — уже про предстоящий учебный год.
+_LINK_NEXT_YEAR_FROM_MONTH = 8
+
+
+def current_academic_year(today=None) -> int:
+    """Учебный год (год начала), в который попадает дата `today` (по Ташкенту).
+    Сентябрь–декабрь → year, январь–август → year-1."""
+    if today is None:
+        today = _tashkent_today_date()
+    return today.year if today.month >= ACADEMIC_YEAR_START_MONTH else today.year - 1
+
+
+def year_for_month(month: int, academic_year: int) -> int:
+    """Календарный год для месяца `month` внутри учебного года `academic_year`."""
+    return academic_year if month >= ACADEMIC_YEAR_START_MONTH else academic_year + 1
+
+
+def infer_sheet_academic_year(grade_months, today=None) -> int:
+    """Выводит учебный год таблицы по месяцам колонок, в которых ЕСТЬ оценки.
+
+    Шапка нового листа может быть заполнена датами на весь год вперёд, поэтому
+    смотрим только на колонки с оценками:
+      • есть оценки в январе–июне → лист охватывает весну → это учебный год,
+        закончившийся (или идущий) весной текущего календарного года: year-1;
+      • иначе (только осенние оценки или пусто) → с августа считаем таблицу
+        предстоящим учебным годом (year), до августа — текущим (year-1).
+    """
+    if today is None:
+        today = _tashkent_today_date()
+    months = set(grade_months)
+    if months & _SPRING_MONTHS:
+        return today.year - 1
+    if today.month >= _LINK_NEXT_YEAR_FROM_MONTH:
+        return today.year
+    return today.year - 1
+
+
+def is_sheet_stale(academic_year: Optional[int], today=None) -> bool:
+    """True если таблица относится к ПРОШЛОМУ учебному году (её больше не надо
+    опрашивать — школа выдала новую ссылку). NULL = год ещё не определён →
+    не считаем устаревшей."""
+    if academic_year is None:
+        return False
+    return academic_year < current_academic_year(today)
+
+
 # Маппинг русских названий месяцев (полные формы + распространённые сокращения).
 # ВАЖНО: префиксы должны быть УНИКАЛЬНЫМИ — иначе 'март'.startswith('м') матчит
 # короткое 'м' и парсит «мая» как март (реальный баг найден в листе «Неделя»
@@ -58,15 +116,8 @@ MONTH_MAP = {
 SKIP_SUBJECTS = {'посещаемость', '0', ''}
 
 
-def _parse_russian_date(date_str: str, now: Optional[datetime] = None) -> Optional[datetime]:
-    """
-    Парсит русскую дату вида '2 сентября', '14 март Сб', '1 октября' и т.д.
-    Возвращает datetime или None.
-
-    `now` — «сейчас» для определения учебного года (default: сейчас по Ташкенту,
-    UTC+5). Параметр нужен для тестируемости границ учебного года и чтобы год
-    считался по Ташкенту, а не по локальному/UTC времени сервера (см. _tashkent_now).
-    """
+def _parse_russian_day_month(date_str: str) -> Optional[Tuple[int, int]]:
+    """Парсит «2 сентября» / «14 март Сб» → (day, month) без года. None если не дата."""
     if not date_str:
         return None
 
@@ -93,21 +144,37 @@ def _parse_russian_date(date_str: str, now: Optional[datetime] = None) -> Option
 
     if month is None:
         return None
+    return day, month
 
-    # Определяем год по учебному году
-    # Сентябрь-декабрь → год начала учебного года
-    # Январь-август → следующий год
-    # ВАЖНО: «сейчас» — по Ташкенту (UTC+5), не datetime.now() сервера. Иначе
-    # вечером UTC (уже «завтра» по Ташкенту) на границе учебного года дата уехала
-    # бы в соседний год → колонка «today» не находилась бы → тихий пропуск оценки.
-    if now is None:
-        now = _tashkent_now()
-    if month >= 9:
-        # Если сейчас январь-август, учебный год начался в прошлом году
-        year = now.year if now.month >= 9 else now.year - 1
-    else:
-        # Январь-август: год окончания учебного года
-        year = now.year if now.month <= 8 else now.year + 1
+
+def _parse_russian_date(
+    date_str: str,
+    now: Optional[datetime] = None,
+    academic_year: Optional[int] = None,
+) -> Optional[datetime]:
+    """
+    Парсит русскую дату вида '2 сентября', '14 март Сб', '1 октября' и т.д.
+    Возвращает datetime или None.
+
+    Год в шапке отсутствует, поэтому:
+      • `academic_year` (год начала уч. года таблицы, `students.academic_year`)
+        — основной способ: сентябрь–декабрь → academic_year, январь–август →
+        academic_year+1. Не зависит от текущей даты → прошлогодняя таблица
+        никогда не «съезжает» на текущий год (инцидент 2026-09-02).
+      • Fallback (academic_year=None): учебный год, в который попадает `now`
+        (default: сейчас по Ташкенту, UTC+5 — не локальное/UTC время сервера,
+        иначе на границе уч. года дата уехала бы в соседний год, B13).
+    """
+    parsed = _parse_russian_day_month(date_str)
+    if parsed is None:
+        return None
+    day, month = parsed
+
+    if academic_year is None:
+        if now is None:
+            now = _tashkent_now()
+        academic_year = current_academic_year(now.date() if isinstance(now, datetime) else now)
+    year = year_for_month(month, academic_year)
 
     try:
         return datetime(year, month, day)
@@ -133,9 +200,14 @@ def _warn_if_header_dates_unparsed(date_row: List[Any], parsed_ok: int, context:
         )
 
 
-def _parse_all_grades_sheet(data: List[List[str]], context: str = "") -> List[Dict[str, Any]]:
+def _parse_all_grades_sheet(
+    data: List[List[str]], context: str = "", academic_year: Optional[int] = None
+) -> List[Dict[str, Any]]:
     """
     Парсит данные листа "Все оценки" в список записей.
+
+    `academic_year` — учебный год таблицы для восстановления года в датах шапки
+    (см. _parse_russian_date). None → fallback от текущей даты.
 
     Returns:
         Список словарей: {subject, grade_value, raw_text, date, col_index}
@@ -150,7 +222,7 @@ def _parse_all_grades_sheet(data: List[List[str]], context: str = "") -> List[Di
     for col_idx, cell in enumerate(date_row):
         if col_idx == 0:
             continue  # Первый столбец — "Оценки"
-        parsed = _parse_russian_date(str(cell).strip())
+        parsed = _parse_russian_date(str(cell).strip(), academic_year=academic_year)
         if parsed:
             parsed_ok += 1
         dates.append((col_idx, parsed))
@@ -223,6 +295,8 @@ def _import_from_sheet(
     spreadsheet_id: str,
     range_name: str,
     sheet_label: str,
+    academic_year: Optional[int] = None,
+    data: Optional[List[List[Any]]] = None,
 ) -> Dict[str, int]:
     """Generic чтение оценок из любого листа со структурой «предметы × даты».
 
@@ -233,17 +307,23 @@ def _import_from_sheet(
 
     sheet_label попадает в cell_reference как префикс ("Все оценки!" / "Неделя!")
     для дебага и уникальности SQL-вставки.
+
+    `academic_year` — учебный год таблицы (для года в датах шапки).
+    `data` — уже загруженный лист (чтобы не читать Sheets дважды); None → fetch.
     """
-    try:
-        data = get_sheet_data(spreadsheet_id, range_name)
-    except Exception as e:
-        logger.error(f"Failed to fetch '{range_name}' for student {student_id}: {e}")
-        return {'imported': 0, 'skipped': 0, 'total': 0}
+    if data is None:
+        try:
+            data = get_sheet_data(spreadsheet_id, range_name)
+        except Exception as e:
+            logger.error(f"Failed to fetch '{range_name}' for student {student_id}: {e}")
+            return {'imported': 0, 'skipped': 0, 'total': 0}
 
     if not data:
         return {'imported': 0, 'skipped': 0, 'total': 0}
 
-    records = _parse_all_grades_sheet(data, context=f"student={student_id}, sheet={sheet_label}")
+    records = _parse_all_grades_sheet(
+        data, context=f"student={student_id}, sheet={sheet_label}", academic_year=academic_year
+    )
     imported = 0
     skipped = 0
     today = _tashkent_today_date()
@@ -324,9 +404,34 @@ def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str
 
     Дедуп по (subject, date, raw_text) гарантирует что одна и та же оценка
     из обоих листов не задвоится в БД.
+
+    Учебный год таблицы берётся из `students.academic_year`; если ещё не
+    определён (новая привязка / смена ссылки) — выводится по содержимому
+    master-листа (`infer_sheet_academic_year`) и записывается в БД, чтобы
+    монитор и следующие импорты использовали тот же год.
     """
-    r_master = _import_from_sheet(student_id, spreadsheet_id, "Все оценки!A1:ZZ50", "Все оценки!")
-    r_week = _import_from_sheet(student_id, spreadsheet_id, "Неделя!A1:I50", "Неделя!")
+    from src.database_manager import get_student_academic_year, set_student_academic_year
+
+    academic_year = get_student_academic_year(student_id)
+    master_data = None
+    if academic_year is None:
+        try:
+            master_data = get_sheet_data(spreadsheet_id, MASTER_SHEET_RANGE)
+        except Exception as e:
+            logger.error(f"Failed to fetch master sheet for student {student_id}: {e}")
+            master_data = None
+        if master_data:
+            academic_year = resolve_academic_year_from_sheet(master_data, context=f"student={student_id}")
+            set_student_academic_year(student_id, academic_year)
+            logger.info(f"[ACADEMIC_YEAR] student {student_id}: inferred {academic_year} from sheet content")
+
+    r_master = _import_from_sheet(
+        student_id, spreadsheet_id, MASTER_SHEET_RANGE, "Все оценки!",
+        academic_year=academic_year, data=master_data,
+    )
+    r_week = _import_from_sheet(
+        student_id, spreadsheet_id, "Неделя!A1:I50", "Неделя!", academic_year=academic_year,
+    )
 
     result = {
         'imported': r_master['imported'] + r_week['imported'],
@@ -478,11 +583,23 @@ def _col_letter(col_index: int) -> str:
 MASTER_SHEET_RANGE = "Все оценки!A1:ZZ50"
 
 
+def resolve_academic_year_from_sheet(data: List[List[Any]], context: str = "", today=None) -> int:
+    """Учебный год таблицы по её содержимому: месяцы колонок, где есть оценки.
+    Первый проход парсится с fallback-годом — для вывода важны только месяцы."""
+    records = _parse_all_grades_sheet(data, context=context)
+    months = {rec['date'].month for rec in records if rec.get('date')}
+    return infer_sheet_academic_year(months, today=today)
+
+
 def _parse_master_sheet_for_date(
-    data: List[List[Any]], target_date, context: str = ""
+    data: List[List[Any]], target_date, context: str = "", academic_year: Optional[int] = None
 ) -> List[Tuple[str, str]]:
     """Pure-функция (для тестов): находит колонку с `target_date` в шапке (row 2)
     и возвращает [(subject, raw_grade)] из этой колонки.
+
+    `academic_year` — учебный год таблицы: колонка «2 сентября» таблицы 2025/26
+    = 2025-09-02 и НЕ совпадёт с target_date 2026-09-02 (инцидент 2026-09-02).
+    None → год от текущей даты (legacy fallback).
 
     Возвращает только непустые значения. Пропускает служебные строки
     («Посещаемость», числовые заголовки).
@@ -503,7 +620,7 @@ def _parse_master_sheet_for_date(
     for col_idx, cell in enumerate(date_row):
         if col_idx == 0:
             continue  # первый столбец — «Оценки»
-        parsed = _parse_russian_date(str(cell).strip()) if cell else None
+        parsed = _parse_russian_date(str(cell).strip(), academic_year=academic_year) if cell else None
         if parsed:
             parsed_ok += 1
             if parsed.date() == target_date and target_col is None:
@@ -552,4 +669,7 @@ def read_master_sheet_today_grades(spreadsheet_id: str) -> List[Tuple[str, str]]
     if data is None:
         return []
     today = _tashkent_today_date()  # уже date, не datetime
-    return _parse_master_sheet_for_date(data, today, context=f"spreadsheet={spreadsheet_id}")
+    return _parse_master_sheet_for_date(
+        data, today, context=f"spreadsheet={spreadsheet_id}",
+        academic_year=current_academic_year(today),
+    )
