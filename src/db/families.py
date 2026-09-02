@@ -31,7 +31,7 @@ def get_active_spreadsheets() -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id as student_id, fio, spreadsheet_id, display_name
+            SELECT id as student_id, fio, spreadsheet_id, display_name, academic_year
             FROM students
             WHERE spreadsheet_id IS NOT NULL AND spreadsheet_id != ''
         ''')
@@ -43,7 +43,8 @@ def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id, s.display_name
+            SELECT DISTINCT s.id as student_id, s.fio, s.spreadsheet_id, s.display_name,
+                            s.academic_year
             FROM students s
             JOIN family_links fl ON s.id = fl.student_id
             JOIN families f ON fl.family_id = f.id
@@ -104,15 +105,42 @@ def add_family(name: str) -> Optional[int]:
         return cursor.fetchone()[0]
 
 
-def add_student(fio: str, spreadsheet_id: str, display_name: str = None) -> Optional[int]:
-    """Создаёт нового студента, возвращает его ID."""
+def add_student(fio: str, spreadsheet_id: str, display_name: str = None,
+                academic_year: Optional[int] = None) -> Optional[int]:
+    """Создаёт нового студента, возвращает его ID.
+
+    academic_year (год начала уч. года таблицы) обычно НЕ передаётся: NULL →
+    history_importer выведет его по содержимому листа при первом импорте."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            'INSERT INTO students (fio, spreadsheet_id, display_name) VALUES (%s, %s, %s) RETURNING id',
-            (fio, spreadsheet_id, display_name),
+            'INSERT INTO students (fio, spreadsheet_id, display_name, academic_year) '
+            'VALUES (%s, %s, %s, %s) RETURNING id',
+            (fio, spreadsheet_id, display_name, academic_year),
         )
         return cursor.fetchone()[0]
+
+
+def get_student_academic_year(student_id: int) -> Optional[int]:
+    """Учебный год (год начала, 2025 = 2025/26) привязанной таблицы ученика.
+    None — ещё не определён (новая привязка) или ученик не найден."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT academic_year FROM students WHERE id = %s', (student_id,))
+        row = cursor.fetchone()
+        return row['academic_year'] if row else None
+
+
+def set_student_academic_year(student_id: int, academic_year: Optional[int]) -> bool:
+    """Записывает учебный год таблицы ученика (None = сбросить → переопределить
+    по содержимому листа при следующем импорте)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE students SET academic_year = %s WHERE id = %s',
+            (academic_year, student_id),
+        )
+        return cursor.rowcount > 0
 
 
 def update_student_display_name(student_id: int, display_name: str):
@@ -136,17 +164,21 @@ def update_student_spreadsheet(student_id: int, spreadsheet_id: str,
     (history_importer дедупит по содержимому).
 
     display_name (если передан) обновляется из заголовка новой таблицы.
+    academic_year сбрасывается в NULL — новая таблица может быть за другой
+    учебный год; history_importer переопределит его по содержимому листа
+    (иначе монитор продолжил бы считать новую таблицу устаревшей).
     Возвращает True если ученик существовал и строка обновлена."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         if display_name is not None:
             cursor.execute(
-                'UPDATE students SET spreadsheet_id = %s, display_name = %s WHERE id = %s',
+                'UPDATE students SET spreadsheet_id = %s, display_name = %s, '
+                'academic_year = NULL WHERE id = %s',
                 (spreadsheet_id, display_name, student_id),
             )
         else:
             cursor.execute(
-                'UPDATE students SET spreadsheet_id = %s WHERE id = %s',
+                'UPDATE students SET spreadsheet_id = %s, academic_year = NULL WHERE id = %s',
                 (spreadsheet_id, student_id),
             )
         return cursor.rowcount > 0

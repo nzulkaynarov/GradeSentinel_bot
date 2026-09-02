@@ -221,6 +221,8 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 26d. **/start для admin'а ВСЕГДА идёт в admin welcome**, не в AI-чат. Admin переключается в parent-режим явным тапом «👨 Я родитель» (label в reply-keyboard). Возврат — тап «🛠 Управление». ai_chat handler НЕ блокирует admin'ов (PR #59 убрал блокировщик), потому что admin может legitimately быть в parent-mode через toggle.
 
+26e. **Учебный год таблицы — явное поле `students.academic_year`** (год начала: 2025 = 2025/26, миграция 0004, RFC `Docs/plans/2026-09-02-academic-year-rollover.md`). Даты в шапке листов без года («2 сентября»), и восстанавливать год от текущей даты НЕЛЬЗЯ: школа каждый год выдаёт новую ссылку, старая таблица остаётся привязанной → в сентябре её колонка «2 сентября» совпала бы с сегодня (инцидент 2026-09-02, бот разослал прошлогодние оценки). Правила: парсер получает `academic_year=` (`_parse_russian_date`, `_parse_master_sheet_for_date`, `_parse_all_grades_sheet`); `is_sheet_stale(ay)` → монитор/quarter-check/hourly-sync таблицу НЕ читают, семье уходит нэдж «обновите ссылку» (`_maybe_nudge_relink`, маркер `relink_nudge:{sid}` в settings, вне тихих часов), админу — алерт раз в год; `update_student_spreadsheet` сбрасывает год в NULL, `import_history_for_student` выводит его по колонкам с оценками (`infer_sheet_academic_year`) и записывает. В тестах с датами шапки всегда передавай `academic_year=` или патчи `_tashkent_today_date` — иначе тесты протухают каждый сентябрь. **Backlog:** `quarter_grades` без academic_year — четверти нового года перезапишут прошлогодние (Фаза 2 RFC).
+
 ### Мониторинг и полнота данных
 
 27. **`_polling_lock`** в monitor_engine — если предыдущий цикл не завершился за 300с, новый не стартует (skip).

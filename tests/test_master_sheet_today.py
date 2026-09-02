@@ -11,6 +11,8 @@ from src.history_importer import _parse_master_sheet_for_date, read_master_sheet
 
 
 # ─── Структура листа из реальных xlsx (выгрузка 21.05.2026) ──────────
+# Даты в шапке без года → передаём academic_year=2025 (уч. год 2025/26), иначе
+# год выводился бы от текущей даты и тесты «протухали» бы каждый сентябрь.
 def _make_sheet(date_headers, subject_rows):
     """Помощник: data[0]=header, data[1]=date row, data[2:]=subject rows.
 
@@ -35,7 +37,7 @@ def test_finds_today_column_and_extracts_grades():
             ('Геометрия', [None, None, None]),  # пустая — не попадает в результат
         ],
     )
-    out = _parse_master_sheet_for_date(data, date(2026, 5, 21))
+    out = _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025)
     assert out == [('Алгебра', '4'), ('Литература', '5')]
 
 
@@ -45,7 +47,7 @@ def test_returns_empty_when_date_not_in_header():
         [('Алгебра', ['3', '4'])],
     )
     # Сегодня — 21 мая, такой колонки нет → пустой результат, не падение
-    assert _parse_master_sheet_for_date(data, date(2026, 5, 21)) == []
+    assert _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025) == []
 
 
 def test_skips_attendance_and_numeric_header_rows():
@@ -58,7 +60,7 @@ def test_skips_attendance_and_numeric_header_rows():
             ('Литература', ['4']),
         ],
     )
-    out = _parse_master_sheet_for_date(data, date(2026, 5, 21))
+    out = _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025)
     assert out == [('Алгебра', '5'), ('Литература', '4')]
 
 
@@ -69,7 +71,7 @@ def test_parses_date_with_weekday_suffix():
         ['21 мая чт', '22 мая пт'],
         [('Алгебра', ['4', '5'])],
     )
-    out = _parse_master_sheet_for_date(data, date(2026, 5, 21))
+    out = _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025)
     assert out == [('Алгебра', '4')]
 
 
@@ -82,7 +84,7 @@ def test_treats_whitespace_only_as_empty():
             ('Литература', ['5']),
         ],
     )
-    out = _parse_master_sheet_for_date(data, date(2026, 5, 21))
+    out = _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025)
     assert out == [('Литература', '5')]
 
 
@@ -94,7 +96,7 @@ def test_handles_short_row_shorter_than_target_column():
         ['Алгебра', '3'],  # короткая строка, нет col для 21 мая
         ['Литература', '3', '5', None],  # полная — найдём
     ]
-    out = _parse_master_sheet_for_date(data, date(2026, 5, 21))
+    out = _parse_master_sheet_for_date(data, date(2026, 5, 21), academic_year=2025)
     assert out == [('Литература', '5')]
 
 

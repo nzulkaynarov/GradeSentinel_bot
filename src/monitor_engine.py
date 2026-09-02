@@ -255,6 +255,148 @@ def _record_student_success(student_id: int):
         _student_failure_counts.pop(student_id, None)
 
 
+# ─────────────────────────────────────────────────────────────
+# Rollover учебного года (RFC 2026-09-02)
+# ─────────────────────────────────────────────────────────────
+# Дата последнего лога [STALE_SHEET] по ученику — чтобы не писать каждые 5 мин.
+_stale_logged_on: dict = {}
+
+
+def _handle_stale_sheet(student: dict, today) -> bool:
+    """True если таблица ученика за прошлый учебный год → её НЕ опрашиваем.
+
+    Побочные эффекты (best-effort, ошибки не роняют цикл): лог раз в день,
+    напоминание семье обновить ссылку (раз в RELINK_NUDGE_INTERVAL_DAYS, вне
+    тихих часов — чтобы кнопка «Сменить ссылку» не потерялась в очереди),
+    алерт админу раз в учебный год."""
+    from src.history_importer import is_sheet_stale, current_academic_year
+
+    academic_year = student.get('academic_year')
+    if not is_sheet_stale(academic_year, today):
+        return False
+
+    student_id = student['student_id']
+    display_name = student.get('display_name') or student.get('fio') or str(student_id)
+    current_year = current_academic_year(today)
+
+    if _stale_logged_on.get(student_id) != today:
+        _stale_logged_on[student_id] = today
+        logger.warning(
+            f"[STALE_SHEET] student_id={student_id} ({display_name}): sheet academic_year="
+            f"{academic_year} < current {current_year}. Polling paused until relink."
+        )
+    try:
+        _maybe_nudge_relink(student_id, display_name, current_year, today)
+    except Exception as e:
+        logger.warning(f"Relink nudge failed for student {student_id}: {e}")
+    try:
+        _maybe_alert_admin_stale(student_id, display_name, academic_year, current_year)
+    except Exception as e:
+        logger.warning(f"Stale-sheet admin alert failed for student {student_id}: {e}")
+    return True
+
+
+def _maybe_nudge_relink(student_id: int, display_name: str, current_year: int, today) -> bool:
+    """Напоминание семьям ученика обновить ссылку. Маркер `relink_nudge:{sid}`
+    в settings (дата последней отправки) — переживает рестарт. True если ушло."""
+    from src.config import RELINK_NUDGE_INTERVAL_DAYS
+    from src.database_manager import (
+        get_setting, set_setting, get_families_for_student,
+        get_family_members_telegram_ids, can_manage_family,
+    )
+    from src.notifications import get_sender, NotificationType
+
+    if is_quiet_hours():
+        return False  # кнопка не переживёт очередь тихих часов — попробуем днём
+    marker_key = f"relink_nudge:{student_id}"
+    last = get_setting(marker_key)
+    if last:
+        try:
+            last_date = datetime.strptime(last, "%Y-%m-%d").date()
+            if (today - last_date).days < RELINK_NUDGE_INTERVAL_DAYS:
+                return False
+        except ValueError:
+            pass
+
+    year_label = f"{current_year}/{str(current_year + 1)[-2:]}"
+    sent_any = False
+    for fam in get_families_for_student(student_id):
+        f_id = fam['id']
+        for tg_id in get_family_members_telegram_ids(f_id):
+            lang = get_user_lang(tg_id)
+            text = t("relink_nudge_new_year", lang, name=display_name, year=year_label)
+            kb = None
+            if can_manage_family(tg_id, f_id):
+                kb = types.InlineKeyboardMarkup()
+                kb.add(types.InlineKeyboardButton(
+                    t("family_relink_btn", lang), callback_data=f"relink_list_{f_id}"))
+            if get_sender().send(tg_id, text, ntype=NotificationType.RELINK_NUDGE,
+                                 kb=kb, force=True, defer=False):
+                sent_any = True
+    if sent_any:
+        set_setting(marker_key, today.isoformat())
+        logger.info(f"[STALE_SHEET] relink nudge sent for student {student_id} ({display_name})")
+    return sent_any
+
+
+def _maybe_alert_admin_stale(student_id: int, display_name: str,
+                             academic_year: int, current_year: int) -> None:
+    """Алерт админу об устаревшей таблице — один раз на (ученик, учебный год)."""
+    from src.database_manager import get_setting, set_setting
+    from src.notifications import get_sender, NotificationType
+    import os
+
+    marker_key = f"stale_admin_alert:{student_id}"
+    if get_setting(marker_key) == str(current_year):
+        return
+    admin_id = int(os.environ.get("ADMIN_ID", "0") or "0")
+    lang = get_user_lang(admin_id) if admin_id else "ru"
+    text = t("alert_sheet_stale", lang, display_name=display_name, student_id=student_id,
+             academic_year=academic_year, current_year=current_year)
+    if get_sender().send_to_admin(text, ntype=NotificationType.SHEET_FAILURE):
+        set_setting(marker_key, str(current_year))
+
+
+def _grades_on_date(student_id: int, grade_date) -> set:
+    """{(subject, raw_text)} оценок ученика за дату (по grade_date)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT subject, raw_text FROM grade_history "
+            "WHERE student_id = %s AND grade_date = %s",
+            (student_id, grade_date),
+        )
+        return {(row['subject'], row['raw_text']) for row in cursor.fetchall()}
+
+
+def _looks_like_last_year_echo(student_id: int, display_name: str,
+                               today_pairs: list, today) -> bool:
+    """Defense-in-depth для учеников с неизвестным academic_year: если ВСЕ
+    «сегодняшние» оценки 1:1 совпадают с оценками ровно год назад (тот же
+    предмет и значение в тот же день-месяц) — это почти наверняка прошлогодняя
+    таблица, а не новые оценки. Пропускаем и логируем [STALE_ECHO]."""
+    try:
+        last_year = today.replace(year=today.year - 1)
+    except ValueError:  # 29 февраля
+        return False
+    try:
+        previous = _grades_on_date(student_id, last_year)
+    except Exception as e:
+        logger.debug(f"Echo-check query failed for student {student_id}: {e}")
+        return False
+    if not previous:
+        return False
+    today_set = {(subject, str(raw).strip()) for subject, raw in today_pairs}
+    if today_set and today_set <= previous:
+        logger.warning(
+            f"[STALE_ECHO] student_id={student_id} ({display_name}): today's "
+            f"{len(today_set)} grade(s) identical to {last_year.isoformat()} — "
+            f"treating sheet as previous academic year, skipping."
+        )
+        return True
+    return False
+
+
 # Результат fetch-воркера. `persist_display_name` — флаг «display_name был
 # вычислен из заголовка таблицы, его нужно записать в БД». Запись и учёт
 # success/failure выполняются в ПОСЛЕДОВАТЕЛЬНОЙ фазе (см. _fetch_student_sheet).
@@ -437,7 +579,9 @@ def _check_for_new_grades_impl():
     # разных cell_reference приводил к спаму (инцидент 2026-05-21).
     # «Все оценки!» содержит ту же информацию + всю историю; берём только
     # колонку для сегодняшней даты через _parse_master_sheet_for_date.
-    from src.history_importer import MASTER_SHEET_RANGE, _parse_master_sheet_for_date
+    from src.history_importer import (
+        MASTER_SHEET_RANGE, _parse_master_sheet_for_date, current_academic_year,
+    )
 
     # Outbox sweeper (PR-F1): добить уведомления, не ушедшие в прошлых циклах
     # из-за краха между записью оценки и отправкой. Идёт ПЕРВЫМ под _polling_lock
@@ -447,6 +591,20 @@ def _check_for_new_grades_impl():
 
     # Метаданные для каждого студента
     student_meta = {}  # student_id -> {display_name, spreadsheet_id}
+
+    # tashkent_today — один раз на цикл (date.isoformat() для записи в БД,
+    # date object для парсера master sheet).
+    tashkent_today_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+    tashkent_today = tashkent_today_date.isoformat()
+
+    # Rollover учебного года (инцидент 2026-09-02): таблицы за ПРОШЛЫЙ учебный
+    # год не опрашиваем вообще — школа выдала новую ссылку, а в старой колонка
+    # «2 сентября» (без года) совпала бы с сегодняшней датой. Семье — напоминание
+    # обновить ссылку, админу — алерт (раз в год на ученика).
+    students = [s for s in students if not _handle_stale_sheet(s, tashkent_today_date)]
+    if not students:
+        logger.info("All active students have stale (previous academic year) sheets. Nothing to poll.")
+        return
 
     # Параллельная загрузка данных — одна сломанная таблица не блокирует остальные
     with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as executor:
@@ -458,11 +616,6 @@ def _check_for_new_grades_impl():
             except Exception as e:
                 s = futures[future]
                 logger.error(f"Worker crashed for student_id={s.get('student_id')}: {e}")
-
-    # tashkent_today — один раз на цикл (date.isoformat() для записи в БД,
-    # date object для парсера master sheet).
-    tashkent_today_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
-    tashkent_today = tashkent_today_date.isoformat()
 
     # Дальнейшая обработка — последовательная (все DB-операции). Сюда же вынесены
     # запись display_name и учёт success/failure: раньше они шли внутри
@@ -497,9 +650,18 @@ def _check_for_new_grades_impl():
 
         # Извлекаем оценки за сегодняшнюю дату из «Все оценки!».
         # Пустой список — нет колонки для today (учебный год не начался / выходной).
+        # academic_year таблицы → «2 сентября» прошлогодней таблицы = прошлый год,
+        # с today не совпадёт (даже если stale-фильтр выше почему-то пропустил).
+        academic_year = student.get('academic_year')
         today_grades_pairs = _parse_master_sheet_for_date(
-            data, tashkent_today_date, context=f"student={student_id} ({display_name})"
+            data, tashkent_today_date, context=f"student={student_id} ({display_name})",
+            academic_year=(academic_year if academic_year is not None
+                           else current_academic_year(tashkent_today_date)),
         )
+        if today_grades_pairs and academic_year is None and _looks_like_last_year_echo(
+            student_id, display_name, today_grades_pairs, tashkent_today_date
+        ):
+            continue
         if not today_grades_pairs:
             continue
 
@@ -638,12 +800,16 @@ def check_for_quarter_changes():
     logger.info(f"Checking quarter grades for {len(students)} students.")
 
     RANGE_NAME = "Четверти!A1:G50"
+    from src.history_importer import is_sheet_stale
 
     for student in students:
         student_id = student['student_id']
         fio = student['fio']
         spreadsheet_id = student['spreadsheet_id']
         display_name = student.get('display_name') or fio
+
+        if is_sheet_stale(student.get('academic_year')):
+            continue  # прошлогодняя таблица — не опрашиваем (см. _handle_stale_sheet)
 
         try:
             data = get_sheet_data(spreadsheet_id, RANGE_NAME)
@@ -760,10 +926,12 @@ def _maybe_sync_all_grades():
         return
 
     try:
-        from src.history_importer import import_history_for_student
+        from src.history_importer import import_history_for_student, is_sheet_stale
         from src.database_manager import get_active_spreadsheets
 
         for s in get_active_spreadsheets():
+            if is_sheet_stale(s.get("academic_year")):
+                continue  # прошлогодняя таблица: история уже импортирована, не тратим квоту
             try:
                 result = import_history_for_student(s["student_id"], s["spreadsheet_id"])
                 if result["imported"] > 0:

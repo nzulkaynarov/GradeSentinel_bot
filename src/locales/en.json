@@ -141,6 +141,8 @@
   "relink_confirm_no": "❌ Cancel",
   "relink_done": "✅ Link updated for «{name}». Pulling grades from the new spreadsheet…",
   "relink_cancelled": "Cancelled. The link was not changed.",
+  "relink_nudge_new_year": "🎒 <b>New school year {year}</b>\n\nThe grade spreadsheet for «{name}» belongs to the previous school year. Schools issue a new link every year, so new-grade notifications are paused until the link is updated.\n\nSend the new link: <b>Menu → Family → 🔗 Change link</b>. Grade history will be kept.",
+  "alert_sheet_stale": "🎒 <b>Spreadsheet from the previous school year</b>\n\nStudent: <code>{display_name}</code> (id={student_id})\nSheet year: <b>{academic_year}</b>, current: <b>{current_year}</b>\n\nMonitoring of this sheet is paused; the family was reminded to update the link.",
   "summer_activity_heading": "🌞 Holiday idea",
   "summer_activity_prompt": "You are a warm, concise helper for a schoolchild's parent during the holidays. Child: {name}. The subject worth gently supporting over the break: {subject}.\n\nSuggest ONE concrete 10–15 minute activity (at home, on a walk, or as a game) to reinforce «{subject}» in a fun, pressure-free way. Rules: supportive tone; do NOT say the child is «behind», «weak», or «struggling» — only how to practise in an enjoyable way; no greetings or sign-offs; 2–3 short sentences; in English.",
   "family_list_btn": "📋 List & Delete",

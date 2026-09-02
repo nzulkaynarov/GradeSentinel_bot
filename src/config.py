@@ -40,6 +40,10 @@ SHEET_FAILURE_THRESHOLD = _env_int("SHEET_FAILURE_THRESHOLD", 5)
 # Cooldown между алертами по одному «зависшему» ученику (часы)
 SHEET_FAILURE_ALERT_COOLDOWN_HOURS = _env_int("SHEET_FAILURE_ALERT_COOLDOWN_HOURS", 24)
 
+# Новый учебный год: таблица ученика устарела (academic_year < текущего) —
+# как часто напоминать семье обновить ссылку (дни), пока она не обновлена
+RELINK_NUDGE_INTERVAL_DAYS = _env_int("RELINK_NUDGE_INTERVAL_DAYS", 7)
+
 
 # ────────────────────────────────────────────────────────────
 # Rate limiting (per-user)

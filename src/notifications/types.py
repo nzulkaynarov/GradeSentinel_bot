@@ -16,6 +16,7 @@ class NotificationType(str, Enum):
     WEEKLY_DIGEST = "weekly_digest"          # Вс 18:00 (бесплатный текстовый)
     PROACTIVE_ALERT = "proactive_alert"      # раз в день 17:00, AI-аномалии
     SUMMER_ACTIVITY = "summer_activity"      # каникулы: еженедельный AI-нэдж родителю
+    RELINK_NUDGE = "relink_nudge"            # новый уч. год: таблица устарела, обновите ссылку
 
     # Admin/operational
     SHEET_FAILURE = "sheet_failure"          # 5 подряд ошибок чтения листа

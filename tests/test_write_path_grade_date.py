@@ -96,22 +96,20 @@ def test_monitor_writes_grade_date_on_insert(temp_db):
 
 
 def test_history_importer_writes_grade_date(temp_db):
-    """import_history_for_student пишет grade_date из заголовка столбца Sheets."""
+    """import_history_for_student пишет grade_date из заголовка столбца Sheets.
+
+    Даты фиксированы (а не «сегодня − 2 дня»): в начале сентября плавающая дата
+    попадала в август → вне учебного года → тест протухал раз в год."""
     sid = _seed_active_student(temp_db, sid_label='ss-hi')
-    yday = (_tashkent_today() - timedelta(days=2))
-    months_ru = {
-        1: 'января', 2: 'февраля', 3: 'марта', 4: 'апреля',
-        5: 'мая', 6: 'июня', 7: 'июля', 8: 'августа',
-        9: 'сентября', 10: 'октября', 11: 'ноября', 12: 'декабря',
-    }
-    label = f"{yday.day} {months_ru[yday.month]}"
+    from datetime import date as _date
 
     sheet = [
         ["Все оценки", "Kid"],
-        ["Оценки", label],
+        ["Оценки", "19 мая"],
         ["Физика", "4"],
     ]
-    with patch('src.history_importer.get_sheet_data', return_value=sheet):
+    with patch('src.history_importer.get_sheet_data', return_value=sheet), \
+         patch('src.history_importer._tashkent_today_date', return_value=_date(2026, 5, 21)):
         import_history_for_student(sid, "ss-hi")
 
     with dbm.get_db_connection() as conn:
@@ -121,7 +119,9 @@ def test_history_importer_writes_grade_date(temp_db):
         ).fetchone()
     assert row is not None
     assert row['raw_text'] == '4'
-    assert row['grade_date'].isoformat() == yday.isoformat()
+    # academic_year выведен по листу (оценка в мае → уч. год 2025/26) → 2026-05-19
+    assert row['grade_date'].isoformat() == "2026-05-19"
+    assert dbm.get_student_academic_year(sid) == 2025
 
 
 def test_add_grade_defaults_to_today_when_grade_date_omitted(temp_db):
