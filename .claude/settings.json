@@ -47,9 +47,33 @@
       "Bash(python -m py_compile:*)",
       "Bash(python --version)",
       "Bash(python3 -m pytest:*)",
+      "Bash(python3 -m compileall:*)",
       "Bash(pytest:*)",
       "Bash(pip list:*)",
       "Bash(pip show:*)",
+
+      "Bash(make help)",
+      "Bash(make check)",
+      "Bash(make test:*)",
+      "Bash(make test-k:*)",
+      "Bash(make test-file:*)",
+      "Bash(make ci)",
+      "Bash(make prs)",
+      "Bash(make prod-status)",
+      "Bash(make prod-logs:*)",
+      "Bash(make prod-grep:*)",
+      "Bash(make prod-schema)",
+      "Bash(make -n:*)",
+      "Bash(docker compose -f docker-compose.test.yml run:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh api:*)",
+
+      "Bash(ssh vps systemctl status:*)",
+      "Bash(ssh vps systemctl is-active:*)",
+      "Bash(ssh vps journalctl:*)",
+      "Bash(ssh vps date:*)",
+      "Bash(ssh vps timedatectl:*)",
 
       "Bash(docker ps:*)",
       "Bash(docker logs:*)",
@@ -60,12 +84,7 @@
       "Bash(docker-compose config:*)",
       "Bash(docker compose ps:*)",
       "Bash(docker compose logs:*)",
-      "Bash(docker compose config:*)",
-
-      "Bash(sqlite3 *.db .schema)",
-      "Bash(sqlite3 *.db .tables)",
-      "Bash(sqlite3 *.db .indexes)",
-      "Bash(sqlite3 *.db .dbinfo)"
+      "Bash(docker compose config:*)"
     ],
     "ask": [
       "Bash(git push:*)",
@@ -94,7 +113,19 @@
       "Bash(docker stop:*)",
       "Bash(docker rm:*)",
       "Bash(pip install:*)",
-      "Bash(pip uninstall:*)"
+      "Bash(pip uninstall:*)",
+      "Bash(make test-reset)",
+      "Bash(make test-build)",
+      "Bash(make migrate:*)",
+      "Bash(make migration:*)",
+      "Bash(make pr)",
+      "Bash(make prod-sql:*)",
+      "Bash(make prod-psql)",
+      "Bash(make prod-follow)",
+      "Bash(ssh vps-db:*)",
+      "Bash(ssh vps:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)"
     ],
     "deny": [
       "Bash(rm -rf /:*)",
@@ -114,7 +145,26 @@
       "Read(./.env.*)",
       "Read(./config/credentials.json)",
       "Read(./data/sentinel.db)",
-      "Read(./data/*.db)"
+      "Read(./data/*.db)",
+      "Bash(ssh vps systemctl restart:*)",
+      "Bash(ssh vps systemctl stop:*)",
+      "Bash(ssh vps rm:*)",
+      "Bash(ssh vps cat /etc/gradesentinel/:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-edit-check.sh",
+            "statusMessage": "Проверяю синтаксис изменённого файла",
+            "timeout": 20
+          }
+        ]
+      }
     ]
   },
   "env": {

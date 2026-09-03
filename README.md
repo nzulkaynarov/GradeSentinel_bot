@@ -104,24 +104,37 @@ docker-compose up -d --build
 src/
 ├── main.py                  # Точка входа, /start, /help, роутинг меню
 ├── bot_instance.py          # Singleton бота
-├── database_manager.py      # SQL: таблицы, миграции, индексы, CRUD
-├── google_sheets.py         # Google Sheets API
-├── monitor_engine.py        # Polling-цикл, snapshot-сравнение
+├── database_manager.py      # Фасад БД (re-export из src/db/*, init_db → Alembic)
+├── db/                      # Домены БД: auth, families, grades, payments, promo, groups, invites, …
+├── config.py                # Все константы (из ENV с дефолтами)
+├── google_sheets.py         # Google Sheets API (кэшированный сервис)
+├── monitor_engine.py        # Polling-цикл «Все оценки!», stale-таблицы, outbox уведомлений
+├── history_importer.py      # Импорт истории/четвертей, учебный год таблицы
 ├── data_cleaner.py          # Очистка "грязных" оценок
-├── analytics_engine.py      # Claude AI анализ
-├── schedulers.py            # Вечерняя сводка, тихие часы, bot_alive
-├── ui.py                    # Меню, send_menu_safe, send_content
-├── i18n.py                  # Мультиязычность
-├── utils.py                 # Утилиты
-├── locales/                 # ru.json, uz.json, en.json
+├── analytics_engine.py      # Claude AI анализ (+ пакет src/ai/: промпты, клиент, кэш)
+├── ai_tools.py              # tool-use для AI-чата
+├── schedulers.py            # Daily/weekly jobs (сводки, тихие часы, четверти, подписки, летний режим)
+├── notifications/           # Единый Sender: тихие часы, notify_mode, retry, типы уведомлений
+├── ui.py, i18n.py, utils.py # Меню, мультиязычность, утилиты
+├── locales/                 # ru.json, uz.json, en.json (синхронны)
 └── handlers/
     ├── admin.py             # /status, /add_family, /list_families
-    ├── family.py            # Управление семьёй, /grades, /manage_family
+    ├── family.py            # Управление семьёй, /grades, смена ссылки на таблицу
+    ├── panel.py             # User panel (меню родителя)
+    ├── navigation.py        # Reply-keyboard, role-toggle admin↔parent
+    ├── ai_chat.py           # AI-чат (conversation-first UX)
+    ├── group.py             # Бот в семейных группах
+    ├── state_flows.py       # Многошаговые flow через user_states
     ├── communication.py     # Поддержка, рассылка
     ├── analytics.py         # /ai_report, еженедельные отчёты
     ├── settings.py          # Смена языка
-    ├── subscription.py      # Подписка, платежи, /grant_sub
+    ├── subscription/        # Пакет: подписка, платежи, промокоды, /grant_sub
     └── invite.py            # Инвайт-ссылки для семей
+
+migrations/                  # Alembic (0001_baseline … 0004_student_academic_year)
+webapp/                      # Mini App дашборд (Flask + Chart.js)
+deploy/                      # systemd-юниты, Caddyfile, install.sh, бэкапы
+Makefile                     # make help — тесты, миграции, read-only прод
 ```
 
 ### База данных (PostgreSQL 17)
@@ -147,15 +160,30 @@ src/
 
 ---
 
+## Разработка
+
+`make help` — все команды. Ключевые: `make test` (Docker + PostgreSQL 17 — единственный честный прогон),
+`make check` (компиляция + JSON локалей без Docker), `make prod-status` / `make prod-grep TAG=…` (read-only прод).
+Подробно: [Docs/DEVELOPMENT.md](Docs/DEVELOPMENT.md), эксплуатация — [Docs/MAINTENANCE.md](Docs/MAINTENANCE.md).
+
 ## Разработка с Claude Code
 
 Проект использует [Claude Code](https://claude.com/claude-code) как основной AI-помощник для разработки.
 
 - `CLAUDE.md` в корне — контекст проекта (стек, архитектура, конвенции, опасные места). Загружается автоматически в каждой сессии.
-- `.claude/settings.json` — общие разрешения и переменные окружения для команд.
+- `Docs/plans/*-SESSION-HANDOFF.md` — переносимый контекст между сессиями и машинами (память Claude машинно-локальна). Новая сессия начинается с чтения последнего.
+- `.claude/settings.json` — разрешения (read-only прод разрешён, write на прод/деструктивные git — только с подтверждением) и hook `post-edit-check.sh` (компилирует каждый отредактированный `.py`, валидирует JSON локалей).
 - `.claude/settings.local.json` — локальные оверрайды (в `.gitignore`).
+- `.claude/skills/` — проектные skills (вызов `/имя`):
 
-Полезные slash-команды:
-- `/init` — пересобрать `CLAUDE.md` после крупного рефакторинга.
-- `/security-review` — security-проверка текущей ветки перед PR.
-- `/review` — review pull request.
+| Skill | Когда |
+|---|---|
+| `/gs-session-start` | первым делом в новой сессии: handoff, git, PR, здоровье прода |
+| `/gs-prod-ops` | любое обращение к VPS/логам/прод-БД (хосты, что не трогать, теги логов) |
+| `/gs-incident` | бот «сделал не то» в проде: таймлайн → улики → корень → фикс → док |
+| `/gs-migration` | изменение схемы БД (Alembic, backfill, тесты) |
+| `/gs-i18n` | любой текст пользователю (3 локали, плейсхолдеры, HTML) |
+| `/gs-pr` | ветка/коммит/PR, branch protection, кто мержит |
+| `/gs-subagent-brief` | блок контекста для промптов субагентов (мультиагентная работа) |
+
+Встроенные: `/code-review <PR>` — ревью PR, `/security-review` — security-проверка ветки.
