@@ -32,7 +32,9 @@ from src.database_manager import (
     get_user_lang,
     get_quarter_grades,
     get_user_info_by_tg_id,
+    get_student_academic_year,
 )
+from src.history_importer import current_academic_year
 from src.db.auth import is_student_under_active_subscription
 from src.db.connection import get_db_connection
 from src.i18n import load_translations
@@ -69,6 +71,11 @@ init_db()
 load_translations()
 
 app = Flask(__name__)
+# Статика версионируется через ?v={{ build_id }} (см. dashboard.html), поэтому
+# её можно кэшировать надолго. По умолчанию Flask отдаёт Cache-Control: no-cache
+# и браузер ревалидировал КАЖДЫЙ файл при каждом открытии: четыре лишних
+# round-trip (~480 мс на мобильной сети) без единого байта полезных данных.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
@@ -175,6 +182,12 @@ def _authorize_student_access(student_id: int) -> int:
 GRADE_PROBLEM_THRESHOLD = 3.5   # avg <= → проблемная тема
 GRADE_GOOD_THRESHOLD = 4.5      # avg >= → топ
 DELTA_SIGNIFICANT = 0.2         # |delta| >= → заметное изменение
+MIN_SAMPLE = 3
+# Меньше этого числа оценок — это шум, а не сигнал. Один и тот же порог для
+# дельты периода и для «проблемных предметов»: раньше KPI-карточки честно писали
+# «недостаточно данных» (KPI_MIN_SAMPLE=3), а статус-строка рядом уже тревожила
+# из-за единственной двойки, и дельта показывала −1.49 против ОДНОЙ оценки
+# в предыдущем периоде (аудит 2026-09-03).
 
 
 def _avg(values):
@@ -201,7 +214,10 @@ def compute_summary(grades_current, grades_previous, period_days):
 
     delta = None
     trend = "stable"
-    if avg_current is not None and avg_previous is not None:
+    # Сравнивать периоды имеет смысл, только если в обоих есть выборка. Иначе
+    # «год против одной сентябрьской оценки» рисует родителю падение на 1.5 балла.
+    if (avg_current is not None and avg_previous is not None
+            and len(numeric_current) >= MIN_SAMPLE and len(numeric_previous) >= MIN_SAMPLE):
         delta = round(avg_current - avg_previous, 2)
         if delta >= DELTA_SIGNIFICANT:
             trend = "up"
@@ -236,15 +252,19 @@ def compute_summary(grades_current, grades_previous, period_days):
         else:
             s["delta"] = None
 
-    # Проблемные = avg <= 3.5, sorted ascending (худшие первые)
+    # Проблемные = avg <= 3.5 при достаточной выборке (худшие первые).
+    # Без порога единственная двойка за период включала статус «есть на что
+    # обратить внимание», пока KPI на том же экране писал «недостаточно данных».
     problem_subjects = sorted(
-        [s for s in subject_stats if s["avg"] <= GRADE_PROBLEM_THRESHOLD],
+        [s for s in subject_stats
+         if s["avg"] <= GRADE_PROBLEM_THRESHOLD and s["count"] >= MIN_SAMPLE],
         key=lambda s: s["avg"],
     )[:5]
 
-    # Топовые = avg >= 4.5, sorted descending
+    # Топовые = avg >= 4.5, тот же порог выборки
     top_subjects = sorted(
-        [s for s in subject_stats if s["avg"] >= GRADE_GOOD_THRESHOLD],
+        [s for s in subject_stats
+         if s["avg"] >= GRADE_GOOD_THRESHOLD and s["count"] >= MIN_SAMPLE],
         key=lambda s: -s["avg"],
     )[:5]
 
@@ -473,7 +493,7 @@ def compute_quarters_with_forecast(quarter_grades):
     return sorted(result, key=sort_key)
 
 
-KPI_MIN_SAMPLE = 3
+KPI_MIN_SAMPLE = MIN_SAMPLE  # исторический алиас; порог один на весь дашборд
 
 
 def compute_dashboard_kpis(summary, by_subject, total_grades_count):
@@ -669,11 +689,15 @@ def dashboard():
     locales для cache-busting — Telegram WebView aggressively cache'ит
     статику, после deploy юзер получал старый JS без новых ключей/handler'ов
     (AI кнопка молчала)."""
-    return render_template(
+    html = render_template(
         "dashboard.html",
         bot_username=_get_bot_username() or "",
         build_id=_BUILD_ID,
     )
+    # HTML несёт в себе build_id, которым версионируется вся статика. Если
+    # закэшируется он сам — версия замрёт, и cache-busting перестанет работать
+    # (Telegram WebView кэширует такие ответы эвристически).
+    return html, 200, {"Cache-Control": "no-store, must-revalidate"}
 
 
 def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:
@@ -705,13 +729,41 @@ def _dashboard_etag(student_id: int, days: int, telegram_id: int) -> str:
         watermark = _iso(row[0]) if row else ""
         count = row[1] if row else 0
 
-    # 6h-bucket в UTC. Сменяется в 0/6/12/18 UTC = 5/11/17/23 TST.
-    # Совпадает с TTL AI-инсайта (6h cache) — гарантирует invalidation
-    # после обновления insight'а.
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-    bucket = now_utc.strftime("%Y%m%d") + str(now_utc.hour // 6)
+        # Четвертные — отдельная таблица и отдельный блок ответа. Без них правка
+        # четвертной оценки не меняла ETag, и родитель до шести часов получал 304
+        # со старой карточкой (аудит 2026-09-03).
+        cur.execute(
+            "SELECT MAX(updated_at), COUNT(*) FROM quarter_grades WHERE student_id = %s",
+            (student_id,),
+        )
+        qrow = cur.fetchone()
+        q_watermark = f"{_iso(qrow[0]) if qrow else ''}:{qrow[1] if qrow else 0}"
 
-    src = f"{telegram_id}:{student_id}:{days}:{watermark}:{count}:{bucket}"
+        # Смена таблицы или учебного года меняет смысл ответа, не трогая оценки.
+        cur.execute(
+            "SELECT spreadsheet_id, academic_year, display_name FROM students WHERE id = %s",
+            (student_id,),
+        )
+        srow = cur.fetchone()
+        student_state = f"{srow[0]}:{srow[1]}:{srow[2]}" if srow else ""
+
+        # Язык и имя попадают в тело ответа — значит и в ключ кэша.
+        cur.execute(
+            "SELECT lang, telegram_first_name FROM parents WHERE telegram_id = %s",
+            (telegram_id,),
+        )
+        prow = cur.fetchone()
+        user_state = f"{prow[0]}:{prow[1]}" if prow else ""
+
+    # Бакет считаем по ТАШКЕНТУ, а не по UTC. Границы периодов режутся по
+    # ташкентской дате, поэтому UTC-бакет между 00:00 и 05:00 местного времени
+    # отдавал 304 со вчерашним окном: вчерашняя группа «Сегодня», вчерашние
+    # period_start/period_end (аудит 2026-09-03).
+    now_tashkent = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)
+    bucket = now_tashkent.strftime("%Y%m%d") + str(now_tashkent.hour // 6)
+
+    src = (f"{telegram_id}:{student_id}:{days}:{watermark}:{count}:"
+           f"{q_watermark}:{student_state}:{user_state}:{bucket}")
     return sha1(src.encode("utf-8")).hexdigest()[:16]
 
 
@@ -768,9 +820,9 @@ def api_dashboard(student_id):
     from src.database_manager import get_quarter_grades
     quarter_grades = get_quarter_grades(student_id)
     quarters_with_forecast = compute_quarters_with_forecast(quarter_grades)
-    # Backward compat: оставляем trend_by_day для случая если фронт ещё
-    # старый кэшированный (быстро уберём через 1-2 дня после deploy).
-    trend_by_day = compute_trend_by_day(grades_current, days)
+    # trend_by_day удалён 2026-09-03: поле отдавалось «на пару дней» с 21 мая,
+    # во фронте не используется ни разу (grep по app.js), но считалось на каждый
+    # запрос и занимало до 1.5 КБ gzip в ответе при days=365.
 
     # User info — для приветствия и определения языка.
     # telegram_first_name пишется в parents при /start — приоритетнее, чем fio
@@ -791,10 +843,15 @@ def api_dashboard(student_id):
         "summary": summary,
         "kpis": kpis,
         "trend_by_subject": trend_by_subject,
-        "trend_by_day": trend_by_day,  # backward compat — uberём после фронт-deploy
         "by_subject": by_subject,
         "quarters_with_forecast": quarters_with_forecast,
-        "recent_grades": grades_current[:100],  # был 50 — теперь 100 для drill-down фильтра
+        # Даты нормализуем в ISO ЯВНО. Flask 3 сериализует date/datetime через
+        # http_date() → «Wed, 02 Sep 2026 00:00:00 GMT», а фронт сравнивает и
+        # режет эти строки как 'YYYY-MM-DD'. Из-за этого группы дат сортировались
+        # по названию дня недели, «Сегодня» оказывалось над вчерашними оценками,
+        # а подписи оси графика выглядели как «02 Se» (аудит 2026-09-03).
+        # cell_reference — debug-метаданные, фронту не нужны.
+        "recent_grades": _serialize_grades(grades_current[:100]),
         "user": {
             "lang": lang,
             "first_name": first_name,
@@ -1096,26 +1153,57 @@ def api_dashboard_year(student_id):
     в каком месяце сейчас просматривают."""
     telegram_id = _authorize_student_access(student_id)
 
-    # Все оценки за учебный год. days=365 гарантирует что и в августе,
-    # и в мае мы возьмём правильный объём истории.
-    all_grades = get_grade_history_for_student_all(student_id, days=365)
+    # Берём с запасом на два учебных года: в начале сентября итоги ТЕКУЩЕГО
+    # года ещё пусты, и показывать надо прошедший.
+    all_grades = get_grade_history_for_student_all(student_id, days=730)
 
-    # Отфильтровать на учебный год (с 1 сентября). Если сейчас сентябрь+ —
-    # учебный год начался в этом году, иначе — в прошлом.
     today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
-    if today_tashkent.month >= 9:
-        school_year_start = date(today_tashkent.year, 9, 1).isoformat()
-    else:
-        school_year_start = date(today_tashkent.year - 1, 9, 1).isoformat()
 
-    year_grades = [g for g in all_grades if _grade_date_str_for_filter(g) >= school_year_start]
+    # Учебный год берём из students.academic_year — того же поля, по которому
+    # монитор решает, актуальна ли таблица. Вычислять его от текущей даты нельзя:
+    # именно так «Итоги года» 1 сентября обнулялись и показывали итог трёх дней
+    # (а 2026-09-03 — итог трёх ошибочных записей), пряча реальный прошедший год.
+    academic_year = get_student_academic_year(student_id)
+    if academic_year is None:
+        academic_year = current_academic_year(today_tashkent)
+
+    def _slice(year):
+        start = date(year, 9, 1).isoformat()
+        end = date(year + 1, 8, 31).isoformat()
+        return [g for g in all_grades
+                if start <= _grade_date_str_for_filter(g) <= end]
+
+    year_grades = _slice(academic_year)
+    # Если в «своём» году оценок ещё нет (первые дни сентября), показываем
+    # прошедший — он у родителя и есть предмет интереса. Год всегда подписан.
+    if not year_grades and academic_year > 2000:
+        previous = _slice(academic_year - 1)
+        if previous:
+            academic_year -= 1
+            year_grades = previous
 
     report = compute_year_report(year_grades)
-    report["school_year_start"] = school_year_start
+    report["school_year_start"] = date(academic_year, 9, 1).isoformat()
+    report["academic_year"] = academic_year
+    report["academic_year_label"] = f"{academic_year}/{str(academic_year + 1)[-2:]}"
 
     # Dashboard refresh: убрали AI годовой инсайт. AI теперь только в чате.
 
     return jsonify(report)
+
+
+def _serialize_grades(grades):
+    """Оценки для JSON-ответа: даты строго ISO, только нужные фронту поля."""
+    return [
+        {
+            "subject": g.get("subject"),
+            "grade_value": g.get("grade_value"),
+            "raw_text": g.get("raw_text"),
+            "grade_date": _grade_date_str(g),
+            "date_added": _iso(g.get("date_added")),
+        }
+        for g in grades
+    ]
 
 
 def _grade_date_str_for_filter(g) -> str:

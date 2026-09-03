@@ -11,7 +11,7 @@
          render_template. JS читает window.GS_BOT_USERNAME — не зависит от
          /api/dashboard/init race condition или JSON cache. -->
     <script>window.GS_BOT_USERNAME = "{{ bot_username }}";</script>
-    <script src="/static/vendor/chart.umd.min.js" defer></script>
+    <script>window.GS_BUILD_ID = "{{ build_id }}";</script>
 
     <link rel="stylesheet" href="/static/style.css?v={{ build_id }}">
     <link rel="preload" href="/static/app.js?v={{ build_id }}" as="script">
