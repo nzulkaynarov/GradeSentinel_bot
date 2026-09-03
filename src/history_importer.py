@@ -409,6 +409,12 @@ def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str
     определён (новая привязка / смена ссылки) — выводится по содержимому
     master-листа (`infer_sheet_academic_year`) и записывается в БД, чтобы
     монитор и следующие импорты использовали тот же год.
+
+    Если год неизвестен И master-лист прочитать не удалось — импорт НЕ идёт.
+    `get_sheet_data` при 403/404 и исчерпанных ретраях возвращает None, а не
+    бросает исключение, поэтому иначе мы бы молча свалились в legacy-fallback
+    «год от текущей даты» — ровно ту логику, из-за которой случился инцидент
+    2026-09-02, и записали бы прошлогодние оценки с сегодняшними датами.
     """
     from src.database_manager import get_student_academic_year, set_student_academic_year
 
@@ -420,10 +426,16 @@ def import_history_for_student(student_id: int, spreadsheet_id: str) -> Dict[str
         except Exception as e:
             logger.error(f"Failed to fetch master sheet for student {student_id}: {e}")
             master_data = None
-        if master_data:
-            academic_year = resolve_academic_year_from_sheet(master_data, context=f"student={student_id}")
-            set_student_academic_year(student_id, academic_year)
-            logger.info(f"[ACADEMIC_YEAR] student {student_id}: inferred {academic_year} from sheet content")
+        if master_data is None:
+            # Не пустой лист, а несостоявшееся чтение: год вывести не из чего.
+            logger.warning(
+                f"[ACADEMIC_YEAR] student {student_id}: master sheet unavailable, "
+                f"academic year unknown — import skipped, will retry next sync"
+            )
+            return {'imported': 0, 'skipped': 0, 'total': 0}
+        academic_year = resolve_academic_year_from_sheet(master_data, context=f"student={student_id}")
+        set_student_academic_year(student_id, academic_year)
+        logger.info(f"[ACADEMIC_YEAR] student {student_id}: inferred {academic_year} from sheet content")
 
     r_master = _import_from_sheet(
         student_id, spreadsheet_id, MASTER_SHEET_RANGE, "Все оценки!",
@@ -583,12 +595,20 @@ def _col_letter(col_index: int) -> str:
 MASTER_SHEET_RANGE = "Все оценки!A1:ZZ50"
 
 
+def sheet_grade_months(data: List[List[Any]], context: str = "") -> set:
+    """Месяцы, в которых в листе РЕАЛЬНО проставлены оценки.
+
+    Пустое множество = свидетельств нет (лист пуст, не распознан или не прочитан).
+    Отличать этот случай важно: «нет оценок» — не то же самое, что «оценки только
+    осенние», а именно так его трактовал бы infer_sheet_academic_year."""
+    records = _parse_all_grades_sheet(data, context=context)
+    return {rec['date'].month for rec in records if rec.get('date')}
+
+
 def resolve_academic_year_from_sheet(data: List[List[Any]], context: str = "", today=None) -> int:
     """Учебный год таблицы по её содержимому: месяцы колонок, где есть оценки.
     Первый проход парсится с fallback-годом — для вывода важны только месяцы."""
-    records = _parse_all_grades_sheet(data, context=context)
-    months = {rec['date'].month for rec in records if rec.get('date')}
-    return infer_sheet_academic_year(months, today=today)
+    return infer_sheet_academic_year(sheet_grade_months(data, context=context), today=today)
 
 
 def _parse_master_sheet_for_date(

@@ -189,6 +189,12 @@ def _september_2026():
 
 
 def test_stale_sheet_not_polled_and_family_nudged(family_with_old_sheet):
+    """Прошлогодняя таблица: оценки не читаются и не рассылаются, семья получает
+    напоминание, админ — алерт.
+
+    Лист при этом читается один раз в сутки (суточная перепроверка года,
+    `tests/test_academic_year_self_healing.py`) — но его содержимое здесь
+    нераспознаваемо, год остаётся 2025, и ученик остаётся на паузе."""
     info = family_with_old_sheet
     sender = MagicMock()
     sender.send.return_value = True
@@ -202,7 +208,7 @@ def test_stale_sheet_not_polled_and_family_nudged(family_with_old_sheet):
         # Повторный цикл: без повторного нэджа (маркер в settings)
         me._check_for_new_grades_impl()
 
-    sheets.assert_not_called()                      # Sheets вообще не читали
+    assert sheets.call_count == 1                   # ровно одна суточная перепроверка
     assert sender.send.call_count == 1              # ровно один нэдж семье
     args, kwargs = sender.send.call_args
     assert args[0] == info["tg_id"]
@@ -224,11 +230,10 @@ def test_stale_nudge_deferred_in_quiet_hours(family_with_old_sheet):
     info = family_with_old_sheet
     sender = MagicMock()
     with _september_2026(), \
-         patch("src.monitor_engine.get_sheet_data") as sheets, \
+         patch("src.monitor_engine.get_sheet_data"), \
          patch("src.monitor_engine.is_quiet_hours", return_value=True), \
          patch("src.notifications.get_sender", return_value=sender):
         me._check_for_new_grades_impl()
-    sheets.assert_not_called()
     sender.send.assert_not_called()
     assert dbm.get_setting(f"relink_nudge:{info['student_id']}") is None
 
