@@ -28,7 +28,7 @@ const state = {
     translations: {},
     students: [],
     currentStudentId: null,
-    currentDays: 7,
+    currentDays: 90,          // = кнопке с классом active в dashboard.html («Четверть»)
     dashboard: null,            // последний загруженный snapshot
     quarters: null,             // lazy-loaded
     quartersLoading: false,
@@ -129,7 +129,10 @@ async function loadTranslations(lang) {
         // но НЕ хранит вечно как force-cache. После deploy новые i18n ключи
         // подтягиваются. Стоимость: 1 HEAD-equivalent request per visit.
         // Раньше force-cache → новые ключи рендерились как "kpi_avg" буквально.
-        const res = await fetch(`/static/locales/${lang}.json`, { cache: "no-cache" });
+        // Версионируем тем же build_id, что и app.js/style.css: статика теперь
+        // кэшируется надолго, и без ключа версии перевод залипал бы навсегда.
+        const v = window.GS_BUILD_ID || "";
+        const res = await fetch(`/static/locales/${lang}.json?v=${encodeURIComponent(v)}`);
         if (!res.ok) throw new Error(`locale ${lang} not found`);
         return await res.json();
     } catch (e) {
@@ -184,12 +187,20 @@ function onPeriodChange(btn) {
     state.quarters = null;  // период сменился — обнулить четверти
     // year report не зависит от периода — не обнуляем
     loadDashboard();
+    // Если открыта вкладка «Итоги года» — перезагрузить и её, иначе на экране
+    // остались бы цифры предыдущего ребёнка под именем текущего.
+    const yearTab = document.querySelector('.view-tab[data-view="year"]');
+    if (yearTab && yearTab.classList.contains("active")) {
+        _loadYearReportIfNeeded();
+    }
 }
 
 function switchStudent(studentId) {
     state.currentStudentId = studentId;
     state.quarters = null;
     state.yearReport = null;  // сменился ребёнок — перезагрузим отчёт за год
+    state.lastSeenAt = null;  // «новое» считается относительно нового ребёнка
+    state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;
 
     document.querySelectorAll(".student-tab").forEach(tab => {
         tab.classList.toggle("active", parseInt(tab.dataset.id, 10) === studentId);
@@ -247,10 +258,26 @@ function renderDashboard() {
         d.by_subject || [],
         d.trend_by_subject || [],
     );
+    // Снимок «когда родитель смотрел в прошлый раз» берём ДО рендера списка и
+    // только один раз за загрузку дашборда — иначе бейдж «новое» гас сразу же.
+    if (!state.lastSeenAt) {
+        let stored = null;
+        try {
+            stored = localStorage.getItem(LAST_SEEN_KEY(state.currentStudentId));
+        } catch (e) {
+            stored = null;   // приватный режим / заблокированное хранилище
+        }
+        state.lastSeenAt = stored ? new Date(stored) : new Date(0);
+    }
+
     renderAllGrades(d.recent_grades || []);
 
-    // Mark студента как просмотренного — для подсветки "новое" в следующий заход
-    localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
+    // Отмечаем студента просмотренным — для подсветки «новое» в следующий заход.
+    try {
+        localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
+    } catch (e) {
+        // Telegram WebView может блокировать хранилище — подсветка не критична.
+    }
 
     // Year report — теперь в отдельной tab (view-year), load lazy при switch.
     setupViewTabs();
@@ -512,14 +539,44 @@ function _sparklineSvg(points, width, height) {
 }
 
 // ═════════ ALL GRADES (grouped by date + subject filter + "show more") ═════════
+// Chart.js (205 КБ raw / 73 КБ gzip) нужен ровно одному экрану — графику в
+// drill-down по предмету. Раньше он висел в <head> и составлял ~69 % трафика
+// первой загрузки у каждого родителя, включая тех, кто drill-down не открывает.
+let _chartJsPromise = null;
+function _ensureChartJs() {
+    if (window.Chart) return Promise.resolve(true);
+    if (!_chartJsPromise) {
+        _chartJsPromise = new Promise(resolve => {
+            const el = document.createElement("script");
+            el.src = "/static/vendor/chart.umd.min.js";
+            el.onload = () => resolve(true);
+            el.onerror = () => { _chartJsPromise = null; resolve(false); };
+            document.head.appendChild(el);
+        });
+    }
+    return _chartJsPromise;
+}
+
 const _GRADES_INITIAL_GROUPS = 7;  // показываем последние 7 дат
+
+// Локальная дата в 'YYYY-MM-DD'. Ученик, бот и сервер живут в Ташкенте, поэтому
+// сравниваем календарные дни как строки, а не через Date: `new Date("2026-09-03")`
+// разбирается как UTC-полночь, и при UTC+5 «сегодня» уезжало на вчерашние оценки.
+function _todayIso() {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
 
 function _formatDateGroupLabel(dateStr) {
     if (!dateStr) return '?';
-    const d = new Date(dateStr);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const diffDays = Math.floor((today - d) / (24 * 3600 * 1000));
+    // dateStr всегда 'YYYY-MM-DD' (сервер нормализует в _serialize_grades).
+    const [y, m, day] = dateStr.split('-').map(Number);
+    if (!y || !m || !day) return dateStr;
+    const d = new Date(y, m - 1, day);          // локальная полночь, без сдвига
+    const todayIso = _todayIso();
+    const [ty, tm, td] = todayIso.split('-').map(Number);
+    const today = new Date(ty, tm - 1, td);
+    const diffDays = Math.round((today - d) / (24 * 3600 * 1000));
     if (diffDays === 0) return t("grades_today") || "Сегодня";
     if (diffDays === 1) return t("grades_yesterday") || "Вчера";
     if (diffDays < 7) {
@@ -540,17 +597,27 @@ function renderAllGrades(grades) {
 
     countBadge.textContent = `(${grades.length})`;
 
-    if (filter && filter.options.length <= 1) {
+    if (filter) {
+        // Список предметов пересобираем на каждый рендер, сохраняя выбор: раньше
+        // опции строились один раз, а обработчик навсегда замыкался на первый
+        // массив — после смены ребёнка или периода фильтр показывал предметы и
+        // оценки предыдущего ученика (аудит 2026-09-03).
         const subjects = Array.from(new Set(grades.map(g => g.subject))).sort();
+        const previous = filter.value;
+        const placeholder = filter.options.length ? filter.options[0] : null;
+        filter.innerHTML = "";
+        if (placeholder) filter.appendChild(placeholder);
         subjects.forEach(s => {
             const opt = document.createElement("option");
             opt.value = s; opt.textContent = s;
             filter.appendChild(opt);
         });
-        filter.addEventListener("change", () => {
+        filter.value = subjects.includes(previous) ? previous : "";
+        // onchange (а не addEventListener) — переустановка не копит слушателей.
+        filter.onchange = () => {
             state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;  // reset
             renderAllGrades(grades);
-        });
+        };
     }
 
     const selected = filter ? filter.value : "";
@@ -573,8 +640,11 @@ function renderAllGrades(grades) {
     if (!state._gradesGroupsShown) state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;
     const visibleDates = sortedDates.slice(0, state._gradesGroupsShown);
 
-    const lastSeenStr = localStorage.getItem(LAST_SEEN_KEY(state.currentStudentId));
-    const lastSeen = lastSeenStr ? new Date(lastSeenStr) : new Date(0);
+    // lastSeen фиксируется один раз на загрузку дашборда (см. renderDashboard).
+    // Раньше значение читалось из localStorage уже ПОСЛЕ того, как тот же рендер
+    // записал туда «сейчас», поэтому бейдж «новое» исчезал после первого же
+    // переключения периода.
+    const lastSeen = state.lastSeenAt instanceof Date ? state.lastSeenAt : new Date(0);
 
     const groupsHtml = visibleDates.map(date => {
         const dayGrades = byDate.get(date);
@@ -639,6 +709,9 @@ function renderDrilldown(subject) {
     const ctx = document.getElementById("ddChart")?.getContext("2d");
     if (state.ddChart) { state.ddChart.destroy(); state.ddChart = null; }
     if (ctx && grades.length > 1) {
+        // Библиотека подгружается только здесь — на главном экране она не нужна.
+        _ensureChartJs().then(ok => {
+            if (!ok) return;
         const sorted = grades.slice().sort((a, b) => {
             const da = a.grade_date || a.date_added || '';
             const db = b.grade_date || b.date_added || '';
@@ -661,6 +734,7 @@ function renderDrilldown(subject) {
                 plugins: { legend: { display: false } },
                 scales: { y: { min: 1, max: 5, ticks: { stepSize: 1 } } },
             },
+            });
         });
     }
 

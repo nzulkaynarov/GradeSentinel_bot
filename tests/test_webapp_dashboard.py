@@ -58,8 +58,10 @@ class TestComputeSummary:
         assert s["new_count"] == 3
 
     def test_problem_subject_detected_at_threshold(self):
-        # avg = 3.0, ниже 3.5 порога → problem
-        grades = [_grade("History", 3), _grade("History", 3)]
+        # avg = 3.0, ниже 3.5 порога → problem.
+        # Оценок ≥ MIN_SAMPLE: с 2026-09-03 предмет с одной-двумя оценками
+        # считается шумом и не выносится в «проблемные» (тот же порог, что у KPI).
+        grades = [_grade("History", 3), _grade("History", 3), _grade("History", 3)]
         s = compute_summary(grades, [], 7)
         assert len(s["problem_subjects"]) == 1
         assert s["problem_subjects"][0]["name"] == "History"
@@ -67,14 +69,15 @@ class TestComputeSummary:
         assert s["status"] == "concern"
 
     def test_top_subject_detected(self):
-        grades = [_grade("Math", 5), _grade("Math", 5)]
+        grades = [_grade("Math", 5), _grade("Math", 5), _grade("Math", 5)]
         s = compute_summary(grades, [], 7)
         assert len(s["top_subjects"]) == 1
         assert s["top_subjects"][0]["name"] == "Math"
 
     def test_delta_positive_means_up_trend(self):
-        current = [_grade("Math", 5), _grade("Math", 5)]
-        previous = [_grade("Math", 3), _grade("Math", 3)]
+        # В обоих периодах выборка ≥ MIN_SAMPLE — иначе дельта не считается
+        current = [_grade("Math", 5), _grade("Math", 5), _grade("Math", 5)]
+        previous = [_grade("Math", 3), _grade("Math", 3), _grade("Math", 3)]
         s = compute_summary(current, previous, 7)
         assert s["delta"] == 2.0
         assert s["trend"] == "up"
@@ -82,8 +85,8 @@ class TestComputeSummary:
         assert s["status"] == "improving"
 
     def test_delta_negative_means_down_trend(self):
-        current = [_grade("Math", 4), _grade("Math", 4)]
-        previous = [_grade("Math", 5), _grade("Math", 5)]
+        current = [_grade("Math", 4), _grade("Math", 4), _grade("Math", 4)]
+        previous = [_grade("Math", 5), _grade("Math", 5), _grade("Math", 5)]
         s = compute_summary(current, previous, 7)
         assert s["delta"] == -1.0
         assert s["trend"] == "down"
@@ -98,8 +101,10 @@ class TestComputeSummary:
 
     def test_problems_take_priority_over_improving(self):
         # У нас тренд up (delta=+0.5), но также есть проблемная тема → concern
-        current = [_grade("Math", 5), _grade("History", 3)]
-        previous = [_grade("Math", 4), _grade("History", 3)]
+        current = [_grade("Math", 5), _grade("Math", 5), _grade("Math", 5),
+                   _grade("History", 3), _grade("History", 3), _grade("History", 3)]
+        previous = [_grade("Math", 4), _grade("Math", 4), _grade("Math", 4),
+                    _grade("History", 3), _grade("History", 3), _grade("History", 3)]
         s = compute_summary(current, previous, 7)
         assert s["status"] == "concern"
 
@@ -112,8 +117,8 @@ class TestComputeSummary:
         assert (end - start).days == 14
 
     def test_subject_delta_computed(self):
-        current = [_grade("Math", 5), _grade("Math", 5)]
-        previous = [_grade("Math", 3), _grade("Math", 3)]
+        current = [_grade("Math", 5), _grade("Math", 5), _grade("Math", 5)]
+        previous = [_grade("Math", 3), _grade("Math", 3), _grade("Math", 3)]
         s = compute_summary(current, previous, 7)
         # Top subject Math должен иметь delta = +2
         top_math = next(t for t in s["top_subjects"] if t["name"] == "Math")
@@ -128,8 +133,8 @@ class TestComputeSummary:
     def test_problem_sorted_by_avg_ascending(self):
         # Худшие первыми
         grades = [
-            _grade("A", 2), _grade("A", 2),  # avg 2 — самый плохой
-            _grade("B", 3), _grade("B", 3),  # avg 3
+            _grade("A", 2), _grade("A", 2), _grade("A", 2),  # avg 2 — самый плохой
+            _grade("B", 3), _grade("B", 3), _grade("B", 3),  # avg 3
         ]
         s = compute_summary(grades, [], 7)
         assert s["problem_subjects"][0]["name"] == "A"
