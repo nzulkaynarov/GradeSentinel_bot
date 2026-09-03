@@ -13,6 +13,7 @@ from src.database_manager import (
     get_active_spreadsheets_with_subscription,
     upsert_quarter_grade, get_db_connection, get_notify_mode,
     mark_grade_notified_by_content, mark_grade_notified, get_unnotified_grades,
+    set_student_academic_year,
 )
 from src.google_sheets import get_sheet_data, get_spreadsheet_title
 from src.data_cleaner import sanitize_grade, sanitize_cell
@@ -260,6 +261,95 @@ def _record_student_success(student_id: int):
 # ─────────────────────────────────────────────────────────────
 # Дата последнего лога [STALE_SHEET] по ученику — чтобы не писать каждые 5 мин.
 _stale_logged_on: dict = {}
+
+
+def _claim_daily_recheck(student_id: int, today) -> bool:
+    """True если сегодня ученика на паузе ещё не перепроверяли (и «занимает» день).
+
+    Пауза не должна быть приговором: `academic_year` мог быть записан неверно
+    (backfill по грязным данным — инцидент 2026-09-03, или инференс по листу,
+    который в момент привязки был ещё пуст). Пока таблица не читается, ошибку
+    нечем обнаружить, и ученик молча выпадает из мониторинга навсегда.
+    Раз в сутки читаем даже приостановленный лист и сверяем год с содержимым.
+
+    Маркер в settings (`stale_recheck:{sid}`) — переживает рестарт, поэтому
+    флап сервиса не превращается в чтение на каждом цикле."""
+    from src.database_manager import get_setting, set_setting
+
+    marker_key = f"stale_recheck:{student_id}"
+    stamp = today.isoformat()
+    try:
+        if get_setting(marker_key) == stamp:
+            return False
+        set_setting(marker_key, stamp)
+        return True
+    except Exception as e:
+        # БД недоступна — не рискуем лишним чтением Sheets, оставляем паузу.
+        logger.warning(f"Daily recheck marker failed for student {student_id}: {e}")
+        return False
+
+
+def _reconcile_academic_year(student_id: int, display_name: str, data,
+                             stored_year: Optional[int], today) -> Optional[int]:
+    """Сверяет записанный учебный год с содержимым уже загруженного листа.
+
+    Записанный год — это гипотеза (backfill миграции, инференс при привязке).
+    Лист — факт: оценки за январь–июнь календарного года N физически не могут
+    принадлежать учебному году N/N+1. Расходятся — верим листу и чиним запись,
+    иначе одна испорченная запись живёт вечно (на проде 2026-09-03 ложная оценка
+    за «сегодня» дала прошлогодней таблице academic_year=2026, и рассылка
+    прошлогодних оценок продолжалась).
+
+    `stored_year is None` не трогаем: это штатное «ещё не определён», год
+    выводит history_importer при импорте, а монитор страхует эхо-guard'ом.
+    Возвращает год, которому стоит верить дальше."""
+    from src.history_importer import sheet_grade_months, infer_sheet_academic_year
+
+    if stored_year is None or data is None:
+        return stored_year
+    try:
+        months = sheet_grade_months(data, context=f"student={student_id} ({display_name})")
+    except Exception as e:
+        logger.warning(f"Academic year reconcile failed for student {student_id}: {e}")
+        return stored_year
+    if not months:
+        # Ни одной оценки: лист пуст, не распознан или пришёл битым. Это не
+        # свидетельство ни за какой год — менять запись не на чем. Особенно важно
+        # для приостановленных таблиц: иначе пустой ответ Sheets «омолодил» бы год
+        # и возобновил рассылку прошлогодних оценок.
+        return stored_year
+    inferred = infer_sheet_academic_year(months, today=today)
+    if inferred == stored_year:
+        return stored_year
+
+    logger.warning(
+        f"[ACADEMIC_YEAR_CORRECTED] student_id={student_id} ({display_name}): "
+        f"stored={stored_year}, sheet content says {inferred}. Fixing the record."
+    )
+    try:
+        set_student_academic_year(student_id, inferred)
+    except Exception as e:
+        logger.error(f"Failed to persist corrected academic year for {student_id}: {e}")
+        return stored_year
+    return inferred
+
+
+def _passes_stale_gate(student: dict, today) -> bool:
+    """True если ученика нужно опрашивать в этом цикле.
+
+    Не stale → да. Stale → нет, КРОМЕ одной попытки в сутки: лист читается,
+    чтобы `_reconcile_academic_year` мог сверить год с содержимым и снять
+    ошибочную паузу. Нэдж и алерт шлём только когда чтения не будет — иначе
+    попросили бы обновить ссылку у таблицы, которая через секунду окажется
+    актуальной."""
+    from src.history_importer import is_sheet_stale
+
+    if not is_sheet_stale(student.get('academic_year'), today):
+        return True
+    if _claim_daily_recheck(student['student_id'], today):
+        return True
+    _handle_stale_sheet(student, today)
+    return False
 
 
 def _handle_stale_sheet(student: dict, today) -> bool:
@@ -581,6 +671,7 @@ def _check_for_new_grades_impl():
     # колонку для сегодняшней даты через _parse_master_sheet_for_date.
     from src.history_importer import (
         MASTER_SHEET_RANGE, _parse_master_sheet_for_date, current_academic_year,
+        is_sheet_stale,
     )
 
     # Outbox sweeper (PR-F1): добить уведомления, не ушедшие в прошлых циклах
@@ -598,10 +689,15 @@ def _check_for_new_grades_impl():
     tashkent_today = tashkent_today_date.isoformat()
 
     # Rollover учебного года (инцидент 2026-09-02): таблицы за ПРОШЛЫЙ учебный
-    # год не опрашиваем вообще — школа выдала новую ссылку, а в старой колонка
-    # «2 сентября» (без года) совпала бы с сегодняшней датой. Семье — напоминание
-    # обновить ссылку, админу — алерт (раз в год на ученика).
-    students = [s for s in students if not _handle_stale_sheet(s, tashkent_today_date)]
+    # год не опрашиваем — школа выдала новую ссылку, а в старой колонка
+    # «2 сентября» (без года) совпала бы с сегодняшней датой.
+    #
+    # Пауза не окончательная: раз в сутки приостановленный лист всё-таки читаем
+    # и сверяем год с его содержимым (_reconcile_academic_year ниже). Иначе
+    # единожды неверно записанный academic_year не имеет способа исправиться —
+    # ни в одну сторону: завышенный оставляет рассылку прошлогодних оценок,
+    # заниженный молча выключает ученику мониторинг навсегда.
+    students = [s for s in students if _passes_stale_gate(s, tashkent_today_date)]
     if not students:
         logger.info("All active students have stale (previous academic year) sheets. Nothing to poll.")
         return
@@ -648,11 +744,25 @@ def _check_for_new_grades_impl():
 
         logger.info(f"Processing sheet for student: {display_name} (ID: {student_id})")
 
+        # Лист в руках — сверяем записанный учебный год с его содержимым и чиним
+        # запись при расхождении. Это единственный момент, когда ошибку в
+        # academic_year вообще можно заметить.
+        academic_year = _reconcile_academic_year(
+            student_id, display_name, data, student.get('academic_year'), tashkent_today_date)
+        if is_sheet_stale(academic_year, tashkent_today_date):
+            # Либо суточная перепроверка подтвердила паузу, либо год только что
+            # понижен по содержимому листа. Шлём нэдж/алерт и ничего не читаем.
+            # Лист за сегодня уже прочитан — расходуем суточную перепроверку,
+            # иначе следующий цикл прочитал бы его повторно.
+            _claim_daily_recheck(student_id, tashkent_today_date)
+            _handle_stale_sheet({**student, 'academic_year': academic_year,
+                                 'display_name': display_name}, tashkent_today_date)
+            continue
+
         # Извлекаем оценки за сегодняшнюю дату из «Все оценки!».
         # Пустой список — нет колонки для today (учебный год не начался / выходной).
         # academic_year таблицы → «2 сентября» прошлогодней таблицы = прошлый год,
         # с today не совпадёт (даже если stale-фильтр выше почему-то пропустил).
-        academic_year = student.get('academic_year')
         today_grades_pairs = _parse_master_sheet_for_date(
             data, tashkent_today_date, context=f"student={student_id} ({display_name})",
             academic_year=(academic_year if academic_year is not None
