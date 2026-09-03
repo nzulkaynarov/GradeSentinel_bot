@@ -1,3 +1,5 @@
+> ⚠️ **Исторический документ (весна 2026).** Описывает SQLite / Docker / Raspberry Pi и старую структуру — НЕ источник истины. Актуально: `CLAUDE.md`, `Docs/DEVELOPMENT.md`, `Docs/MAINTENANCE.md`, `deploy/README.md`, последний `Docs/plans/*-SESSION-HANDOFF.md`.
+
 # 📘 Detailed Project Specification: GradeSentinel (Antigravity)
 
 Этот документ содержит исчерпывающее техническое описание системы GradeSentinel.

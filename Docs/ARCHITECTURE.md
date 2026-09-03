@@ -1,3 +1,5 @@
+> ⚠️ **Исторический документ (весна 2026).** Описывает SQLite / Docker / Raspberry Pi и старую структуру — НЕ источник истины. Актуально: `CLAUDE.md`, `Docs/DEVELOPMENT.md`, `Docs/MAINTENANCE.md`, `deploy/README.md`, последний `Docs/plans/*-SESSION-HANDOFF.md`.
+
 # Архитектура проекта GradeSentinel
 
 > Актуально на: 2026-04-30 (после security/stability аудита).
