@@ -330,6 +330,35 @@ def _import_from_sheet(
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # Ключи уже известных оценок — ОДНИМ запросом по обеим таблицам.
+        #
+        # Архив обязателен: без него оценка, уехавшая в grade_history_archive
+        # (weekly job, >180 дней), выглядела «новой», импортировалась заново, на
+        # следующей неделе архивировалась опять — и так каждую неделю. К
+        # 2026-09-03 архив раздулся до 7141 строки против 720 уникальных, а
+        # дашборд показывал то появляющуюся, то исчезающую историю.
+        #
+        # Раньше здесь был SELECT на КАЖДУЮ запись листа: ~500 записей × 2 листа
+        # × 24 прохода в сутки = десятки тысяч round-trip к БД по WireGuard.
+        # Теперь два запроса на лист независимо от числа оценок.
+        cursor.execute(
+            '''
+            SELECT subject,
+                   COALESCE(grade_date::text,
+                            (date_added::timestamp + interval '5 hours')::date::text) AS d,
+                   raw_text
+              FROM grade_history WHERE student_id = %s
+            UNION
+            SELECT subject,
+                   COALESCE(grade_date::text,
+                            (date_added::timestamp + interval '5 hours')::date::text) AS d,
+                   raw_text
+              FROM grade_history_archive WHERE student_id = %s
+            ''',
+            (student_id, student_id),
+        )
+        known = {(row['subject'], row['d'], row['raw_text']) for row in cursor.fetchall()}
+
         for rec in records:
             # Фикс A: сегодня и будущие даты — зона monitor'а. Не пишем из истории.
             #
@@ -349,22 +378,12 @@ def _import_from_sheet(
             date_added = rec['date'].strftime('%Y-%m-%d 12:00:00') if rec['date'] else None
             cell_ref = f"{sheet_label}{_col_letter(rec['col_index'])}{rec['row_index']}"
 
-            # Дедуп по содержимому: если в БД уже есть та же оценка по
-            # (предмет, ДЕНЬ, значение) — пропускаем. Сравниваем именно
-            # grade_date с fallback на date(date_added, '+5h') для legacy-записей.
-            cursor.execute('''
-                SELECT 1 FROM grade_history
-                WHERE student_id = %s AND subject = %s
-                  AND COALESCE(
-                        grade_date::text,
-                        (date_added::timestamp + interval '5 hours')::date::text)
-                      = COALESCE(%s, '')
-                  AND raw_text = %s
-                LIMIT 1
-            ''', (student_id, rec['subject'], grade_date, rec['raw_text']))
-            if cursor.fetchone():
+            # Дедуп по содержимому (предмет, ДЕНЬ, значение) — по множеству,
+            # собранному выше из grade_history И архива.
+            if (rec['subject'], grade_date or '', rec['raw_text']) in known:
                 skipped += 1
                 continue
+            known.add((rec['subject'], grade_date or '', rec['raw_text']))
 
             # ON CONFLICT DO NOTHING вместо try/except: в PG любая ошибка
             # (UNIQUE constraint на cell_reference того же листа — повторный

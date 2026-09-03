@@ -17,18 +17,31 @@ def archive_old_grades(days: Optional[int] = None) -> int:
 
     days по умолчанию из config.GRADE_ARCHIVE_DAYS.
 
-    Атомарность: перенос по конкретным id (не по WHERE
-    date_added < cutoff) — иначе DELETE мог бы захватить запись, которой
-    нет в INSERT (или удалить позднее вставленную).
+    Отбор идёт по `grade_date` — фактической дате оценки, а НЕ по `date_added`.
+    Причина (инцидент 2026-09-03): у `date_added` смешанная семантика — монитор
+    пишет туда «когда бот узнал» (now()), а history_importer — саму дату оценки
+    (12:00 того дня). Импортированная история рождалась уже «старой», уезжала в
+    архив на ближайшей воскресной чистке, а через час импортёр возвращал её
+    обратно, потому что дедуп смотрел только в grade_history. Цикл повторялся
+    каждую неделю: к 2026-09-03 архив содержал 7141 строку против 720 уникальных
+    (каждая оценка до 16 раз), и набор данных в дашборде менялся в зависимости
+    от того, когда посмотреть. `grade_date` — единственная дата с однозначным
+    смыслом, и по ней есть индекс (idx_grade_history_student_grade_date).
+
+    Атомарность: перенос по конкретным id — иначе DELETE мог бы захватить
+    запись, которой нет в INSERT (или удалить позднее вставленную).
     """
     if days is None:
         from src.config import GRADE_ARCHIVE_DAYS
         days = GRADE_ARCHIVE_DAYS
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # grade_date в grade_history NOT NULL (этап 1C RFC) → COALESCE не нужен.
+        # Граница — по Ташкенту (UTC+5), как и везде в проекте.
         cursor.execute(
             "SELECT id FROM grade_history "
-            "WHERE date_added < (now() at time zone 'utc') - %s * interval '1 day'",
+            "WHERE grade_date < ((now() at time zone 'utc') + interval '5 hours')::date "
+            "                   - %s * interval '1 day'",
             (int(days),),
         )
         ids = [row['id'] for row in cursor.fetchall()]
@@ -41,12 +54,16 @@ def archive_old_grades(days: Optional[int] = None) -> int:
         for i in range(0, len(ids), chunk_size):
             chunk = ids[i:i + chunk_size]
             placeholders = ','.join(['%s'] * len(chunk))
+            # ON CONFLICT DO NOTHING + UNIQUE-индекс в архиве (миграция 0005):
+            # повторная архивация той же оценки больше не создаёт дубль, даже
+            # если запись каким-то путём вернулась в grade_history.
             cursor.execute(
                 f'''INSERT INTO grade_history_archive
                     (student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added)
                     SELECT student_id, subject, grade_value, raw_text, cell_reference, grade_date, date_added
                     FROM grade_history
-                    WHERE id IN ({placeholders})''',
+                    WHERE id IN ({placeholders})
+                    ON CONFLICT DO NOTHING''',
                 chunk,
             )
             moved += cursor.rowcount
