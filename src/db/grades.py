@@ -278,18 +278,43 @@ def get_grade_history_for_student(student_id: int, days: int = 14) -> List[Dict[
 
 
 def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[Dict[str, Any]]:
-    """Полная история оценок за N дней (для WebApp API). Включает cell_reference."""
+    """Полная история оценок за N дней (для WebApp API). Включает cell_reference.
+
+    Читает grade_history И grade_history_archive: оценки старше
+    GRADE_ARCHIVE_DAYS (180) физически лежат в архиве, и без него длинные
+    периоды («Год», «Итоги года») молча показывали бы огрызок истории. Раньше
+    это маскировалось тем, что часовой импортёр постоянно возвращал старые
+    записи обратно; после фикса цикла архивации (2026-09-03) возвращать их
+    больше некому — и не нужно.
+
+    UNION ALL безопасен: архив и живая таблица не пересекаются (перенос
+    атомарен), а дубли внутри архива сняты миграцией 0005.
+
+    Верхняя граница по дате обязательна: запись с датой в будущем (так рождался
+    мусор при рассинхроне учебного года) иначе попадала в ЛЮБОЙ период и всегда
+    оказывалась первой в списке «последних оценок»."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
-            FROM grade_history
-            WHERE student_id = %s
-              AND COALESCE(grade_date, (date_added + interval '5 hours')::date)
-                  >= ((now() at time zone 'utc') + interval '5 hours')::date - %s
-            ORDER BY COALESCE(grade_date, (date_added + interval '5 hours')::date) DESC,
-                     date_added DESC
-        ''', (student_id, days))
+            WITH bounds AS (
+                SELECT ((now() at time zone 'utc') + interval '5 hours')::date AS today
+            ), rows AS (
+                SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
+                  FROM grade_history
+                 WHERE student_id = %s
+                UNION ALL
+                SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
+                  FROM grade_history_archive
+                 WHERE student_id = %s
+            )
+            SELECT r.subject, r.grade_value, r.raw_text, r.cell_reference,
+                   r.grade_date, r.date_added
+              FROM rows r, bounds b
+             WHERE COALESCE(r.grade_date, (r.date_added + interval '5 hours')::date)
+                   BETWEEN b.today - %s AND b.today
+             ORDER BY COALESCE(r.grade_date, (r.date_added + interval '5 hours')::date) DESC,
+                      r.date_added DESC
+        ''', (student_id, student_id, days))
         return [dict(row) for row in cursor.fetchall()]
 
 
