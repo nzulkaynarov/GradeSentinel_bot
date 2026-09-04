@@ -4,25 +4,20 @@
   "error_generic": "Could not load data",
   "error_no_students": "No students yet. Add a child through the bot.",
   "error_retry": "Try again",
-
   "greeting": "Hello, {name}!",
   "greeting_no_name": "Diary",
-
   "hero_average": "average grade",
   "hero_period_short": "this week",
   "hero_no_grades": "No grades yet",
   "hero_no_grades_hint": "They will appear after the next update",
-
   "trend_up": "better",
   "trend_down": "worse",
   "trend_stable": "same",
   "trend_vs_previous": "than last period",
-
   "status_concern": "⚠️ Some attention needed",
   "status_improving": "📈 Improving trend",
   "status_declining": "📉 Decline vs last week",
   "status_stable": "✅ All stable",
-
   "section_problems": "Needs attention",
   "section_problems_subtitle": "Subjects with low average",
   "section_top": "Strong subjects",
@@ -30,32 +25,26 @@
   "section_subjects_subtitle": "All subjects in period",
   "section_recent": "Recent grades",
   "section_quarters": "Quarters",
-  "section_quarters_subtitle": "Quarter results",
-
+  "section_quarters_subtitle": "with year forecast",
   "period_week": "Week",
   "period_two_weeks": "2 weeks",
   "period_month": "Month",
   "period_year": "Year",
-
   "chart_trend_title": "Daily average trend",
   "chart_trend_empty": "Not enough data for chart",
-
   "table_subject": "Subject",
   "table_grade": "Grade",
   "table_date": "Date",
   "table_average": "Avg",
   "table_count": "Count",
-
   "quarter_1": "Q1",
   "quarter_2": "Q2",
   "quarter_3": "Q3",
   "quarter_4": "Q4",
   "quarter_year": "Year",
-
   "badge_new": "new",
   "show_more": "show more",
   "show_less": "show less",
-
   "section_year_report": "School year recap",
   "year_loading": "Loading year recap…",
   "year_empty": "Not enough data for the year",
@@ -67,7 +56,6 @@
   "year_worst_month": "⚠️ Tough month",
   "year_top_subjects": "Strong subjects",
   "year_problem_subjects": "Work on over summer",
-
   "section_ai_chat": "Ask AI",
   "chat_hint": "Ask about your child's grades in plain words",
   "chat_placeholder": "E.g., why did math drop?",
@@ -81,13 +69,11 @@
   "chat_feedback_up_label": "Helpful answer",
   "chat_feedback_down_label": "Not helpful",
   "chat_feedback_thanks": "Thanks for the feedback",
-
   "ai_summary_label": "AI overview",
   "ai_quick_questions": "💡 Quick questions:",
   "ai_suggested_summer": "🌞 What to work on over summer?",
   "ai_suggested_compare": "📊 Compare with last month",
   "ai_suggested_concern": "⚠️ Where are there concerns?",
-
   "action_share": "📤 Share",
   "action_export_pdf": "📄 Export PDF",
   "action_export_loading": "Creating PDF…",
@@ -106,7 +92,6 @@
   "quarters_forecast_badge": "forecast",
   "kpi_trend": "Trend",
   "period_quarter": "Quarter",
-  "section_quarters_subtitle": "with year forecast",
   "section_trend_by_subject": "Trend by subject",
   "section_trend_subtitle": "by week",
   "section_all_subjects": "All subjects",
@@ -123,14 +108,18 @@
   "quarters_empty": "No quarterly grades yet",
   "quarters_forecast_note": "Values with ~ — year forecast from current quarter grades.",
   "dd_history": "Grade history by subject",
-  "badge_new": "new",
   "ai_popup_general": "Opening the bot. Tap «💬 Chat» below and ask about grades — AI knows the full history.",
   "ai_popup_with_subject": "Opening the bot. Tap «💬 Chat» and ask about this subject — AI will filter to it.",
   "grades_today": "Today",
   "grades_yesterday": "Yesterday",
   "grades_show_more": "Show more days",
-  "dow_sun": "Sun", "dow_mon": "Mon", "dow_tue": "Tue",
-  "dow_wed": "Wed", "dow_thu": "Thu", "dow_fri": "Fri", "dow_sat": "Sat",
+  "dow_sun": "Sun",
+  "dow_mon": "Mon",
+  "dow_tue": "Tue",
+  "dow_wed": "Wed",
+  "dow_thu": "Thu",
+  "dow_fri": "Fri",
+  "dow_sat": "Sat",
   "tab_dashboard": "📊 Dashboard",
   "tab_year": "🎓 Year summary",
   "year_months_title": "Best and worst month",
@@ -145,5 +134,8 @@
   "btn_generate": "Generate",
   "qc_stat_count_label": "for period",
   "quarters_no_data": "No quarterly grades",
-  "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat."
+  "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat.",
+  "stale_banner_title": "Spreadsheet from the previous school year",
+  "stale_banner_body": "Schools issue a new link every year. Until the link is updated, new grades will not arrive — this is {year} data.",
+  "stale_banner_action": "Update the link in the bot"
 }

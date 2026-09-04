@@ -111,6 +111,14 @@ def send_welcome(message):
         handle_ai_deeplink(message, args[1][3:])
         return
 
+    # Deep-link смены ссылки: /start relink — кнопка из дашборда, когда таблица
+    # ученика за прошлый учебный год. Ведём сразу на выбор ребёнка, чтобы
+    # родителю не пришлось искать пункт меню.
+    if len(args) > 1 and args[1] == 'relink':
+        from src.handlers.family import open_relink_from_deeplink
+        open_relink_from_deeplink(message)
+        return
+
     # Автоматическая авторизация админа.
     # PR_F-hotfix: admin НЕ попадает в AI-чат как default — он работает с
     # admin panel. Чистим ai_chat_mode state если случайно туда зашёл,

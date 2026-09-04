@@ -34,7 +34,7 @@ from src.database_manager import (
     get_user_info_by_tg_id,
     get_student_academic_year,
 )
-from src.history_importer import current_academic_year
+from src.history_importer import current_academic_year, is_sheet_stale
 from src.db.auth import is_student_under_active_subscription
 from src.db.connection import get_db_connection
 from src.i18n import load_translations
@@ -821,7 +821,8 @@ def api_dashboard(student_id):
     # Четвертные — строго за учебный год привязанной таблицы. Иначе на экране
     # оказывалась смесь лет без единой пометки, и родитель читал прошлогодние
     # четверти как текущие (аудит 2026-09-03).
-    quarter_year = get_student_academic_year(student_id) or current_academic_year()
+    student_academic_year = get_student_academic_year(student_id)
+    quarter_year = student_academic_year or current_academic_year()
     quarter_grades = get_quarter_grades(student_id, academic_year=quarter_year)
     quarters_with_forecast = compute_quarters_with_forecast(quarter_grades)
     # trend_by_day удалён 2026-09-03: поле отдавалось «на пару дней» с 21 мая,
@@ -849,6 +850,10 @@ def api_dashboard(student_id):
         "trend_by_subject": trend_by_subject,
         "by_subject": by_subject,
         "quarters_with_forecast": quarters_with_forecast,
+        # Источник на паузе: данные физически не могут обновиться, пока родитель
+        # не пришлёт новую ссылку. Экран обязан это показать.
+        "sheet_stale": is_sheet_stale(student_academic_year),
+        "academic_year": student_academic_year,
         "quarters_academic_year": quarter_year,
         "quarters_academic_year_label": f"{quarter_year}/{str(quarter_year + 1)[-2:]}",
         # Даты нормализуем в ISO ЯВНО. Flask 3 сериализует date/datetime через
@@ -923,15 +928,24 @@ def api_dashboard_init():
     if not first_name and user_info.get("fio"):
         first_name = user_info["fio"].split()[0]
 
+    # Состояние источника по каждому ребёнку. Без него дашборд не отличает
+    # «новых оценок нет» от «бот перестал читать таблицу»: монитор ставит
+    # прошлогоднюю таблицу на паузу и шлёт напоминание в чат, а на экране
+    # остаётся замерший прошлогодний срез без единого признака (аудит 2026-09-03).
+    current_year = current_academic_year()
     return jsonify({
         "students": [
             {
                 "id": s["id"],
                 "fio": s["fio"],
                 "display_name": s.get("display_name") or s["fio"],
+                "academic_year": s.get("academic_year"),
+                "sheet_stale": is_sheet_stale(s.get("academic_year")),
             }
             for s in students
         ],
+        "current_academic_year": current_year,
+        "current_academic_year_label": f"{current_year}/{str(current_year + 1)[-2:]}",
         "bot_username": bot_username,
         "user": {
             "lang": get_user_lang(telegram_id),

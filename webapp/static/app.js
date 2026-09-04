@@ -258,6 +258,8 @@ function renderDashboard() {
         d.by_subject || [],
         d.trend_by_subject || [],
     );
+    renderStaleBanner(d);
+
     // Учебный год четвертных подписан явно: карточка «1ч 3 · 2ч 4 · Год 3»
     // выглядит одинаково для текущего и прошлого года, а разница принципиальна.
     const yearBadge = document.getElementById("quarters-year-badge");
@@ -426,6 +428,46 @@ function renderStatusLine(summary) {
 // боте — webapp дашборд только данные + Share/PDF.
 
 // ═════════ QUARTERS BLOCK — enriched cards (единственный subject listing) ═════════
+function renderStaleBanner(d) {
+    // Таблица ученика относится к прошлому учебному году → монитор её не
+    // читает. Экран при этом выглядит обычно, просто ничего не меняется, и
+    // родитель делает вывод «оценок нет». Полоса объясняет, что происходит,
+    // и ведёт прямо на смену ссылки.
+    const banner = document.getElementById("stale-banner");
+    if (!banner) return;
+    const stale = !!(d && d.sheet_stale);
+    banner.classList.toggle("hidden", !stale);
+    if (!stale) return;
+
+    const body = document.getElementById("stale-banner-body");
+    if (body) {
+        const year = d.academic_year
+            ? `${d.academic_year}/${String(d.academic_year + 1).slice(-2)}`
+            : "";
+        body.textContent = (t("stale_banner_body") || "").replace("{year}", year);
+    }
+    const btn = document.getElementById("stale-banner-btn");
+    if (btn) btn.onclick = () => _openBotRelink();
+}
+
+function _openBotRelink() {
+    // Deep-link `/start relink` открывает в боте выбор ребёнка для смены ссылки.
+    const tg = window.Telegram && window.Telegram.WebApp;
+    const botUsername = window.GS_BOT_USERNAME || state.botUsername;
+    if (!botUsername) {
+        const hint = t("stale_banner_action") || "";
+        if (tg && typeof tg.showAlert === "function") tg.showAlert(hint);
+        return;
+    }
+    const url = `https://t.me/${botUsername}?start=relink`;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    if (tg && typeof tg.openTelegramLink === "function") {
+        tg.openTelegramLink(url);
+    } else {
+        window.open(url, "_blank");
+    }
+}
+
 function renderQuartersBlock(quarters, bySubject, trendBySubject) {
     const wrap = document.getElementById("quarters-table-wrap");
     const empty = document.getElementById("quarters-empty");

@@ -43,6 +43,17 @@
             <div id="student-tabs" class="student-tabs hidden"></div>
         </header>
 
+        <!-- Источник на паузе: монитор не читает прошлогоднюю таблицу, поэтому
+             экран замирает. Без этой полосы «оценок нет» и «бот их не читает»
+             выглядят одинаково. -->
+        <div class="stale-banner hidden" id="stale-banner" role="status">
+            <div class="stale-banner-text">
+                <strong data-i18n="stale_banner_title">Таблица за прошлый учебный год</strong>
+                <span id="stale-banner-body"></span>
+            </div>
+            <button class="stale-banner-btn" id="stale-banner-btn" data-i18n="stale_banner_action">Обновить ссылку в боте</button>
+        </div>
+
         <!-- Main tabs: Dashboard / Year Summary -->
         <div class="view-tabs" id="view-tabs" role="tablist">
             <button class="view-tab active" data-view="dashboard" data-i18n="tab_dashboard">📊 Дашборд</button>

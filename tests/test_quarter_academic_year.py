@@ -161,3 +161,30 @@ def test_unique_constraint_covers_year(temp_db):
             conn.cursor().execute(
                 "INSERT INTO quarter_grades (student_id, academic_year, subject, quarter, "
                 "grade_value, raw_text) VALUES (%s, 2026, 'Алгебра', 1, 5, '5')", (sid,))
+
+
+# ─── Состояние источника видно в API ─────────────────────────────────
+def test_dashboard_reports_stale_sheet(temp_db):
+    """Дашборд обязан отличать «оценок нет» от «бот не читает таблицу»."""
+    from webapp.app import is_sheet_stale
+    from src.history_importer import current_academic_year
+
+    current = current_academic_year()
+    assert is_sheet_stale(current - 1) is True     # прошлогодняя → пауза
+    assert is_sheet_stale(current) is False        # актуальная
+    assert is_sheet_stale(None) is False           # ещё не определена
+
+
+def test_students_query_exposes_academic_year(temp_db):
+    """Флаг паузы в bootstrap строится по academic_year из этого запроса."""
+    head_id = dbm.add_parent("Head", "998900000555", role='senior')
+    dbm.update_parent_telegram_id("998900000555", 555555)
+    fam_id = dbm.add_family("F-stale")
+    dbm.set_family_head(fam_id, head_id)
+    dbm.link_parent_to_family(fam_id, head_id)
+    sid = dbm.add_student("Kid", "ss-stale", academic_year=2025)
+    dbm.link_student_to_family(fam_id, sid)
+
+    students = dbm.get_students_for_parent(555555)
+
+    assert students and students[0]["academic_year"] == 2025

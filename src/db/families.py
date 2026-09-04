@@ -312,7 +312,7 @@ def get_students_for_parent(telegram_id: int,
         cursor = conn.cursor()
         if family_id:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name, s.academic_year
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON p.telegram_id = %s
@@ -322,7 +322,7 @@ def get_students_for_parent(telegram_id: int,
             ''', (telegram_id, family_id))
         else:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name, s.academic_year
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON p.telegram_id = %s

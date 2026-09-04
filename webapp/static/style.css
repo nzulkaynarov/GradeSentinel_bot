@@ -1540,3 +1540,49 @@ body {
     border-color: transparent;
     color: white;
 }
+
+
+/* ── Полоса «источник на паузе» ─────────────────────────────────────
+   Появляется, когда таблица ученика относится к прошлому учебному году:
+   монитор её не читает, и без явного сообщения замерший экран выглядит
+   как «оценок просто нет». */
+.stale-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin: 0 0 var(--space-3) 0;
+    padding: var(--space-3);
+    border-radius: var(--radius-md, 10px);
+    background: color-mix(in srgb, var(--tg-hint) 14%, transparent);
+    border-left: 3px solid var(--grade-3, #e8a33d);
+}
+
+.stale-banner-text {
+    flex: 1 1 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.stale-banner-text span {
+    color: var(--tg-hint);
+}
+
+.stale-banner-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: var(--radius-sm, 8px);
+    background: var(--tg-button, #2f8cff);
+    color: var(--tg-button-text, #fff);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.stale-banner-btn:active {
+    opacity: 0.85;
+}
