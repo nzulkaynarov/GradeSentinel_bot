@@ -88,3 +88,6 @@ api/.pytest_cache/
 api/.ruff_cache/
 api/.mypy_cache/
 api/uv.lock
+
+# Рабочие файлы макетов Claude Design (артборды пересобираются из сессии)
+design/

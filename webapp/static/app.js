@@ -34,7 +34,6 @@ const state = {
     quartersLoading: false,
     yearReport: null,           // lazy-loaded, end-of-year отчёт
     yearLoading: false,
-    trendChart: null,
 };
 
 // localStorage ключ для last-seen timestamp (подсветка "новое")
@@ -161,6 +160,13 @@ function applyTranslations(root) {
         const text = state.translations[key];
         if (text) el.textContent = text;
     });
+    // Плейсхолдеры полей ввода. Атрибут в разметке был, а обработки — нет:
+    // узбекский и английский интерфейс показывали русскую подсказку в чате
+    // (аудит 2026-09-03).
+    root.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+        const text = state.translations[el.getAttribute("data-i18n-placeholder")];
+        if (text) el.setAttribute("placeholder", text);
+    });
     // Title тэг
     if (root === document) {
         document.title = t("app_title");
@@ -258,6 +264,17 @@ function renderDashboard() {
         d.by_subject || [],
         d.trend_by_subject || [],
     );
+    state.availableYears = d.available_years || [];
+    renderStaleBanner(d);
+
+    // Учебный год четвертных подписан явно: карточка «1ч 3 · 2ч 4 · Год 3»
+    // выглядит одинаково для текущего и прошлого года, а разница принципиальна.
+    const yearBadge = document.getElementById("quarters-year-badge");
+    if (yearBadge) {
+        const label = d.quarters_academic_year_label;
+        yearBadge.textContent = label ? ` · ${label}` : "";
+        yearBadge.classList.toggle("hidden", !label);
+    }
     // Снимок «когда родитель смотрел в прошлый раз» берём ДО рендера списка и
     // только один раз за загрузку дашборда — иначе бейдж «новое» гас сразу же.
     if (!state.lastSeenAt) {
@@ -285,9 +302,11 @@ function renderDashboard() {
 
 // ═════════ VIEW TABS (Дашборд / Итоги года) ═════════
 function setupViewTabs() {
-    const tabs = document.querySelectorAll(".view-tab");
-    tabs.forEach(tab => {
-        tab.addEventListener("click", () => switchView(tab.dataset.view));
+    // onclick вместо addEventListener: функция зовётся из каждого рендера
+    // дашборда, и слушатели накапливались — после пяти перерисовок один клик
+    // вызывал switchView пять раз (аудит 2026-09-03).
+    document.querySelectorAll(".view-tab").forEach(tab => {
+        tab.onclick = () => switchView(tab.dataset.view);
     });
 }
 
@@ -310,15 +329,21 @@ function switchView(view) {
     }
 }
 
-async function _loadYearReportIfNeeded() {
-    if (state.yearReport || state.yearLoading) {
+async function _loadYearReportIfNeeded(year) {
+    // year === undefined — год по умолчанию (год привязанной таблицы).
+    // Явно выбранный год всегда перезагружаем: это другой набор данных.
+    if (year === undefined && (state.yearReport || state.yearLoading)) {
         if (state.yearReport) renderYearReport();
         return;
     }
+    if (state.yearLoading) return;
     state.yearLoading = true;
     document.getElementById("year-loading").classList.remove("hidden");
+    document.getElementById("year-empty").classList.add("hidden");
+    document.getElementById("year-content").classList.add("hidden");
     try {
-        state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}`);
+        const q = year === undefined ? "" : `?year=${encodeURIComponent(year)}`;
+        state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}${q}`);
         renderYearReport();
     } catch (e) {
         console.warn("Year report load failed", e);
@@ -327,6 +352,30 @@ async function _loadYearReportIfNeeded() {
     } finally {
         state.yearLoading = false;
     }
+}
+
+function renderYearPicker(report) {
+    // Год подписан классом ТОГО года: «8 Orion · 2025/26». Класс живёт одним
+    // перезаписываемым полем, поэтому без снимка прошлогодние оценки
+    // подписывались бы текущим классом.
+    const picker = document.getElementById("year-picker");
+    const select = document.getElementById("year-select");
+    if (!picker || !select) return;
+
+    const years = (report && report.available_years) || [];
+    // Один год — выбирать не из чего, прячем.
+    picker.classList.toggle("hidden", years.length < 2);
+    if (years.length < 2) return;
+
+    select.innerHTML = "";
+    years.forEach(y => {
+        const opt = document.createElement("option");
+        opt.value = y.academic_year;
+        opt.textContent = y.display_name ? `${y.display_name} · ${y.label}` : y.label;
+        select.appendChild(opt);
+    });
+    select.value = String(report.academic_year);
+    select.onchange = () => _loadYearReportIfNeeded(select.value);
 }
 
 // ═════════ KPI ROW (4 cards) ═════════
@@ -418,6 +467,46 @@ function renderStatusLine(summary) {
 // боте — webapp дашборд только данные + Share/PDF.
 
 // ═════════ QUARTERS BLOCK — enriched cards (единственный subject listing) ═════════
+function renderStaleBanner(d) {
+    // Таблица ученика относится к прошлому учебному году → монитор её не
+    // читает. Экран при этом выглядит обычно, просто ничего не меняется, и
+    // родитель делает вывод «оценок нет». Полоса объясняет, что происходит,
+    // и ведёт прямо на смену ссылки.
+    const banner = document.getElementById("stale-banner");
+    if (!banner) return;
+    const stale = !!(d && d.sheet_stale);
+    banner.classList.toggle("hidden", !stale);
+    if (!stale) return;
+
+    const body = document.getElementById("stale-banner-body");
+    if (body) {
+        const year = d.academic_year
+            ? `${d.academic_year}/${String(d.academic_year + 1).slice(-2)}`
+            : "";
+        body.textContent = (t("stale_banner_body") || "").replace("{year}", year);
+    }
+    const btn = document.getElementById("stale-banner-btn");
+    if (btn) btn.onclick = () => _openBotRelink();
+}
+
+function _openBotRelink() {
+    // Deep-link `/start relink` открывает в боте выбор ребёнка для смены ссылки.
+    const tg = window.Telegram && window.Telegram.WebApp;
+    const botUsername = window.GS_BOT_USERNAME || state.botUsername;
+    if (!botUsername) {
+        const hint = t("stale_banner_action") || "";
+        if (tg && typeof tg.showAlert === "function") tg.showAlert(hint);
+        return;
+    }
+    const url = `https://t.me/${botUsername}?start=relink`;
+    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+    if (tg && typeof tg.openTelegramLink === "function") {
+        tg.openTelegramLink(url);
+    } else {
+        window.open(url, "_blank");
+    }
+}
+
 function renderQuartersBlock(quarters, bySubject, trendBySubject) {
     const wrap = document.getElementById("quarters-table-wrap");
     const empty = document.getElementById("quarters-empty");
@@ -471,11 +560,13 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
             ? `<div class="qc-quarters qc-quarters-empty">
                  <span class="muted small">${escapeHtml(t("quarters_no_data") || "Нет четвертных оценок")}</span>
                </div>`
+            // Подписи четвертей — из локалей: ключи quarter_1..quarter_4 давно
+            // лежали в ru/uz/en, а в разметке было захардкожено «1ч/2ч/3ч/4ч».
             : `<div class="qc-quarters">
-                 <div class="qc-q"><span class="qc-q-label">1ч</span>${cell(q.q1)}</div>
-                 <div class="qc-q"><span class="qc-q-label">2ч</span>${cell(q.q2)}</div>
-                 <div class="qc-q"><span class="qc-q-label">3ч</span>${cell(q.q3)}</div>
-                 <div class="qc-q"><span class="qc-q-label">4ч</span>${cell(q.q4)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_1") || "1ч")}</span>${cell(q.q1)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_2") || "2ч")}</span>${cell(q.q2)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_3") || "3ч")}</span>${cell(q.q3)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_4") || "4ч")}</span>${cell(q.q4)}</div>
                </div>`;
 
         // Year column — only if quarter has it
@@ -567,6 +658,14 @@ function _todayIso() {
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
 }
 
+function _monthLabel(m) {
+    // Названия месяцев — из локалей. Сервер отдаёт month_num/year и русский
+    // label лишь как запасной вариант для старых клиентов.
+    const key = `month_${m.month_num}`;
+    const name = t(key);
+    return name && m.year ? `${name} ${m.year}` : (m.label || "");
+}
+
 function _formatDateGroupLabel(dateStr) {
     if (!dateStr) return '?';
     // dateStr всегда 'YYYY-MM-DD' (сервер нормализует в _serialize_grades).
@@ -595,7 +694,11 @@ function renderAllGrades(grades) {
     const filter = document.getElementById("recent-filter");
     if (!list) return;
 
-    countBadge.textContent = `(${grades.length})`;
+    // Если список урезан сервером — показываем оба числа. Иначе заголовок
+    // «(100)» спорил с KPI «525» на том же экране.
+    const shown = grades.length;
+    const total = (state.dashboard && state.dashboard.recent_total) || shown;
+    countBadge.textContent = total > shown ? `(${shown} / ${total})` : `(${shown})`;
 
     if (filter) {
         // Список предметов пересобираем на каждый рендер, сохраняя выбор: раньше
@@ -821,6 +924,9 @@ function _openBotChatWithQuestion(question) {
 function renderYearReport() {
     const report = state.yearReport;
     document.getElementById("year-loading").classList.add("hidden");
+    // Селектор рисуем ДО проверки на пустоту: иначе из пустого года
+    // не выбраться обратно.
+    renderYearPicker(report);
 
     if (!report || report.numeric_count < 1) {
         document.getElementById("year-empty").classList.remove("hidden");
@@ -848,11 +954,11 @@ function renderYearReport() {
 
     if (report.best_month) {
         document.getElementById("year-best-month").textContent =
-            `${report.best_month.label} · ${report.best_month.avg.toFixed(2)}`;
+            `${_monthLabel(report.best_month)} · ${report.best_month.avg.toFixed(2)}`;
     }
     if (report.worst_month) {
         document.getElementById("year-worst-month").textContent =
-            `${report.worst_month.label} · ${report.worst_month.avg.toFixed(2)}`;
+            `${_monthLabel(report.worst_month)} · ${report.worst_month.avg.toFixed(2)}`;
     }
 }
 
@@ -1136,15 +1242,42 @@ function handleExportPdf() {
     const modal = document.getElementById("pdf-modal");
     if (!modal) return;
 
-    // Заполняем dropdown предметов
+    // Список предметов пересобираем при каждом открытии: он заполнялся один
+    // раз и после смены ребёнка предлагал предметы предыдущего.
     const subjSel = document.getElementById("pdf-subject-select");
-    if (subjSel && subjSel.options.length === 0) {
-        const subjects = (state.dashboard?.by_subject || []).map(s => s.name);
-        subjects.forEach(s => {
+    if (subjSel) {
+        const previous = subjSel.value;
+        subjSel.innerHTML = "";
+        (state.dashboard?.by_subject || []).forEach(s => {
             const opt = document.createElement("option");
-            opt.value = s; opt.textContent = s;
+            opt.value = s.name; opt.textContent = s.name;
             subjSel.appendChild(opt);
         });
+        if (previous) subjSel.value = previous;
+    }
+
+    // Период: учебные годы вместо окна в днях. Для выпускника важен разрез по
+    // классам и сводка за все годы — с ней видно, с чем ребёнок идёт к выпуску.
+    const yearSel = document.getElementById("pdf-year-select");
+    if (yearSel) {
+        const years = state.availableYears || [];
+        yearSel.innerHTML = "";
+        const current = document.createElement("option");
+        current.value = "";
+        current.textContent = t("pdf_period_current") || "Текущий период";
+        yearSel.appendChild(current);
+        years.forEach(y => {
+            const opt = document.createElement("option");
+            opt.value = String(y.academic_year);
+            opt.textContent = y.display_name ? `${y.display_name} · ${y.label}` : y.label;
+            yearSel.appendChild(opt);
+        });
+        if (years.length > 1) {
+            const all = document.createElement("option");
+            all.value = "all";
+            all.textContent = t("pdf_period_all_years") || "Все годы обучения";
+            yearSel.appendChild(all);
+        }
     }
 
     // Toggle subject dropdown visibility по radio
@@ -1162,13 +1295,14 @@ function handleExportPdf() {
         closeFn();
         const type = modal.querySelector('input[name="pdf-type"]:checked').value;
         const subject = subjSel ? subjSel.value : '';
-        _sendPdfRequest(type, subject);
+        const year = yearSel ? yearSel.value : '';
+        _sendPdfRequest(type, subject, year);
     };
 
     modal.classList.remove("hidden");
 }
 
-async function _sendPdfRequest(reportType, subject) {
+async function _sendPdfRequest(reportType, subject, academicYear) {
     const studentId = state.currentStudentId;
     const days = state.currentDays || 30;
 
@@ -1181,6 +1315,7 @@ async function _sendPdfRequest(reportType, subject) {
 
     const params = new URLSearchParams({ days: String(days), type: reportType });
     if (subject) params.set("subject", subject);
+    if (academicYear) params.set("year", academicYear);
 
     try {
         const res = await fetch(

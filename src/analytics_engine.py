@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 import anthropic
@@ -365,6 +366,8 @@ def generate_summer_activity(student_name: str, subject: str,
 # Haiku output $5/1M → ~$0.0075 worst-case на ответ. Если всё равно упёрлись
 # в потолок — добавляем пометку (_CHAT_TRUNCATION_NOTICE) вместо тихого обрыва.
 _CHAT_MAX_TOKENS = 1500
+# Потолок на весь ответ AI-чата, включая tool-use итерации.
+_CHAT_TIME_BUDGET_SECONDS = 45.0
 
 # B21: cap на РЕБЁНКА, а не суммарный. Раньше grades[:600] резал 600 оценок
 # СУММАРНО по всем детям семьи → у семьи с 4-5 детьми старые оценки части
@@ -568,8 +571,17 @@ def answer_parent_question(
     # итерацию пробуем streaming, и если stop_reason='tool_use' — игнорим
     # накопленный текст и идём в loop. Tool args через streaming доступны
     # через .get_final_message() после exit'а из stream context.
+    # Общий бюджет на весь цикл: ограничения на отдельный вызов недостаточно,
+    # потому что итераций несколько. Родитель ждёт ответа в чате — после
+    # бюджета честнее сказать «не успели», чем держать слот gunicorn.
+    deadline = time.monotonic() + _CHAT_TIME_BUDGET_SECONDS
     try:
         for iteration in range(MAX_TOOL_ITERATIONS + 1):
+            if time.monotonic() > deadline:
+                logger.warning(
+                    f"answer_parent_question exceeded time budget "
+                    f"({_CHAT_TIME_BUDGET_SECONDS}s) at iteration {iteration}")
+                break
             if stream_callback is not None:
                 # PR_H4 streaming path. text_stream даёт только text deltas.
                 accumulated = ""

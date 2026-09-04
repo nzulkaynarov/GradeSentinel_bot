@@ -356,6 +356,44 @@ def process_add_child_step(message, f_id):
 # grade_history привязана к student_id, поэтому UPDATE spreadsheet_id сохраняет
 # всю историю. Защита от чужой таблицы — confirm-шаг с её заголовком.
 
+def open_relink_from_deeplink(message):
+    """Точка входа из дашборда: `/start relink` ведёт прямо к смене ссылки.
+
+    Кнопка показывается родителю, когда таблица ребёнка относится к прошлому
+    учебному году и мониторинг приостановлен. Заставлять его после этого искать
+    пункт меню — лишний шаг ровно в тот момент, когда бот и так не работает."""
+    from src.database_manager import (
+        get_families_for_user, get_family_students, can_manage_family,
+    )
+
+    user_id = message.chat.id
+    lang = get_user_lang(user_id)
+    families = [f for f in get_families_for_user(user_id)
+                if can_manage_family(user_id, f['id'])]
+    if not families:
+        # Не глава семьи: сменить ссылку он не может, объясняем словами.
+        send_menu_safe(user_id, t("relink_not_head", lang))
+        return
+    if len(families) > 1:
+        markup = types.InlineKeyboardMarkup()
+        for f in families:
+            markup.add(types.InlineKeyboardButton(
+                f["family_name"], callback_data=f"relink_list_{f['id']}"))
+        send_menu_safe(user_id, t("family_select", lang), inline_markup=markup)
+        return
+
+    f_id = families[0]['id']
+    students = get_family_students(f_id)
+    if not students:
+        send_menu_safe(user_id, t("relink_no_students", lang))
+        return
+    markup = types.InlineKeyboardMarkup()
+    for st in students:
+        markup.add(types.InlineKeyboardButton(
+            f"🔗 {st['fio']}", callback_data=f"relink_pick_{f_id}_{st['id']}"))
+    send_menu_safe(user_id, t("relink_pick_prompt", lang), inline_markup=markup)
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('relink_list_'))
 def callback_relink_list(call):
     """Шаг 1: выбор ребёнка, у которого менять ссылку."""

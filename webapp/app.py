@@ -34,7 +34,7 @@ from src.database_manager import (
     get_user_info_by_tg_id,
     get_student_academic_year,
 )
-from src.history_importer import current_academic_year
+from src.history_importer import current_academic_year, is_sheet_stale
 from src.db.auth import is_student_under_active_subscription
 from src.db.connection import get_db_connection
 from src.i18n import load_translations
@@ -183,6 +183,9 @@ GRADE_PROBLEM_THRESHOLD = 3.5   # avg <= → проблемная тема
 GRADE_GOOD_THRESHOLD = 4.5      # avg >= → топ
 DELTA_SIGNIFICANT = 0.2         # |delta| >= → заметное изменение
 MIN_SAMPLE = 3
+# Сколько оценок отдаём в список «все оценки за период». Список нужен для
+# чтения и drill-down фильтра, а не для полной выгрузки — она в PDF.
+_RECENT_LIMIT = 100
 # Меньше этого числа оценок — это шум, а не сигнал. Один и тот же порог для
 # дельты периода и для «проблемных предметов»: раньше KPI-карточки честно писали
 # «недостаточно данных» (KPI_MIN_SAMPLE=3), а статус-строка рядом уже тревожила
@@ -604,7 +607,12 @@ def compute_year_report(grades):
         month = int(ym[5:7])
         monthly_trend.append({
             "month": ym,
+            # label оставлен для обратной совместимости, но фронт должен брать
+            # month/year и форматировать сам: подпись «Сентябрь 2026» уезжала
+            # в узбекский и английский интерфейс как есть (аудит 2026-09-03).
             "label": f"{_RU_MONTH_NAMES[month]} {year}",
+            "month_num": month,
+            "year": year,
             "avg": round(sum(vals) / len(vals), 2),
             "count": len(vals),
         })
@@ -818,7 +826,12 @@ def api_dashboard(student_id):
     kpis = compute_dashboard_kpis(summary, by_subject, len(grades_current))
     # Четвертные с прогнозом годовой — primary блок (не collapsible).
     from src.database_manager import get_quarter_grades
-    quarter_grades = get_quarter_grades(student_id)
+    # Четвертные — строго за учебный год привязанной таблицы. Иначе на экране
+    # оказывалась смесь лет без единой пометки, и родитель читал прошлогодние
+    # четверти как текущие (аудит 2026-09-03).
+    student_academic_year = get_student_academic_year(student_id)
+    quarter_year = student_academic_year or current_academic_year()
+    quarter_grades = get_quarter_grades(student_id, academic_year=quarter_year)
     quarters_with_forecast = compute_quarters_with_forecast(quarter_grades)
     # trend_by_day удалён 2026-09-03: поле отдавалось «на пару дней» с 21 мая,
     # во фронте не используется ни разу (grep по app.js), но считалось на каждый
@@ -845,13 +858,26 @@ def api_dashboard(student_id):
         "trend_by_subject": trend_by_subject,
         "by_subject": by_subject,
         "quarters_with_forecast": quarters_with_forecast,
+        # Источник на паузе: данные физически не могут обновиться, пока родитель
+        # не пришлёт новую ссылку. Экран обязан это показать.
+        "sheet_stale": is_sheet_stale(student_academic_year),
+        "academic_year": student_academic_year,
+        "quarters_academic_year": quarter_year,
+        # Годы для селектора в «Итогах» и в модалке PDF
+        "available_years": _available_years(student_id),
+        "quarters_academic_year_label": f"{quarter_year}/{str(quarter_year + 1)[-2:]}",
         # Даты нормализуем в ISO ЯВНО. Flask 3 сериализует date/datetime через
         # http_date() → «Wed, 02 Sep 2026 00:00:00 GMT», а фронт сравнивает и
         # режет эти строки как 'YYYY-MM-DD'. Из-за этого группы дат сортировались
         # по названию дня недели, «Сегодня» оказывалось над вчерашними оценками,
         # а подписи оси графика выглядели как «02 Se» (аудит 2026-09-03).
         # cell_reference — debug-метаданные, фронту не нужны.
-        "recent_grades": _serialize_grades(grades_current[:100]),
+        "recent_grades": _serialize_grades(grades_current[:_RECENT_LIMIT]),
+        # Список урезан до _RECENT_LIMIT, а KPI считает все оценки периода.
+        # Без этих двух чисел заголовок «Все оценки за период (100)» спорил с
+        # KPI «525» на том же экране (аудит 2026-09-03).
+        "recent_total": len(grades_current),
+        "recent_limit": _RECENT_LIMIT,
         "user": {
             "lang": lang,
             "first_name": first_name,
@@ -869,15 +895,38 @@ def api_dashboard(student_id):
 
 
 _BOT_USERNAME_CACHE = None
+# Момент последней НЕУДАЧНОЙ попытки: успех кэшировался, а провал — нет, и пока
+# Telegram отвечал 5xx, каждое открытие дашборда делало свежий get_me() с
+# 25-секундным таймаутом telebot. Восемь параллельных открытий занимали все
+# слоты gunicorn, включая /health (аудит 2026-09-03).
+# None — неудач не было. Ноль тут не годится: time.monotonic() отсчитывается от
+# загрузки машины, и на свежезагруженном хосте «0.0» означал бы «только что
+# провалились», из-за чего первый же запрос не пошёл бы в Telegram вовсе.
+_BOT_USERNAME_FAILED_AT = None
+_BOT_USERNAME_RETRY_SECONDS = 300
 
 
 def _get_bot_username():
     """Lazy-cached bot username для AI deep-link'ов в frontend.
     Один get_me() при первом вызове, потом из памяти. Fallback на None
-    если бот недоступен — frontend проверяет и не показывает deep-link."""
-    global _BOT_USERNAME_CACHE
+    если бот недоступен — frontend проверяет и не показывает deep-link.
+
+    Имя бота не меняется, поэтому его можно задать переменной BOT_USERNAME и
+    вовсе не ходить в Telegram."""
+    global _BOT_USERNAME_CACHE, _BOT_USERNAME_FAILED_AT
     if _BOT_USERNAME_CACHE is not None:
         return _BOT_USERNAME_CACHE
+
+    from_env = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
+    if from_env:
+        _BOT_USERNAME_CACHE = from_env
+        return _BOT_USERNAME_CACHE
+
+    # Недавняя неудача — не долбим Telegram на каждом запросе.
+    if (_BOT_USERNAME_FAILED_AT is not None
+            and time.monotonic() - _BOT_USERNAME_FAILED_AT < _BOT_USERNAME_RETRY_SECONDS):
+        return None
+
     bot = _get_webapp_bot()
     if not bot:
         return None
@@ -885,6 +934,7 @@ def _get_bot_username():
         _BOT_USERNAME_CACHE = bot.get_me().username
         logger.info(f"Cached bot username: {_BOT_USERNAME_CACHE}")
     except Exception as e:
+        _BOT_USERNAME_FAILED_AT = time.monotonic()
         logger.warning(f"Failed to fetch bot username: {e}")
         return None
     return _BOT_USERNAME_CACHE
@@ -917,15 +967,24 @@ def api_dashboard_init():
     if not first_name and user_info.get("fio"):
         first_name = user_info["fio"].split()[0]
 
+    # Состояние источника по каждому ребёнку. Без него дашборд не отличает
+    # «новых оценок нет» от «бот перестал читать таблицу»: монитор ставит
+    # прошлогоднюю таблицу на паузу и шлёт напоминание в чат, а на экране
+    # остаётся замерший прошлогодний срез без единого признака (аудит 2026-09-03).
+    current_year = current_academic_year()
     return jsonify({
         "students": [
             {
                 "id": s["id"],
                 "fio": s["fio"],
                 "display_name": s.get("display_name") or s["fio"],
+                "academic_year": s.get("academic_year"),
+                "sheet_stale": is_sheet_stale(s.get("academic_year")),
             }
             for s in students
         ],
+        "current_academic_year": current_year,
+        "current_academic_year_label": f"{current_year}/{str(current_year + 1)[-2:]}",
         "bot_username": bot_username,
         "user": {
             "lang": get_user_lang(telegram_id),
@@ -939,9 +998,28 @@ def api_dashboard_init():
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
 
+def _resolve_chat_family(telegram_id: int, student_id: int):
+    """Семья, в контексте которой ведётся чат про этого ученика.
+
+    История чата хранится по паре (родитель, семья), поэтому брать «первую
+    попавшуюся» семью ученика нельзя: у ребёнка в двух семьях родитель видел бы
+    то одну ветку переписки, то другую. Берём семью, где состоят и ученик, и
+    сам родитель; при нескольких таких — с наименьшим id (стабильность важнее
+    выбора). Если общей нет — первую семью ученика, тоже детерминированно."""
+    from src.database_manager import get_families_for_student, get_families_for_user
+
+    fams = get_families_for_student(student_id)
+    if not fams:
+        return None
+    mine = {f["id"] for f in get_families_for_user(telegram_id)}
+    shared = [f for f in fams if f["id"] in mine]
+    return (shared or fams)[0]
+
+
 def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
                               report_type: str = 'full', subject_filter: str = '',
-                              date_from: str = '', date_to: str = ''):
+                              date_from: str = '', date_to: str = '',
+                              academic_year: str = ''):
     """Общая логика: собирает данные и генерит PDF bytes + filename.
     Используется обоими endpoint'ами (GET download + POST send-to-bot).
 
@@ -971,20 +1049,42 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
             student_class = ''
     lang = get_user_lang(telegram_id)
 
-    all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
-    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
-    cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
-    period_end = today_tashkent.isoformat()
+    from src.database_manager import get_grades_for_academic_years
 
-    # Custom period override
-    if date_from and date_to:
-        cutoff_date = date_from
-        period_end = date_to
+    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+
+    # Разрез по учебным годам — отдельный режим. «Последние N дней» не годятся:
+    # у выпускника нужна картина по классам, а четыре года истории в 365 дней,
+    # которыми ограничен дашборд, всё равно не помещаются.
+    year_span = None                       # [год, ...] когда отчёт по годам
+    years_meta = _available_years(student_id)
+    if academic_year == 'all':
+        year_span = [y["academic_year"] for y in years_meta]
+    elif academic_year.isdigit():
+        year_span = [int(academic_year)]
+
+    if year_span:
+        all_grades = get_grades_for_academic_years(student_id, year_span)
+        grades_current = all_grades
+        grades_previous = []
+        first, last = min(year_span), max(year_span)
+        cutoff_date = date(first, 9, 1).isoformat()
+        period_end = min(date(last + 1, 8, 31), today_tashkent).isoformat()
+    else:
+        all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
+        cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
+        period_end = today_tashkent.isoformat()
+
+        # Custom period override
+        if date_from and date_to:
+            cutoff_date = date_from
+            period_end = date_to
 
     # _grade_date_str нормализует date/datetime ОБЪЕКТЫ из psycopg в строку
     # 'YYYY-MM-DD' — сравнения с cutoff_date/period_end (строки) валидны.
-    grades_current = [g for g in all_grades if cutoff_date <= _grade_date_str(g) <= period_end]
-    grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
+    if not year_span:
+        grades_current = [g for g in all_grades if cutoff_date <= _grade_date_str(g) <= period_end]
+        grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
 
     # Type-specific фильтрация
     if report_type == 'subject' and subject_filter:
@@ -994,7 +1094,17 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
 
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
-    quarter_grades = get_quarter_grades(student_id)
+    # PDF позиционируется как proof-документ для учителя — четвертные в нём
+    # должны быть за тот же учебный год, а не за прошлый.
+    from src.database_manager import ALL_ACADEMIC_YEARS
+
+    if year_span and len(year_span) > 1:
+        quarter_grades = get_quarter_grades(student_id, academic_year=ALL_ACADEMIC_YEARS)
+    elif year_span:
+        quarter_grades = get_quarter_grades(student_id, academic_year=year_span[0])
+    else:
+        pdf_quarter_year = get_student_academic_year(student_id) or current_academic_year()
+        quarter_grades = get_quarter_grades(student_id, academic_year=pdf_quarter_year)
     quarters = compute_quarters_with_forecast(quarter_grades)
 
     # 'teacher_talk' — оставляем только problem subjects + четверти по ним
@@ -1014,6 +1124,34 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
     }
     period_label = period_labels.get(lang, period_labels['ru']).get(days, f"{days} дн.")
 
+    # Разрез по годам: сводка «класс → средний → сколько оценок». Ради неё
+    # родитель выпускника и открывает отчёт — видно, с чем ребёнок подходит
+    # к выпуску и что проседало из года в год.
+    years_summary = None
+    if year_span:
+        by_year = defaultdict(list)
+        for g in all_grades:
+            if g.get("grade_value") is not None:
+                by_year[g["academic_year"]].append(g["grade_value"])
+        labels = {y["academic_year"]: y for y in years_meta}
+        years_summary = [
+            {
+                "academic_year": y,
+                "label": labels.get(y, {}).get("label") or f"{y}/{str(y + 1)[-2:]}",
+                "class_name": labels.get(y, {}).get("display_name"),
+                "avg": round(sum(by_year[y]) / len(by_year[y]), 2) if by_year.get(y) else None,
+                "count": len(by_year.get(y, [])),
+            }
+            for y in sorted(year_span, reverse=True)
+        ]
+        if len(year_span) > 1:
+            period_label = ('за все годы обучения' if lang == 'ru'
+                            else 'all school years' if lang == 'en' else "barcha o'quv yillari")
+        else:
+            single = years_summary[0]
+            period_label = (f"{single['class_name']} · {single['label']}"
+                            if single.get("class_name") else single["label"])
+
     # Modify period_label для type-specific reports
     if report_type == 'subject' and subject_filter:
         period_label = f"{subject_filter} · {period_label}"
@@ -1027,10 +1165,13 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
         quarters=quarters,
         period_start=cutoff_date,
         period_end=period_end,
+        years_summary=years_summary,
     )
 
     full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
     suffix = f"_{report_type}" if report_type != 'full' else ''
+    if year_span:
+        suffix += ('_all_years' if len(year_span) > 1 else f"_{year_span[0]}")
     filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}{suffix}.pdf"
     return pdf_bytes, filename, student_name, period_label, lang
 
@@ -1076,6 +1217,7 @@ def api_dashboard_pdf_send(student_id):
         subject_filter=request.args.get("subject", ""),
         date_from=request.args.get("from", ""),
         date_to=request.args.get("to", ""),
+        academic_year=request.args.get("year", ""),
     )
 
     bot = _get_webapp_bot()
@@ -1119,6 +1261,9 @@ def api_dashboard_pdf(student_id):
 
     pdf_bytes, filename, _name, _period, _lang = _generate_dashboard_pdf(
         student_id, telegram_id, days,
+        report_type=request.args.get("type", "full"),
+        subject_filter=request.args.get("subject", ""),
+        academic_year=request.args.get("year", ""),
     )
 
     # Content-Disposition filename должен быть ASCII (RFC 7230). Двойной
@@ -1163,7 +1308,13 @@ def api_dashboard_year(student_id):
     # монитор решает, актуальна ли таблица. Вычислять его от текущей даты нельзя:
     # именно так «Итоги года» 1 сентября обнулялись и показывали итог трёх дней
     # (а 2026-09-03 — итог трёх ошибочных записей), пряча реальный прошедший год.
-    academic_year = get_student_academic_year(student_id)
+    # ?year=YYYY — явный выбор учебного года (селектор в интерфейсе). Без него
+    # берём год привязанной таблицы; вычислять его от текущей даты нельзя.
+    requested_year = request.args.get("year", "").strip()
+    academic_year = int(requested_year) if requested_year.isdigit() else None
+    explicit_year = academic_year is not None
+    if academic_year is None:
+        academic_year = get_student_academic_year(student_id)
     if academic_year is None:
         academic_year = current_academic_year(today_tashkent)
 
@@ -1176,7 +1327,9 @@ def api_dashboard_year(student_id):
     year_grades = _slice(academic_year)
     # Если в «своём» году оценок ещё нет (первые дни сентября), показываем
     # прошедший — он у родителя и есть предмет интереса. Год всегда подписан.
-    if not year_grades and academic_year > 2000:
+    # При явном выборе года не подменяем: попросили 2025/26 — показываем его,
+    # даже если он пуст.
+    if not year_grades and not explicit_year and academic_year > 2000:
         previous = _slice(academic_year - 1)
         if previous:
             academic_year -= 1
@@ -1186,10 +1339,51 @@ def api_dashboard_year(student_id):
     report["school_year_start"] = date(academic_year, 9, 1).isoformat()
     report["academic_year"] = academic_year
     report["academic_year_label"] = f"{academic_year}/{str(academic_year + 1)[-2:]}"
+    # Класс за ТОТ год, а не текущий: иначе оценки восьмого класса подписывались
+    # бы девятым, потому что класс живёт одним перезаписываемым полем.
+    report["available_years"] = _available_years(student_id)
+    snapshot = next((y for y in report["available_years"]
+                     if y["academic_year"] == academic_year), None)
+    report["class_name"] = snapshot["display_name"] if snapshot else None
 
     # Dashboard refresh: убрали AI годовой инсайт. AI теперь только в чате.
 
     return jsonify(report)
+
+
+def _available_years(student_id: int):
+    """Учебные годы ученика для селектора — из снимков привязок и из самих
+    оценок (снимок мог не сохраниться для совсем старых лет)."""
+    from src.database_manager import get_student_years
+
+    snapshots = {y["academic_year"]: y for y in get_student_years(student_id)}
+    with get_db_connection() as conn:
+        rows = conn.cursor().execute(
+            """
+            SELECT DISTINCT CASE
+                     WHEN EXTRACT(MONTH FROM d) >= 9 THEN EXTRACT(YEAR FROM d)::int
+                     ELSE EXTRACT(YEAR FROM d)::int - 1
+                   END AS y
+              FROM (
+                SELECT grade_date AS d FROM grade_history WHERE student_id = %s
+                UNION ALL
+                SELECT grade_date AS d FROM grade_history_archive WHERE student_id = %s
+              ) g
+             WHERE d IS NOT NULL
+            """,
+            (student_id, student_id),
+        ).fetchall()
+    for row in rows:
+        snapshots.setdefault(row["y"], {"academic_year": row["y"],
+                                        "display_name": None, "spreadsheet_id": None})
+    return [
+        {
+            "academic_year": y,
+            "label": f"{y}/{str(y + 1)[-2:]}",
+            "display_name": snapshots[y].get("display_name"),
+        }
+        for y in sorted(snapshots, reverse=True)
+    ]
 
 
 def _serialize_grades(grades):
@@ -1269,10 +1463,10 @@ def api_chat():
         get_families_for_student, get_family_students,
         get_recent_family_chat_history, save_family_chat_message,
     )
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         abort(403)
-    family_id = fams[0]['id']
+    family_id = fam['id']
     family_students = get_family_students(family_id)
 
     # Собираем grades всех детей семьи с annotation
@@ -1328,10 +1522,10 @@ def api_chat_history(student_id):
     URL контракт остался для backward compat фронта."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, get_recent_family_chat_history
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         return jsonify({"messages": []})
-    history = get_recent_family_chat_history(telegram_id, fams[0]['id'])
+    history = get_recent_family_chat_history(telegram_id, fam['id'])
     return jsonify({"messages": history})
 
 
@@ -1340,9 +1534,9 @@ def api_chat_clear(student_id):
     """Очищает family-scoped историю чата (NAV-001: pivot на family_id)."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, clear_family_chat_history
-    fams = get_families_for_student(student_id)
-    if fams:
-        clear_family_chat_history(telegram_id, fams[0]['id'])
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if fam:
+        clear_family_chat_history(telegram_id, fam['id'])
     return jsonify({"ok": True})
 
 
@@ -1415,15 +1609,55 @@ def api_grades(student_id):
 
 @app.route("/api/quarters/<int:student_id>")
 def api_quarters(student_id):
-    """Четвертные оценки (lazy-loaded когда юзер раскрывает секцию)."""
+    """Четвертные оценки (lazy-loaded когда юзер раскрывает секцию).
+
+    ?year=YYYY — конкретный учебный год, ?year=all — все. По умолчанию год
+    привязанной таблицы."""
+    from src.database_manager import ALL_ACADEMIC_YEARS, get_quarter_academic_years
+
     _authorize_student_access(student_id)
-    return jsonify(get_quarter_grades(student_id))
+    requested = request.args.get("year", "").strip().lower()
+    if requested == "all":
+        rows = get_quarter_grades(student_id, academic_year=ALL_ACADEMIC_YEARS)
+        year = None
+    else:
+        year = int(requested) if requested.isdigit() else (
+            get_student_academic_year(student_id) or current_academic_year())
+        rows = get_quarter_grades(student_id, academic_year=year)
+    return jsonify({
+        "quarters": rows,
+        "academic_year": year,
+        "available_years": get_quarter_academic_years(student_id),
+    })
+
+
+_HEALTH_CACHE = {"at": 0.0, "ok": True}
+_HEALTH_TTL_SECONDS = 5
 
 
 @app.route("/health")
 def health():
-    """Health check для Caddy/мониторинга."""
-    return jsonify({"status": "ok"})
+    """Health check для Caddy/мониторинга.
+
+    Проверяет БД: раньше эндпоинт не трогал её вовсе и отдавал 200 даже когда
+    база лежала, а дашборд возвращал 500 — мониторинг видел «здоров».
+    Результат кэшируется на несколько секунд, чтобы healthcheck сам не стал
+    нагрузкой и не занимал слоты при недоступной базе."""
+    now = time.monotonic()
+    if now - _HEALTH_CACHE["at"] < _HEALTH_TTL_SECONDS:
+        ok = _HEALTH_CACHE["ok"]
+    else:
+        try:
+            with get_db_connection() as conn:
+                conn.cursor().execute("SELECT 1")
+            ok = True
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            ok = False
+        _HEALTH_CACHE.update(at=now, ok=ok)
+    if ok:
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "degraded", "reason": "database unavailable"}), 503
 
 
 # ════════════════════════════════════════════════════════════

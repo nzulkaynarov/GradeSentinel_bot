@@ -37,7 +37,6 @@
   "btn_seen": "👀 Seen",
   "btn_today_all": "📊 All for today",
   "btn_all_children": "📊 All children",
-
   "auth_admin_welcome": "✅ Authorization successful! Hello, Super Admin.\n👑 You are logged in as <b>Super Administrator</b>.",
   "auth_not_linked": "ℹ️ Your number is in the system, but no family yet.\n\nWhat would you like to do?",
   "btn_create_my_family": "🆕 Create my family",
@@ -61,12 +60,9 @@
   "btn_skip": "Skip",
   "btn_done": "✅ Done",
   "auth_contact_error": "❌ Error receiving contact.",
-
   "rate_limited": "⏳ Too many requests. Please wait a few seconds.",
-
   "status_global": "🛰 <b>Global System Status</b>\n\n👥 Total families: <b>{families}</b>\n👨‍👩‍👧‍👦 Registered parents: <b>{parents}</b>\n🎓 Active students: <b>{students}</b>\n🔄 Processed records: <b>{history_records}</b>\n\n⚙️ Monitoring: <b>Active</b>",
   "status_user": "📊 <b>Your Statistics</b>\n\n🏠 Families: <b>{families}</b>\n🎓 Children linked: <b>{students}</b>\n🔄 History records: <b>{history_records}</b>\n\n💡 <i>The bot actively checks your children's diaries every 5 minutes.</i>",
-
   "admin_panel_title": "🛠 <b>Admin Panel</b>\n\n👥 Families: <b>{families}</b> | Parents: <b>{parents}</b> | Students: <b>{students}</b>",
   "admin_panel_families": "🏠 Families",
   "admin_panel_new_family": "➕ New Family",
@@ -79,7 +75,6 @@
   "admin_panel_settings": "⚙️ Settings",
   "admin_settings_title": "⚙️ <b>Admin settings</b>",
   "btn_admin_as_parent": "👨 I'm a parent",
-
   "user_panel_title": "📱 <b>Menu</b>\n\n{families_info}",
   "user_panel_title_head_no_kids": "📱 <b>Menu</b>\n\n{families_info}\n\nℹ️ To start getting notifications and using the AI assistant — add a child via the button below. The bot will import the grade history and start monitoring automatically.",
   "user_panel_ai_chat": "💬 Ask AI",
@@ -103,7 +98,6 @@
   "add_child_no_family": "ℹ️ Create a family first via 🏠 My Family.",
   "add_child_pick_family": "Which family to add the child to?",
   "user_panel_empty": "📱 <b>Menu</b>\n\nℹ️ No family yet.",
-
   "admin_help": "🛠 <b>GradeSentinel Admin Panel</b>\n\nUse the buttons at the bottom to navigate between sections.\nThe bot automatically removes old menus to keep the chat clean.",
   "admin_no_access": "⛔ You don't have access to this command.",
   "admin_no_families": "📭 No families in the database yet.",
@@ -112,7 +106,6 @@
   "admin_confirm_delete": "Are you sure? This will delete all children and relatives from this family.",
   "admin_delete_confirm_btn": "⚠️ YES, DELETE FAMILY",
   "admin_deleted": "✅ Family completely deleted",
-
   "family_create_title": "🏗 *Create new family*\n\nEnter the family name (surname):",
   "family_cancelled": "Action cancelled.",
   "family_name_empty": "❌ Name cannot be empty. Try again /add_family",
@@ -125,7 +118,6 @@
   "family_fio_too_short": "❌ Name is too short. Try again /add_family",
   "family_enter_phone": "👤 Head: {fio}\n\nEnter *phone number* (998XXXXXXXXX):",
   "family_phone_invalid": "❌ Invalid phone format. Must be 12 digits (starting with 998). Try again /add_family",
-
   "family_head_only": "⛔ This command is only available for family heads.",
   "family_not_found": "❌ Family not found.",
   "family_select": "🏠 You are the head of multiple families.\n\nPlease select a family to manage:",
@@ -159,7 +151,6 @@
   "family_member_deleted": "✅ Relative removed",
   "family_head_no_delete": "⚠️ Cannot remove the family head",
   "family_child_deleted": "✅ Child removed",
-
   "child_enter_url": "Send a link to the child's Google Sheet.\nOr press 'Cancel':",
   "child_url_placeholder": "Paste Google Sheet link...",
   "child_url_invalid": "❌ This doesn't look like a Google Sheet link.\n\n💡 <b>Where to get it:</b> open the diary in Google Sheets → «Share» → «Copy link». Should be like <code>https://docs.google.com/spreadsheets/d/.../edit</code>",
@@ -170,7 +161,6 @@
   "child_add_error": "❌ Could not add child.\n\nIf this keeps happening — tap 💬 Support and describe the issue.",
   "history_imported": "📚 Imported <b>{count}</b> grades from history for {name}. AI analysis will now work with the full picture!",
   "ai_first_free": "🎁 <b>Free AI analysis</b> for your newly added child:",
-
   "member_enter": "Enter the relative's full name and phone number (separated by space):\nExample: <code>Ivanov Ivan 998901234567</code>\n\nOr press 'Cancel'.",
   "member_step1_fio": "👤 Step 1/2: enter <b>relative's full name</b>:",
   "member_step2_phone": "📞 Step 2/2: enter <b>phone number</b> for <b>{fio}</b>:",
@@ -180,7 +170,6 @@
   "member_enter_placeholder": "Surname Name 998XXXXXXXXX",
   "member_added": "✅ Relative <b>{name}</b> added to the family.",
   "member_add_error": "❌ Error adding relative. Check the data format and try again.",
-
   "grades_no_students": "ℹ️ You have no linked students. Contact the administrator.",
   "grades_select_child": "📈 <b>Select a child:</b>",
   "grades_title": "📊 <b>{name}'s grades for today:</b>\n",
@@ -192,7 +181,6 @@
   "grades_today_title": "📊 <b>All records for {name} today:</b>\n",
   "grades_today_none": "📊 No records for today yet.",
   "grades_avg": "Average grade: <b>{avg}</b> ({count} grades)",
-
   "notif_grade_excellent": "Excellent grade!",
   "notif_grade_good": "Good grade",
   "notif_grade_attention": "Needs attention",
@@ -208,7 +196,6 @@
   "notif_change": "📝 Was: <b>{old}</b> → Now: <b>{new}</b>",
   "notif_batch_title": "{count} new grades",
   "notif_streak": "🔥 That's {count} fives in a row!",
-
   "notif_quarter_title": "Quarter grade!",
   "notif_quarter_changed": "Quarter grade changed",
   "notif_quarter_label": "Quarter: <b>{quarter}</b>",
@@ -218,7 +205,6 @@
   "quarter_3": "3rd quarter",
   "quarter_4": "4th quarter",
   "quarter_5": "Annual",
-
   "quiet_morning_header": "🌅 <b>Good morning! {count} grades received overnight:</b>",
   "daily_summary_title": "📋 <b>Daily Summary</b>",
   "daily_avg": "Average grade: <b>{avg}</b>",
@@ -231,7 +217,6 @@
   "bot_alive": "✅ <b>Bot is active</b>\n\nNo new grades received today. I'm monitoring the diary and will notify you as soon as a new entry appears.",
   "alert_grades_heading": "⚠️ <b>Heads up on grades</b>",
   "alert_sheet_stuck": "⚠️ <b>Spreadsheet unavailable</b>\n\nStudent: <code>{display_name}</code> (id={student_id})\nConsecutive failures: <b>{count}</b>\n\nVerify that the «Все оценки» sheet exists in the diary and is shared with the service account.",
-
   "support_unavailable": "🔧 <i>Support is temporarily unavailable (group not configured).</i>",
   "support_prompt": "📝 <b>Technical Support</b>\n\nDescribe your question, suggestion or issue. You can send text or photos.\n\nThe administrator will respond as soon as possible.",
   "support_prompt_placeholder": "Describe your issue...",
@@ -241,7 +226,6 @@
   "support_admin_reply": "👨‍💻 <b>Reply from administrator:</b>\n\n{text}",
   "support_reply_ok": "✅ Reply successfully delivered to user!",
   "support_reply_fail": "❌ Delivery error: user has blocked the bot or has been deleted.",
-
   "broadcast_prompt": "📢 <b>News Broadcast Mode</b>\n\nSend a message (text, photo or video) to broadcast to <b>all</b> registered users.\n\nYou will have a chance to confirm before sending.",
   "broadcast_prompt_placeholder": "Enter broadcast text...",
   "broadcast_cancelled": "Broadcast cancelled.",
@@ -251,7 +235,6 @@
   "broadcast_no_message": "❌ Broadcast message not found. Please try again.",
   "broadcast_done": "✅ <b>Broadcast complete!</b>\n\nSuccessfully delivered: {success}\nErrors/Blocks: {fail}",
   "broadcast_data_stale": "Data is stale.",
-
   "ai_unavailable": "🔧 <i>AI analytics temporarily unavailable (API key not configured).</i>",
   "ai_no_students": "ℹ️ You have no linked students for analysis.",
   "ai_loading": "🤖 <i>Analyzing grades... This may take a few seconds.</i>",
@@ -259,11 +242,8 @@
   "ai_not_enough_data": "📊 <b>{name}</b>\nℹ️ Not enough data for analysis (need at least 2 grades in 14 days).",
   "ai_error": "📊 <b>{name}</b>\n⚠️ Could not get a response from the AI service. Please try later or contact support.",
   "ai_weekly_title": "📊 <b>Weekly AI Report</b>\n👨‍🎓 {name}\n\n{analysis}",
-
   "ai_prompt": "You are a school AI analyst. Analyze the grades of student {name} for the last {days} days.\n\nRespond STRICTLY in this format (use HTML tags <b> for bold):\n\n📊 <b>Summary:</b> [number] grades | Average: [X.X]\n5 — [N] | 4 — [N] | 3 — [N] | 2 — [N]\n\n✅ <b>Strengths:</b> [subjects with best grades and scores]\n\n⚠️ <b>Attention:</b> [subjects with 3s/2s, specific facts]\n— [brief explanation of patterns if any]\n\n💡 <b>Recommendation:</b> [1-2 specific tips for parents, no generic advice like 'hire a tutor']\n\nRULES:\n- Count grades accurately, do not make mistakes with numbers\n- Write ONLY in English\n- Do NOT use markdown (** or #), only HTML tags <b></b>\n- Use max 3 emojis (📊 ✅ ⚠️ 💡 — only at block starts)\n- If there are few grades — say so, do not invent trends\n- Be specific: name subjects and scores, avoid filler\n- Entire response — no more than 8 lines\n\nGrades:\n{grades}",
-
   "insight_prompt": "You are a parent's assistant for a school student. Give 1-2 short sentences of advice in English. Tone: supportive, not alarmist.\n\nData:\n- Average grade: {avg}\n- Change vs previous period: {delta}\n- Trend: {trend}\n- Problem subjects: {problems}\n- Strong subjects: {tops}\n\nRules:\n- Don't repeat numbers (parent already sees them)\n- Be specific: what you noticed → what parent should do\n- No generic phrases ('keep an eye on studies', 'support is important')\n- No emojis in response\n- Only the advice text, no preamble\n- Max 200 characters",
-
   "btn_notifications": "🔔 Notifications",
   "notify_settings_title": "🔔 <b>Notification Settings</b>\n\nCurrent mode: <b>{mode}</b>",
   "notify_mode_instant": "Instant",
@@ -272,20 +252,16 @@
   "notify_btn_summary": "🔕 Summary only",
   "notify_changed_instant": "🔔 Mode changed: <b>Instant notifications</b>\n\nYou will receive a notification for each new grade immediately.",
   "notify_changed_summary": "🔕 Mode changed: <b>Summary only</b>\n\nYou will only receive the evening summary (7PM). No instant notifications.",
-
   "lang_select": "🌐 Выберите язык / Tilni tanlang / Select language:",
   "lang_changed": "✅ Language changed to English.",
   "main_menu": "Main menu",
-
   "btn_subscription": "💳 Subscription",
   "family_invite_btn": "🔗 Invite relative",
-
   "invite_generated": "🔗 <b>Invite link created!</b>\n\nSend this link to your relative:\n<code>{link}</code>\n\nThe link is valid for 48 hours and can be used once.",
   "invite_invalid": "❌ This invite link is invalid or has already been used.",
   "invite_expired": "❌ This invite link has expired.",
   "invite_accepted": "✅ <b>Welcome!</b>\nYou have successfully joined the <b>{family}</b> family.\n\nYou will now receive grade notifications.",
   "invite_auth_required": "👋 You've been invited to join the <b>{family}</b> family!\n\nPlease share your contact to confirm:",
-
   "sub_no_family": "ℹ️ You are not linked to any family.",
   "sub_status_title": "💳 <b>GradeSentinel Subscription</b>\n",
   "sub_family_active": "✅ <b>{family}</b> — active until <b>{end}</b>",
@@ -333,30 +309,25 @@
   "sub_no_families_exist": "📭 No families in the database.",
   "sub_grant_select_family": "👑 <b>Grant subscription</b>\n\nSelect a family:\n(✅ — active, ❌ — inactive)",
   "sub_grant_select_months": "⏱ Select subscription duration for family #{family_id}:",
-
   "sub_promo_btn": "Enter promo code",
   "sub_promo_enter": "🎁 <b>Enter your promo code:</b>",
   "sub_promo_invalid": "❌ Promo code not found, already used, or expired.",
   "sub_promo_success": "✅ <b>Promo code <code>{code}</code> applied!</b>\n\nYour subscription is activated for <b>{months} month(s).</b>",
   "sub_promo_discount": "🎁 Promo code <code>{code}</code> gives <b>{discount}%</b> off!\n\n{plan}",
   "sub_promo_applied_info": "🎁 Promo code <code>{code}</code> gives <b>{discount}%</b> off. Choose a plan to apply.",
-
   "sub_cancel_select": "❌ <b>Cancel subscription</b>\n\nSelect a family to cancel subscription:",
   "sub_cancel_confirm_prompt": "⚠️ Are you sure you want to cancel the subscription for family <b>#{family_id}</b>?\n\nThe subscription will be deactivated immediately.",
   "sub_cancel_yes": "⚠️ Yes, cancel subscription",
   "sub_cancel_no_active": "ℹ️ No families with active subscriptions.",
   "sub_cancelled_admin": "✅ Subscription for family #{family_id} has been cancelled.",
   "sub_cancelled_notify": "⚠️ <b>Subscription deactivated</b>\n\nYour subscription has been cancelled by the administrator. Contact support to renew.",
-
   "sub_expiry_7d": "⏳ <b>Subscription expires in 7 days</b>\n\nRenew early to keep access to notifications and AI analysis.",
   "sub_expiry_1d": "⚠️ <b>Subscription expires tomorrow!</b>\n\nRenew now to avoid interruption of grade monitoring.",
   "sub_expiry_0d": "❌ <b>Subscription expired</b>\n\nGrade monitoring has been paused. Press 💳 Subscription to renew.",
-
   "admin_prices_title": "💰 <b>Current pricing:</b>\n",
   "admin_prices_enter": "✏️ Enter new price for <b>{plan}</b> plan (in UZS, e.g.: 29900):",
   "admin_prices_invalid": "❌ Invalid amount. Enter a number greater than 0.",
   "admin_prices_updated": "✅ Plan <b>{plan}</b> updated: <b>{amount} UZS</b>",
-
   "admin_promo_title": "🎁 <b>Promo Code Management</b>",
   "admin_promo_create_btn": "➕ Create promo code",
   "admin_promo_list_btn": "📋 List promo codes",
@@ -370,11 +341,9 @@
   "admin_promo_enter_discount": "Enter: <b>plan</b> <b>percent</b> <b>max_uses</b> [days_valid]\n\nExample: <code>monthly 20 5 30</code>\n= monthly -20%, 5 uses, 30 days",
   "admin_promo_created": "✅ <b>Promo code created!</b>\n\n<code>{code}</code>\nEffect: {effect}\nMax uses: {max_uses}",
   "admin_promo_input_error": "❌ Invalid input. Try again via /promo.",
-
   "help_parent": "📖 <b>GradeSentinel — how to use</b>\n\n<b>What the bot does</b>\nI watch your child's grades in the Google sheet diary. New grade — instant message.\n\n<b>What you do</b>\n• Nothing :) Notifications come automatically\n• Want to check yourself — 📈 <b>Grades</b> button\n• 📊 <b>Grades Dashboard</b> — tap the button after /grades. Visual summary opens: average, daily trend, problem subjects, quarters\n• Want analysis — 🤖 <b>AI Analysis</b> (subscription)\n• Notifications too frequent — 🔔 <b>Notifications</b>\n\n<b>What I do automatically</b>\n🌙 22:00–07:00 — quiet, summary in the morning\n🌆 19:00 — evening digest\n📊 Sun 19:00 — weekly AI report\n\n<b>Commands</b>\n/start — main menu\n/grades — today's grades\n/help — this help\n\n💬 Confused? Tap Support.",
   "help_head": "\n\n👑 <b>You are the family head</b>\n\n🏠 <b>My Family</b> → you can:\n• 🧒 Add a child (Google Sheet link)\n• 🔗 Invite a relative — one-time link\n• 📋 Remove someone\n\n💡 <b>Bot in a family chat</b>\nAdd me to a group → pick a family → grades will arrive there too. Supergroup with topics — send the topic link or /set_thread &lt;link&gt;.",
   "help_admin": "\n\n<b>Administration:</b>\n🛠 <b>Admin Panel</b> — centralized admin panel:\n  • 🏠 Families — view and manage\n  • ➕ New Family — create\n  • 💰 Pricing — change prices\n  • 🎁 Promo Codes — create and manage\n  • 👑 Grant / ❌ Cancel subscription\n  • 📢 Broadcast — message to all\n  • 📊 System statistics",
-
   "ai_chat_welcome": "💬 Ready to answer about <b>{name}</b>. I know the full school-year grade history.\n\n<i>Example questions:</i>\n• What to work on over summer\n• Compare with last month\n• Where are concerns",
   "ai_chat_welcome_family": "💬 Ready to answer about <b>{names}</b>. I know the full school-year grade history and can compare children with each other.\n\n<i>Example questions:</i>\n• Compare grades for this month\n• Who has the most A's\n• What to work on over summer",
   "ai_chat_pick_student": "👨‍👩‍👧 Which child do you want to ask about?",
@@ -399,5 +368,6 @@
   "ai_suggested_summer": "What to work on over summer",
   "ai_suggested_compare": "Compare with last month",
   "ai_suggested_concern": "Where are concerns",
-  "subscription_inactive": "💳 Subscription is not active. Subscribe to use the AI chat."
+  "subscription_inactive": "💳 Subscription is not active. Subscribe to use the AI chat.",
+  "relink_not_head": "Only the family head can change the spreadsheet link. Ask them to update it — the school issues a new one every school year."
 }
