@@ -869,15 +869,34 @@ def api_dashboard(student_id):
 
 
 _BOT_USERNAME_CACHE = None
+# Момент последней НЕУДАЧНОЙ попытки: успех кэшировался, а провал — нет, и пока
+# Telegram отвечал 5xx, каждое открытие дашборда делало свежий get_me() с
+# 25-секундным таймаутом telebot. Восемь параллельных открытий занимали все
+# слоты gunicorn, включая /health (аудит 2026-09-03).
+_BOT_USERNAME_FAILED_AT = 0.0
+_BOT_USERNAME_RETRY_SECONDS = 300
 
 
 def _get_bot_username():
     """Lazy-cached bot username для AI deep-link'ов в frontend.
     Один get_me() при первом вызове, потом из памяти. Fallback на None
-    если бот недоступен — frontend проверяет и не показывает deep-link."""
-    global _BOT_USERNAME_CACHE
+    если бот недоступен — frontend проверяет и не показывает deep-link.
+
+    Имя бота не меняется, поэтому его можно задать переменной BOT_USERNAME и
+    вовсе не ходить в Telegram."""
+    global _BOT_USERNAME_CACHE, _BOT_USERNAME_FAILED_AT
     if _BOT_USERNAME_CACHE is not None:
         return _BOT_USERNAME_CACHE
+
+    from_env = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
+    if from_env:
+        _BOT_USERNAME_CACHE = from_env
+        return _BOT_USERNAME_CACHE
+
+    # Недавняя неудача — не долбим Telegram на каждом запросе.
+    if time.monotonic() - _BOT_USERNAME_FAILED_AT < _BOT_USERNAME_RETRY_SECONDS:
+        return None
+
     bot = _get_webapp_bot()
     if not bot:
         return None
@@ -885,6 +904,7 @@ def _get_bot_username():
         _BOT_USERNAME_CACHE = bot.get_me().username
         logger.info(f"Cached bot username: {_BOT_USERNAME_CACHE}")
     except Exception as e:
+        _BOT_USERNAME_FAILED_AT = time.monotonic()
         logger.warning(f"Failed to fetch bot username: {e}")
         return None
     return _BOT_USERNAME_CACHE
@@ -1438,10 +1458,33 @@ def api_quarters(student_id):
     return jsonify(get_quarter_grades(student_id))
 
 
+_HEALTH_CACHE = {"at": 0.0, "ok": True}
+_HEALTH_TTL_SECONDS = 5
+
+
 @app.route("/health")
 def health():
-    """Health check для Caddy/мониторинга."""
-    return jsonify({"status": "ok"})
+    """Health check для Caddy/мониторинга.
+
+    Проверяет БД: раньше эндпоинт не трогал её вовсе и отдавал 200 даже когда
+    база лежала, а дашборд возвращал 500 — мониторинг видел «здоров».
+    Результат кэшируется на несколько секунд, чтобы healthcheck сам не стал
+    нагрузкой и не занимал слоты при недоступной базе."""
+    now = time.monotonic()
+    if now - _HEALTH_CACHE["at"] < _HEALTH_TTL_SECONDS:
+        ok = _HEALTH_CACHE["ok"]
+    else:
+        try:
+            with get_db_connection() as conn:
+                conn.cursor().execute("SELECT 1")
+            ok = True
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            ok = False
+        _HEALTH_CACHE.update(at=now, ok=ok)
+    if ok:
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "degraded", "reason": "database unavailable"}), 503
 
 
 # ════════════════════════════════════════════════════════════
