@@ -34,7 +34,6 @@ const state = {
     quartersLoading: false,
     yearReport: null,           // lazy-loaded, end-of-year отчёт
     yearLoading: false,
-    trendChart: null,
 };
 
 // localStorage ключ для last-seen timestamp (подсветка "новое")
@@ -161,6 +160,13 @@ function applyTranslations(root) {
         const text = state.translations[key];
         if (text) el.textContent = text;
     });
+    // Плейсхолдеры полей ввода. Атрибут в разметке был, а обработки — нет:
+    // узбекский и английский интерфейс показывали русскую подсказку в чате
+    // (аудит 2026-09-03).
+    root.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+        const text = state.translations[el.getAttribute("data-i18n-placeholder")];
+        if (text) el.setAttribute("placeholder", text);
+    });
     // Title тэг
     if (root === document) {
         document.title = t("app_title");
@@ -285,9 +291,11 @@ function renderDashboard() {
 
 // ═════════ VIEW TABS (Дашборд / Итоги года) ═════════
 function setupViewTabs() {
-    const tabs = document.querySelectorAll(".view-tab");
-    tabs.forEach(tab => {
-        tab.addEventListener("click", () => switchView(tab.dataset.view));
+    // onclick вместо addEventListener: функция зовётся из каждого рендера
+    // дашборда, и слушатели накапливались — после пяти перерисовок один клик
+    // вызывал switchView пять раз (аудит 2026-09-03).
+    document.querySelectorAll(".view-tab").forEach(tab => {
+        tab.onclick = () => switchView(tab.dataset.view);
     });
 }
 
@@ -471,11 +479,13 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
             ? `<div class="qc-quarters qc-quarters-empty">
                  <span class="muted small">${escapeHtml(t("quarters_no_data") || "Нет четвертных оценок")}</span>
                </div>`
+            // Подписи четвертей — из локалей: ключи quarter_1..quarter_4 давно
+            // лежали в ru/uz/en, а в разметке было захардкожено «1ч/2ч/3ч/4ч».
             : `<div class="qc-quarters">
-                 <div class="qc-q"><span class="qc-q-label">1ч</span>${cell(q.q1)}</div>
-                 <div class="qc-q"><span class="qc-q-label">2ч</span>${cell(q.q2)}</div>
-                 <div class="qc-q"><span class="qc-q-label">3ч</span>${cell(q.q3)}</div>
-                 <div class="qc-q"><span class="qc-q-label">4ч</span>${cell(q.q4)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_1") || "1ч")}</span>${cell(q.q1)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_2") || "2ч")}</span>${cell(q.q2)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_3") || "3ч")}</span>${cell(q.q3)}</div>
+                 <div class="qc-q"><span class="qc-q-label">${escapeHtml(t("quarter_4") || "4ч")}</span>${cell(q.q4)}</div>
                </div>`;
 
         // Year column — only if quarter has it
@@ -567,6 +577,14 @@ function _todayIso() {
     return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
 }
 
+function _monthLabel(m) {
+    // Названия месяцев — из локалей. Сервер отдаёт month_num/year и русский
+    // label лишь как запасной вариант для старых клиентов.
+    const key = `month_${m.month_num}`;
+    const name = t(key);
+    return name && m.year ? `${name} ${m.year}` : (m.label || "");
+}
+
 function _formatDateGroupLabel(dateStr) {
     if (!dateStr) return '?';
     // dateStr всегда 'YYYY-MM-DD' (сервер нормализует в _serialize_grades).
@@ -595,7 +613,11 @@ function renderAllGrades(grades) {
     const filter = document.getElementById("recent-filter");
     if (!list) return;
 
-    countBadge.textContent = `(${grades.length})`;
+    // Если список урезан сервером — показываем оба числа. Иначе заголовок
+    // «(100)» спорил с KPI «525» на том же экране.
+    const shown = grades.length;
+    const total = (state.dashboard && state.dashboard.recent_total) || shown;
+    countBadge.textContent = total > shown ? `(${shown} / ${total})` : `(${shown})`;
 
     if (filter) {
         // Список предметов пересобираем на каждый рендер, сохраняя выбор: раньше
@@ -848,11 +870,11 @@ function renderYearReport() {
 
     if (report.best_month) {
         document.getElementById("year-best-month").textContent =
-            `${report.best_month.label} · ${report.best_month.avg.toFixed(2)}`;
+            `${_monthLabel(report.best_month)} · ${report.best_month.avg.toFixed(2)}`;
     }
     if (report.worst_month) {
         document.getElementById("year-worst-month").textContent =
-            `${report.worst_month.label} · ${report.worst_month.avg.toFixed(2)}`;
+            `${_monthLabel(report.worst_month)} · ${report.worst_month.avg.toFixed(2)}`;
     }
 }
 
