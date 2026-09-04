@@ -939,6 +939,24 @@ def api_dashboard_init():
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
 
+def _resolve_chat_family(telegram_id: int, student_id: int):
+    """Семья, в контексте которой ведётся чат про этого ученика.
+
+    История чата хранится по паре (родитель, семья), поэтому брать «первую
+    попавшуюся» семью ученика нельзя: у ребёнка в двух семьях родитель видел бы
+    то одну ветку переписки, то другую. Берём семью, где состоят и ученик, и
+    сам родитель; при нескольких таких — с наименьшим id (стабильность важнее
+    выбора). Если общей нет — первую семью ученика, тоже детерминированно."""
+    from src.database_manager import get_families_for_student, get_families_for_user
+
+    fams = get_families_for_student(student_id)
+    if not fams:
+        return None
+    mine = {f["id"] for f in get_families_for_user(telegram_id)}
+    shared = [f for f in fams if f["id"] in mine]
+    return (shared or fams)[0]
+
+
 def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
                               report_type: str = 'full', subject_filter: str = '',
                               date_from: str = '', date_to: str = ''):
@@ -1269,10 +1287,10 @@ def api_chat():
         get_families_for_student, get_family_students,
         get_recent_family_chat_history, save_family_chat_message,
     )
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         abort(403)
-    family_id = fams[0]['id']
+    family_id = fam['id']
     family_students = get_family_students(family_id)
 
     # Собираем grades всех детей семьи с annotation
@@ -1328,10 +1346,10 @@ def api_chat_history(student_id):
     URL контракт остался для backward compat фронта."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, get_recent_family_chat_history
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         return jsonify({"messages": []})
-    history = get_recent_family_chat_history(telegram_id, fams[0]['id'])
+    history = get_recent_family_chat_history(telegram_id, fam['id'])
     return jsonify({"messages": history})
 
 
@@ -1340,9 +1358,9 @@ def api_chat_clear(student_id):
     """Очищает family-scoped историю чата (NAV-001: pivot на family_id)."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, clear_family_chat_history
-    fams = get_families_for_student(student_id)
-    if fams:
-        clear_family_chat_history(telegram_id, fams[0]['id'])
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if fam:
+        clear_family_chat_history(telegram_id, fam['id'])
     return jsonify({"ok": True})
 
 
