@@ -855,6 +855,8 @@ def api_dashboard(student_id):
         "sheet_stale": is_sheet_stale(student_academic_year),
         "academic_year": student_academic_year,
         "quarters_academic_year": quarter_year,
+        # Годы для селектора в «Итогах» и в модалке PDF
+        "available_years": _available_years(student_id),
         "quarters_academic_year_label": f"{quarter_year}/{str(quarter_year + 1)[-2:]}",
         # Даты нормализуем в ISO ЯВНО. Flask 3 сериализует date/datetime через
         # http_date() → «Wed, 02 Sep 2026 00:00:00 GMT», а фронт сравнивает и
@@ -961,7 +963,8 @@ def api_dashboard_init():
 
 def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
                               report_type: str = 'full', subject_filter: str = '',
-                              date_from: str = '', date_to: str = ''):
+                              date_from: str = '', date_to: str = '',
+                              academic_year: str = ''):
     """Общая логика: собирает данные и генерит PDF bytes + filename.
     Используется обоими endpoint'ами (GET download + POST send-to-bot).
 
@@ -991,20 +994,42 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
             student_class = ''
     lang = get_user_lang(telegram_id)
 
-    all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
-    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
-    cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
-    period_end = today_tashkent.isoformat()
+    from src.database_manager import get_grades_for_academic_years
 
-    # Custom period override
-    if date_from and date_to:
-        cutoff_date = date_from
-        period_end = date_to
+    today_tashkent = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()
+
+    # Разрез по учебным годам — отдельный режим. «Последние N дней» не годятся:
+    # у выпускника нужна картина по классам, а четыре года истории в 365 дней,
+    # которыми ограничен дашборд, всё равно не помещаются.
+    year_span = None                       # [год, ...] когда отчёт по годам
+    years_meta = _available_years(student_id)
+    if academic_year == 'all':
+        year_span = [y["academic_year"] for y in years_meta]
+    elif academic_year.isdigit():
+        year_span = [int(academic_year)]
+
+    if year_span:
+        all_grades = get_grades_for_academic_years(student_id, year_span)
+        grades_current = all_grades
+        grades_previous = []
+        first, last = min(year_span), max(year_span)
+        cutoff_date = date(first, 9, 1).isoformat()
+        period_end = min(date(last + 1, 8, 31), today_tashkent).isoformat()
+    else:
+        all_grades = get_grade_history_for_student_all(student_id, days=days * 2)
+        cutoff_date = (today_tashkent - timedelta(days=days)).isoformat()
+        period_end = today_tashkent.isoformat()
+
+        # Custom period override
+        if date_from and date_to:
+            cutoff_date = date_from
+            period_end = date_to
 
     # _grade_date_str нормализует date/datetime ОБЪЕКТЫ из psycopg в строку
     # 'YYYY-MM-DD' — сравнения с cutoff_date/period_end (строки) валидны.
-    grades_current = [g for g in all_grades if cutoff_date <= _grade_date_str(g) <= period_end]
-    grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
+    if not year_span:
+        grades_current = [g for g in all_grades if cutoff_date <= _grade_date_str(g) <= period_end]
+        grades_previous = [g for g in all_grades if _grade_date_str(g) < cutoff_date]
 
     # Type-specific фильтрация
     if report_type == 'subject' and subject_filter:
@@ -1016,8 +1041,15 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
     by_subject = compute_by_subject(grades_current)
     # PDF позиционируется как proof-документ для учителя — четвертные в нём
     # должны быть за тот же учебный год, а не за прошлый.
-    pdf_quarter_year = get_student_academic_year(student_id) or current_academic_year()
-    quarter_grades = get_quarter_grades(student_id, academic_year=pdf_quarter_year)
+    from src.database_manager import ALL_ACADEMIC_YEARS
+
+    if year_span and len(year_span) > 1:
+        quarter_grades = get_quarter_grades(student_id, academic_year=ALL_ACADEMIC_YEARS)
+    elif year_span:
+        quarter_grades = get_quarter_grades(student_id, academic_year=year_span[0])
+    else:
+        pdf_quarter_year = get_student_academic_year(student_id) or current_academic_year()
+        quarter_grades = get_quarter_grades(student_id, academic_year=pdf_quarter_year)
     quarters = compute_quarters_with_forecast(quarter_grades)
 
     # 'teacher_talk' — оставляем только problem subjects + четверти по ним
@@ -1037,6 +1069,34 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
     }
     period_label = period_labels.get(lang, period_labels['ru']).get(days, f"{days} дн.")
 
+    # Разрез по годам: сводка «класс → средний → сколько оценок». Ради неё
+    # родитель выпускника и открывает отчёт — видно, с чем ребёнок подходит
+    # к выпуску и что проседало из года в год.
+    years_summary = None
+    if year_span:
+        by_year = defaultdict(list)
+        for g in all_grades:
+            if g.get("grade_value") is not None:
+                by_year[g["academic_year"]].append(g["grade_value"])
+        labels = {y["academic_year"]: y for y in years_meta}
+        years_summary = [
+            {
+                "academic_year": y,
+                "label": labels.get(y, {}).get("label") or f"{y}/{str(y + 1)[-2:]}",
+                "class_name": labels.get(y, {}).get("display_name"),
+                "avg": round(sum(by_year[y]) / len(by_year[y]), 2) if by_year.get(y) else None,
+                "count": len(by_year.get(y, [])),
+            }
+            for y in sorted(year_span, reverse=True)
+        ]
+        if len(year_span) > 1:
+            period_label = ('за все годы обучения' if lang == 'ru'
+                            else 'all school years' if lang == 'en' else "barcha o'quv yillari")
+        else:
+            single = years_summary[0]
+            period_label = (f"{single['class_name']} · {single['label']}"
+                            if single.get("class_name") else single["label"])
+
     # Modify period_label для type-specific reports
     if report_type == 'subject' and subject_filter:
         period_label = f"{subject_filter} · {period_label}"
@@ -1050,10 +1110,13 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
         quarters=quarters,
         period_start=cutoff_date,
         period_end=period_end,
+        years_summary=years_summary,
     )
 
     full_name = ''.join(c if c.isalnum() or c in '-_' else '_' for c in student_name)
     suffix = f"_{report_type}" if report_type != 'full' else ''
+    if year_span:
+        suffix += ('_all_years' if len(year_span) > 1 else f"_{year_span[0]}")
     filename = f"GradeSentinel_{full_name}_{today_tashkent.isoformat()}{suffix}.pdf"
     return pdf_bytes, filename, student_name, period_label, lang
 
@@ -1099,6 +1162,7 @@ def api_dashboard_pdf_send(student_id):
         subject_filter=request.args.get("subject", ""),
         date_from=request.args.get("from", ""),
         date_to=request.args.get("to", ""),
+        academic_year=request.args.get("year", ""),
     )
 
     bot = _get_webapp_bot()
@@ -1142,6 +1206,9 @@ def api_dashboard_pdf(student_id):
 
     pdf_bytes, filename, _name, _period, _lang = _generate_dashboard_pdf(
         student_id, telegram_id, days,
+        report_type=request.args.get("type", "full"),
+        subject_filter=request.args.get("subject", ""),
+        academic_year=request.args.get("year", ""),
     )
 
     # Content-Disposition filename должен быть ASCII (RFC 7230). Двойной

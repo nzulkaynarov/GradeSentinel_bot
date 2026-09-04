@@ -258,6 +258,7 @@ function renderDashboard() {
         d.by_subject || [],
         d.trend_by_subject || [],
     );
+    state.availableYears = d.available_years || [];
     renderStaleBanner(d);
 
     // Учебный год четвертных подписан явно: карточка «1ч 3 · 2ч 4 · Год 3»
@@ -1219,15 +1220,42 @@ function handleExportPdf() {
     const modal = document.getElementById("pdf-modal");
     if (!modal) return;
 
-    // Заполняем dropdown предметов
+    // Список предметов пересобираем при каждом открытии: он заполнялся один
+    // раз и после смены ребёнка предлагал предметы предыдущего.
     const subjSel = document.getElementById("pdf-subject-select");
-    if (subjSel && subjSel.options.length === 0) {
-        const subjects = (state.dashboard?.by_subject || []).map(s => s.name);
-        subjects.forEach(s => {
+    if (subjSel) {
+        const previous = subjSel.value;
+        subjSel.innerHTML = "";
+        (state.dashboard?.by_subject || []).forEach(s => {
             const opt = document.createElement("option");
-            opt.value = s; opt.textContent = s;
+            opt.value = s.name; opt.textContent = s.name;
             subjSel.appendChild(opt);
         });
+        if (previous) subjSel.value = previous;
+    }
+
+    // Период: учебные годы вместо окна в днях. Для выпускника важен разрез по
+    // классам и сводка за все годы — с ней видно, с чем ребёнок идёт к выпуску.
+    const yearSel = document.getElementById("pdf-year-select");
+    if (yearSel) {
+        const years = state.availableYears || [];
+        yearSel.innerHTML = "";
+        const current = document.createElement("option");
+        current.value = "";
+        current.textContent = t("pdf_period_current") || "Текущий период";
+        yearSel.appendChild(current);
+        years.forEach(y => {
+            const opt = document.createElement("option");
+            opt.value = String(y.academic_year);
+            opt.textContent = y.display_name ? `${y.display_name} · ${y.label}` : y.label;
+            yearSel.appendChild(opt);
+        });
+        if (years.length > 1) {
+            const all = document.createElement("option");
+            all.value = "all";
+            all.textContent = t("pdf_period_all_years") || "Все годы обучения";
+            yearSel.appendChild(all);
+        }
     }
 
     // Toggle subject dropdown visibility по radio
@@ -1245,13 +1273,14 @@ function handleExportPdf() {
         closeFn();
         const type = modal.querySelector('input[name="pdf-type"]:checked').value;
         const subject = subjSel ? subjSel.value : '';
-        _sendPdfRequest(type, subject);
+        const year = yearSel ? yearSel.value : '';
+        _sendPdfRequest(type, subject, year);
     };
 
     modal.classList.remove("hidden");
 }
 
-async function _sendPdfRequest(reportType, subject) {
+async function _sendPdfRequest(reportType, subject, academicYear) {
     const studentId = state.currentStudentId;
     const days = state.currentDays || 30;
 
@@ -1264,6 +1293,7 @@ async function _sendPdfRequest(reportType, subject) {
 
     const params = new URLSearchParams({ days: String(days), type: reportType });
     if (subject) params.set("subject", subject);
+    if (academicYear) params.set("year", academicYear);
 
     try {
         const res = await fetch(

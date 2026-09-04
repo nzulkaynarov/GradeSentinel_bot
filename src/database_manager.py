@@ -111,6 +111,7 @@ from src.db.grades import (  # noqa: E402, F401
     ALL_ACADEMIC_YEARS,
     get_grade_history_for_student,
     get_grade_history_for_student_all,
+    get_grades_for_academic_years,
     get_weakest_subject,
     get_today_grades_for_student,
     get_overnight_grades_for_student,

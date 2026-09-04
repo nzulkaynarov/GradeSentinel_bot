@@ -374,6 +374,49 @@ def get_grade_history_for_student_all(student_id: int, days: int = 30) -> List[D
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_grades_for_academic_years(student_id: int,
+                                  years: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+    """Оценки ученика за указанные учебные годы (None — за все).
+
+    Учебный год N — это сентябрь N по август N+1. Нужна именно такая выборка,
+    а не «последние N дней»: у выпускника интересен разрез по классам, а не
+    скользящее окно, и 4 года истории в дни всё равно не помещаются
+    (дашборд ограничен 365).
+
+    Читает и архив: оценки старше GRADE_ARCHIVE_DAYS физически лежат там.
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        base = '''
+            WITH rows AS (
+                SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
+                  FROM grade_history WHERE student_id = %s
+                UNION ALL
+                SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added
+                  FROM grade_history_archive WHERE student_id = %s
+            ), dated AS (
+                SELECT *,
+                       COALESCE(grade_date, (date_added + interval '5 hours')::date) AS d
+                  FROM rows
+            )
+            SELECT subject, grade_value, raw_text, cell_reference, grade_date, date_added,
+                   CASE WHEN EXTRACT(MONTH FROM d) >= 9
+                        THEN EXTRACT(YEAR FROM d)::int
+                        ELSE EXTRACT(YEAR FROM d)::int - 1 END AS academic_year
+              FROM dated
+             WHERE d IS NOT NULL
+        '''
+        params = [student_id, student_id]
+        if years:
+            base += " AND (CASE WHEN EXTRACT(MONTH FROM d) >= 9 " \
+                    "THEN EXTRACT(YEAR FROM d)::int " \
+                    "ELSE EXTRACT(YEAR FROM d)::int - 1 END) = ANY(%s)"
+            params.append(list(years))
+        base += " ORDER BY d DESC, date_added DESC"
+        cursor.execute(base, tuple(params))
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_weakest_subject(student_id: int, days: int = 200,
                         min_count: int = 3) -> Optional[Dict[str, Any]]:
     """Самый слабый предмет ученика за N дней: {subject, avg, count}.
@@ -528,6 +571,7 @@ __all__ = [
     "ALL_ACADEMIC_YEARS",
     "get_grade_history_for_student",
     "get_grade_history_for_student_all",
+    "get_grades_for_academic_years",
     "get_today_grades_for_student",
     "get_overnight_grades_for_student",
     "get_yesterday_grades_for_student",

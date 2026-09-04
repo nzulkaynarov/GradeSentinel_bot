@@ -139,5 +139,8 @@
   "stale_banner_body": "Maktab har yili yangi havola beradi. Havola yangilanmaguncha yangi baholar kelmaydi — bu yerda {year} ma'lumotlari.",
   "stale_banner_action": "Botda havolani yangilash",
   "year_picker_label": "O'quv yili",
-  "year_empty_for_year": "Bu o'quv yili uchun baholar yo'q"
+  "year_empty_for_year": "Bu o'quv yili uchun baholar yo'q",
+  "pdf_period_label": "Davr",
+  "pdf_period_current": "Joriy davr",
+  "pdf_period_all_years": "Barcha o'quv yillari"
 }

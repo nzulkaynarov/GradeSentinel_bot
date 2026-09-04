@@ -139,5 +139,8 @@
   "stale_banner_body": "Schools issue a new link every year. Until the link is updated, new grades will not arrive — this is {year} data.",
   "stale_banner_action": "Update the link in the bot",
   "year_picker_label": "School year",
-  "year_empty_for_year": "No grades for this school year"
+  "year_empty_for_year": "No grades for this school year",
+  "pdf_period_label": "Period",
+  "pdf_period_current": "Current period",
+  "pdf_period_all_years": "All school years"
 }
