@@ -137,5 +137,7 @@
   "dashboard_ai_hint": "💬 Questions left? Ask the AI in the bot chat.",
   "stale_banner_title": "Spreadsheet from the previous school year",
   "stale_banner_body": "Schools issue a new link every year. Until the link is updated, new grades will not arrive — this is {year} data.",
-  "stale_banner_action": "Update the link in the bot"
+  "stale_banner_action": "Update the link in the bot",
+  "year_picker_label": "School year",
+  "year_empty_for_year": "No grades for this school year"
 }

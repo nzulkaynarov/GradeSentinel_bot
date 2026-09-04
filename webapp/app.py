@@ -1186,7 +1186,13 @@ def api_dashboard_year(student_id):
     # монитор решает, актуальна ли таблица. Вычислять его от текущей даты нельзя:
     # именно так «Итоги года» 1 сентября обнулялись и показывали итог трёх дней
     # (а 2026-09-03 — итог трёх ошибочных записей), пряча реальный прошедший год.
-    academic_year = get_student_academic_year(student_id)
+    # ?year=YYYY — явный выбор учебного года (селектор в интерфейсе). Без него
+    # берём год привязанной таблицы; вычислять его от текущей даты нельзя.
+    requested_year = request.args.get("year", "").strip()
+    academic_year = int(requested_year) if requested_year.isdigit() else None
+    explicit_year = academic_year is not None
+    if academic_year is None:
+        academic_year = get_student_academic_year(student_id)
     if academic_year is None:
         academic_year = current_academic_year(today_tashkent)
 
@@ -1199,7 +1205,9 @@ def api_dashboard_year(student_id):
     year_grades = _slice(academic_year)
     # Если в «своём» году оценок ещё нет (первые дни сентября), показываем
     # прошедший — он у родителя и есть предмет интереса. Год всегда подписан.
-    if not year_grades and academic_year > 2000:
+    # При явном выборе года не подменяем: попросили 2025/26 — показываем его,
+    # даже если он пуст.
+    if not year_grades and not explicit_year and academic_year > 2000:
         previous = _slice(academic_year - 1)
         if previous:
             academic_year -= 1
@@ -1209,10 +1217,51 @@ def api_dashboard_year(student_id):
     report["school_year_start"] = date(academic_year, 9, 1).isoformat()
     report["academic_year"] = academic_year
     report["academic_year_label"] = f"{academic_year}/{str(academic_year + 1)[-2:]}"
+    # Класс за ТОТ год, а не текущий: иначе оценки восьмого класса подписывались
+    # бы девятым, потому что класс живёт одним перезаписываемым полем.
+    report["available_years"] = _available_years(student_id)
+    snapshot = next((y for y in report["available_years"]
+                     if y["academic_year"] == academic_year), None)
+    report["class_name"] = snapshot["display_name"] if snapshot else None
 
     # Dashboard refresh: убрали AI годовой инсайт. AI теперь только в чате.
 
     return jsonify(report)
+
+
+def _available_years(student_id: int):
+    """Учебные годы ученика для селектора — из снимков привязок и из самих
+    оценок (снимок мог не сохраниться для совсем старых лет)."""
+    from src.database_manager import get_student_years
+
+    snapshots = {y["academic_year"]: y for y in get_student_years(student_id)}
+    with get_db_connection() as conn:
+        rows = conn.cursor().execute(
+            """
+            SELECT DISTINCT CASE
+                     WHEN EXTRACT(MONTH FROM d) >= 9 THEN EXTRACT(YEAR FROM d)::int
+                     ELSE EXTRACT(YEAR FROM d)::int - 1
+                   END AS y
+              FROM (
+                SELECT grade_date AS d FROM grade_history WHERE student_id = %s
+                UNION ALL
+                SELECT grade_date AS d FROM grade_history_archive WHERE student_id = %s
+              ) g
+             WHERE d IS NOT NULL
+            """,
+            (student_id, student_id),
+        ).fetchall()
+    for row in rows:
+        snapshots.setdefault(row["y"], {"academic_year": row["y"],
+                                        "display_name": None, "spreadsheet_id": None})
+    return [
+        {
+            "academic_year": y,
+            "label": f"{y}/{str(y + 1)[-2:]}",
+            "display_name": snapshots[y].get("display_name"),
+        }
+        for y in sorted(snapshots, reverse=True)
+    ]
 
 
 def _serialize_grades(grades):

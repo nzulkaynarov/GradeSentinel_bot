@@ -1585,4 +1585,36 @@ body {
 
 .stale-banner-btn:active {
     opacity: 0.85;
+/* ── Селектор учебного года ─────────────────────────────────────────
+   Цифры четвертей и средние выглядят одинаково для любого года, поэтому
+   выбранный год виден постоянно, а не подразумевается. */
+.year-picker {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    background: var(--tg-section-bg);
+    border: 1px solid rgba(127,127,127,0.15);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin: 0 var(--space-2) var(--space-3);
+}
+
+.year-picker-label {
+    font-size: 12px;
+    color: var(--tg-hint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.year-picker-select {
+    background: var(--tg-bg-secondary);
+    border: 1px solid rgba(127,127,127,0.15);
+    border-radius: var(--radius-pill);
+    padding: 6px 12px;
+    color: var(--tg-text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    max-width: 60%;
 }

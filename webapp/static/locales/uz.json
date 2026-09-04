@@ -137,5 +137,7 @@
   "dashboard_ai_hint": "💬 Savollar qoldimi? Bot chatidagi AI'ga so'rang.",
   "stale_banner_title": "Jadval o'tgan o'quv yiliga tegishli",
   "stale_banner_body": "Maktab har yili yangi havola beradi. Havola yangilanmaguncha yangi baholar kelmaydi — bu yerda {year} ma'lumotlari.",
-  "stale_banner_action": "Botda havolani yangilash"
+  "stale_banner_action": "Botda havolani yangilash",
+  "year_picker_label": "O'quv yili",
+  "year_empty_for_year": "Bu o'quv yili uchun baholar yo'q"
 }

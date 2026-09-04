@@ -320,15 +320,21 @@ function switchView(view) {
     }
 }
 
-async function _loadYearReportIfNeeded() {
-    if (state.yearReport || state.yearLoading) {
+async function _loadYearReportIfNeeded(year) {
+    // year === undefined — год по умолчанию (год привязанной таблицы).
+    // Явно выбранный год всегда перезагружаем: это другой набор данных.
+    if (year === undefined && (state.yearReport || state.yearLoading)) {
         if (state.yearReport) renderYearReport();
         return;
     }
+    if (state.yearLoading) return;
     state.yearLoading = true;
     document.getElementById("year-loading").classList.remove("hidden");
+    document.getElementById("year-empty").classList.add("hidden");
+    document.getElementById("year-content").classList.add("hidden");
     try {
-        state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}`);
+        const q = year === undefined ? "" : `?year=${encodeURIComponent(year)}`;
+        state.yearReport = await fetchJSON(`/api/dashboard/year/${state.currentStudentId}${q}`);
         renderYearReport();
     } catch (e) {
         console.warn("Year report load failed", e);
@@ -337,6 +343,30 @@ async function _loadYearReportIfNeeded() {
     } finally {
         state.yearLoading = false;
     }
+}
+
+function renderYearPicker(report) {
+    // Год подписан классом ТОГО года: «8 Orion · 2025/26». Класс живёт одним
+    // перезаписываемым полем, поэтому без снимка прошлогодние оценки
+    // подписывались бы текущим классом.
+    const picker = document.getElementById("year-picker");
+    const select = document.getElementById("year-select");
+    if (!picker || !select) return;
+
+    const years = (report && report.available_years) || [];
+    // Один год — выбирать не из чего, прячем.
+    picker.classList.toggle("hidden", years.length < 2);
+    if (years.length < 2) return;
+
+    select.innerHTML = "";
+    years.forEach(y => {
+        const opt = document.createElement("option");
+        opt.value = y.academic_year;
+        opt.textContent = y.display_name ? `${y.display_name} · ${y.label}` : y.label;
+        select.appendChild(opt);
+    });
+    select.value = String(report.academic_year);
+    select.onchange = () => _loadYearReportIfNeeded(select.value);
 }
 
 // ═════════ KPI ROW (4 cards) ═════════
@@ -871,6 +901,9 @@ function _openBotChatWithQuestion(question) {
 function renderYearReport() {
     const report = state.yearReport;
     document.getElementById("year-loading").classList.add("hidden");
+    // Селектор рисуем ДО проверки на пустоту: иначе из пустого года
+    // не выбраться обратно.
+    renderYearPicker(report);
 
     if (!report || report.numeric_count < 1) {
         document.getElementById("year-empty").classList.remove("hidden");

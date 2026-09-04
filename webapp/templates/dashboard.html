@@ -142,6 +142,12 @@
 
         <!-- ════════ VIEW: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
         <div id="view-year" class="hidden">
+            <!-- Селектор учебного года: оценки за прошлый класс остаются
+                 доступными и подписываются классом ТОГО года. -->
+            <div class="year-picker" id="year-picker">
+                <label class="year-picker-label" for="year-select" data-i18n="year_picker_label">Учебный год</label>
+                <select id="year-select" class="year-picker-select"></select>
+            </div>
             <div id="year-loading" class="empty-hint hidden" data-i18n="year_loading">Загружаю…</div>
             <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
             <div id="year-content" class="hidden">

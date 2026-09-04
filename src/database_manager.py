@@ -321,6 +321,7 @@ from src.db.families import (  # noqa: E402, F401
     add_student,
     get_student_academic_year,
     set_student_academic_year,
+    get_student_years,
     update_student_display_name,
     update_student_spreadsheet,
     set_family_head,
