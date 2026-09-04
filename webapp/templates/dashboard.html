@@ -43,6 +43,17 @@
             <div id="student-tabs" class="student-tabs hidden"></div>
         </header>
 
+        <!-- Источник на паузе: монитор не читает прошлогоднюю таблицу, поэтому
+             экран замирает. Без этой полосы «оценок нет» и «бот их не читает»
+             выглядят одинаково. -->
+        <div class="stale-banner hidden" id="stale-banner" role="status">
+            <div class="stale-banner-text">
+                <strong data-i18n="stale_banner_title">Таблица за прошлый учебный год</strong>
+                <span id="stale-banner-body"></span>
+            </div>
+            <button class="stale-banner-btn" id="stale-banner-btn" data-i18n="stale_banner_action">Обновить ссылку в боте</button>
+        </div>
+
         <!-- Main tabs: Dashboard / Year Summary -->
         <div class="view-tabs" id="view-tabs" role="tablist">
             <button class="view-tab active" data-view="dashboard" data-i18n="tab_dashboard">📊 Дашборд</button>
@@ -95,7 +106,7 @@
                 <h2 class="card-title">
                     <span data-i18n="section_quarters">Четвертные оценки</span>
                 </h2>
-                <p class="card-subtitle" data-i18n="section_quarters_subtitle">с прогнозом годовой</p>
+                <p class="card-subtitle"><span data-i18n="section_quarters_subtitle">с прогнозом годовой</span><span id="quarters-year-badge" class="year-badge hidden"></span></p>
             </header>
             <div class="card-body">
                 <div id="quarters-table-wrap"></div>
@@ -131,6 +142,12 @@
 
         <!-- ════════ VIEW: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
         <div id="view-year" class="hidden">
+            <!-- Селектор учебного года: оценки за прошлый класс остаются
+                 доступными и подписываются классом ТОГО года. -->
+            <div class="year-picker" id="year-picker">
+                <label class="year-picker-label" for="year-select" data-i18n="year_picker_label">Учебный год</label>
+                <select id="year-select" class="year-picker-select"></select>
+            </div>
             <div id="year-loading" class="empty-hint hidden" data-i18n="year_loading">Загружаю…</div>
             <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
             <div id="year-content" class="hidden">
@@ -236,6 +253,12 @@
                             <span data-i18n="pdf_type_teacher_hint">Фокус на проблемных предметах</span>
                         </div>
                     </label>
+                    <!-- Период отчёта. Для выпускника важен разрез по классам,
+                         а не скользящее окно в днях. -->
+                    <div class="pdf-period">
+                        <label class="pdf-period-label" for="pdf-year-select" data-i18n="pdf_period_label">Период</label>
+                        <select id="pdf-year-select" class="pdf-subject-select"></select>
+                    </div>
                 </div>
                 <footer class="modal-footer">
                     <button id="pdf-modal-cancel" class="btn-action" type="button" data-i18n="btn_cancel">Отмена</button>

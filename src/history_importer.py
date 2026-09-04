@@ -489,9 +489,15 @@ def import_quarters_for_student(student_id: int, spreadsheet_id: str) -> Dict[st
     Returns:
         {imported: int, skipped: int, total: int}
     """
-    from src.database_manager import upsert_quarter_grade
+    from src.database_manager import upsert_quarter_grade, get_student_academic_year
 
     RANGE_NAME = "Четверти!A1:G50"
+
+    # Четвертные пишутся с годом таблицы: иначе первая четверть нового года
+    # перезаписала бы прошлогоднюю (миграция 0006).
+    academic_year = get_student_academic_year(student_id)
+    if academic_year is None:
+        academic_year = current_academic_year()
 
     try:
         data = get_sheet_data(spreadsheet_id, RANGE_NAME)
@@ -534,7 +540,8 @@ def import_quarters_for_student(student_id: int, spreadsheet_id: str) -> Dict[st
                 continue
 
             total += 1
-            changed = upsert_quarter_grade(student_id, subject, quarter, grade_value, clean_text)
+            changed = upsert_quarter_grade(student_id, subject, quarter, grade_value,
+                                           clean_text, academic_year=academic_year)
             if changed:
                 imported += 1
             else:

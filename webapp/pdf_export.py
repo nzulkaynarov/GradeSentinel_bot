@@ -143,6 +143,11 @@ def _localize(key: str, lang: str) -> str:
     не тащить I/O при каждом запросе."""
     labels = {
         'ru': {
+            'sec_years': "ИТОГИ ПО УЧЕБНЫМ ГОДАМ",
+            'col_year_label': "Учебный год",
+            'col_year_class': "Класс",
+            'col_year_avg': "Средний",
+            'col_year_count': "Оценок",
             'history_truncated': 'Показаны последние {shown} из {total} оценок за период',
             'title': 'Отчёт об успеваемости',
             'student': 'Ученик',
@@ -187,6 +192,11 @@ def _localize(key: str, lang: str) -> str:
             'status_stable': '✅ Всё стабильно',
         },
         'uz': {
+            'sec_years': "O'QUV YILLARI BO'YICHA NATIJALAR",
+            'col_year_label': "O'quv yili",
+            'col_year_class': "Sinf",
+            'col_year_avg': "O'rtacha",
+            'col_year_count': "Baholar",
             'history_truncated': "Davr uchun {total} bahodan oxirgi {shown} tasi ko'rsatilgan",
             'title': "O'qish hisoboti",
             'student': "O'quvchi",
@@ -229,6 +239,11 @@ def _localize(key: str, lang: str) -> str:
             'status_stable': "✅ Hammasi barqaror",
         },
         'en': {
+            'sec_years': "RESULTS BY SCHOOL YEAR",
+            'col_year_label': "School year",
+            'col_year_class': "Class",
+            'col_year_avg': "Average",
+            'col_year_count': "Grades",
             'history_truncated': 'Showing the latest {shown} of {total} grades for the period',
             'title': 'Academic performance report',
             'student': 'Student',
@@ -556,6 +571,46 @@ def _make_footer_callback(student_name, generated_str):
     return _draw_footer
 
 
+def _years_table(years_summary: List[Dict[str, Any]], lang: str,
+                 styles: Dict[str, Any]) -> Table:
+    """Сводка по учебным годам: класс, средний балл, объём выборки.
+
+    Ради неё родитель выпускника и открывает отчёт — видно, с чем ребёнок
+    подходит к выпуску и что проседало из года в год. Класс берётся из снимка
+    ТОГО года, а не текущий: иначе все строки подписались бы выпускным."""
+    header = [
+        _localize('col_year_label', lang),
+        _localize('col_year_class', lang),
+        _localize('col_year_avg', lang),
+        _localize('col_year_count', lang),
+    ]
+    rows = [header]
+    for y in years_summary:
+        rows.append([
+            y.get('label', ''),
+            y.get('class_name') or '\u2014',
+            f"{y['avg']:.2f}" if y.get('avg') is not None else '\u2014',
+            str(y.get('count', 0)),
+        ])
+
+    tbl = Table(rows, colWidths=[45 * mm, 55 * mm, 30 * mm, 30 * mm], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
+        ('FONTSIZE', (0, 0), (-1, -1), 9.5),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
+        ('FONTNAME', (0, 1), (-1, -1), _FONT_NAME),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#CBD5E1')),
+        ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    return tbl
+
+
 def build_dashboard_pdf(
     student_name: str,
     summary: Dict[str, Any],
@@ -567,6 +622,7 @@ def build_dashboard_pdf(
     quarters: Optional[List[Dict[str, Any]]] = None,
     period_start: str = '',
     period_end: str = '',
+    years_summary: Optional[List[Dict[str, Any]]] = None,
 ) -> bytes:
     """Главная точка входа. Возвращает PDF как bytes.
 
@@ -649,6 +705,16 @@ def build_dashboard_pdf(
         f"{status_text} &nbsp;·&nbsp; {_localize('grades_count', lang)}: <b>{grades_count}</b>",
         styles['body'],
     ))
+
+    # ═══ ИТОГИ ПО УЧЕБНЫМ ГОДАМ (только в отчёте по годам) ═══
+    if years_summary:
+        story.append(Spacer(1, 16))
+        story.append(Paragraph(_localize('sec_years', lang), styles['section']))
+        story.append(HRFlowable(
+            width='100%', thickness=0.75, color=colors.HexColor('#CBD5E1'),
+            spaceBefore=2, spaceAfter=8,
+        ))
+        story.append(_years_table(years_summary, lang, styles))
 
     # ═══ РАЗДЕЛ 2: ЧЕТВЕРТНЫЕ ═══
     if quarters:

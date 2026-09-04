@@ -136,16 +136,59 @@ def get_student_academic_year(student_id: int) -> Optional[int]:
         return row['academic_year'] if row else None
 
 
+def _snapshot_student_year(cursor, student_id: int, academic_year: int) -> None:
+    """Запоминает класс и таблицу ученика на этот учебный год.
+
+    Класс и ссылка живут одним полем в `students` и перезаписываются при смене
+    таблицы, поэтому без снимка прошлогодние оценки подписывались бы текущим
+    классом («оценки за 8 класс под именем 9 Orion»). Снимок обновляется, пока
+    год актуален, и замирает, когда ученик переходит в следующий."""
+    cursor.execute(
+        '''
+        INSERT INTO student_years (student_id, academic_year, display_name, spreadsheet_id)
+        SELECT id, %s, display_name, spreadsheet_id FROM students WHERE id = %s
+        ON CONFLICT (student_id, academic_year) DO UPDATE
+            SET display_name = EXCLUDED.display_name,
+                spreadsheet_id = EXCLUDED.spreadsheet_id,
+                updated_at = (now() at time zone 'utc')
+        ''',
+        (academic_year, student_id),
+    )
+
+
 def set_student_academic_year(student_id: int, academic_year: Optional[int]) -> bool:
     """Записывает учебный год таблицы ученика (None = сбросить → переопределить
-    по содержимому листа при следующем импорте)."""
+    по содержимому листа при следующем импорте).
+
+    Известный год попутно фиксирует снимок класса и таблицы за этот год."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
             'UPDATE students SET academic_year = %s WHERE id = %s',
             (academic_year, student_id),
         )
-        return cursor.rowcount > 0
+        changed = cursor.rowcount > 0
+        if changed and academic_year is not None:
+            _snapshot_student_year(cursor, student_id, academic_year)
+        return changed
+
+
+def get_student_years(student_id: int) -> List[Dict[str, Any]]:
+    """Учебные годы ученика со снимком класса и таблицы — свежие первыми.
+
+    Источник для селектора года: показывает «8 Orion · 2025/26» вместо
+    текущего класса на прошлогодних данных."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT academic_year, display_name, spreadsheet_id
+              FROM student_years WHERE student_id = %s
+             ORDER BY academic_year DESC
+            ''',
+            (student_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def update_student_display_name(student_id: int, display_name: str):
@@ -175,6 +218,12 @@ def update_student_spreadsheet(student_id: int, spreadsheet_id: str,
     Возвращает True если ученик существовал и строка обновлена."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # Снимок ДО перезаписи: после UPDATE прежние класс и ссылка исчезнут,
+        # а именно они и описывают прошлый учебный год.
+        cursor.execute('SELECT academic_year FROM students WHERE id = %s', (student_id,))
+        row = cursor.fetchone()
+        if row and row['academic_year'] is not None:
+            _snapshot_student_year(cursor, student_id, row['academic_year'])
         if display_name is not None:
             cursor.execute(
                 'UPDATE students SET spreadsheet_id = %s, display_name = %s, '
@@ -317,7 +366,7 @@ def get_students_for_parent(telegram_id: int,
         cursor = conn.cursor()
         if family_id:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name, s.academic_year
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON p.telegram_id = %s
@@ -327,7 +376,7 @@ def get_students_for_parent(telegram_id: int,
             ''', (telegram_id, family_id))
         else:
             cursor.execute('''
-                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name
+                SELECT DISTINCT s.id, s.fio, s.spreadsheet_id, s.display_name, s.academic_year
                 FROM students s
                 JOIN family_links fl ON s.id = fl.student_id
                 JOIN parents p ON p.telegram_id = %s
@@ -426,6 +475,10 @@ __all__ = [
     "add_family",
     "add_student",
     "update_student_display_name",
+    "update_student_spreadsheet",
+    "get_student_academic_year",
+    "set_student_academic_year",
+    "get_student_years",
     "set_family_head",
     "link_parent_to_family",
     "link_student_to_family",
