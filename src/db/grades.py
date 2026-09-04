@@ -24,6 +24,11 @@ from src.db.connection import get_db_connection
 logger = logging.getLogger(__name__)
 
 
+# Сентинел для get_quarter_grades: явно «все учебные годы», в отличие от None,
+# который означает «год привязанной таблицы».
+ALL_ACADEMIC_YEARS = object()
+
+
 # ─── Write path (monitor + history_importer) ────────────────────────
 def add_grade(student_id: int, subject: str, grade_value: Optional[float],
               raw_text: str, cell_reference: str,
@@ -220,43 +225,94 @@ def update_grade(student_id: int, cell_reference: str,
 
 
 # ─── Четвертные ─────────────────────────────────────────────────────
+def _resolve_academic_year(student_id: int, academic_year: Optional[int],
+                           cursor=None) -> int:
+    """Учебный год для операций с четвертными.
+
+    Явно переданный побеждает; иначе берём `students.academic_year` (его ставит
+    монитор/импортёр), иначе выводим по сегодняшней ташкентской дате."""
+    from src.history_importer import current_academic_year
+
+    if academic_year is not None:
+        return academic_year
+    if cursor is not None:
+        cursor.execute("SELECT academic_year FROM students WHERE id = %s", (student_id,))
+        row = cursor.fetchone()
+        if row and row["academic_year"] is not None:
+            return row["academic_year"]
+    return current_academic_year()
+
+
 def upsert_quarter_grade(student_id: int, subject: str, quarter: int,
-                         grade_value: Optional[float], raw_text: str) -> bool:
+                         grade_value: Optional[float], raw_text: str,
+                         academic_year: Optional[int] = None) -> bool:
     """Вставляет или обновляет четвертную оценку. True если значение изменилось.
-    Quarters per design всегда single-grade — sanitize_grade, не sanitize_cell."""
+    Quarters per design всегда single-grade — sanitize_grade, не sanitize_cell.
+
+    Ключ включает учебный год (миграция 0006). Без него первая четверть нового
+    года перезаписывала прошлогоднюю, и карточка предмета становилась смесью
+    двух учебных лет. `academic_year=None` → год берётся у ученика."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        year = _resolve_academic_year(student_id, academic_year, cursor)
         cursor.execute('''
             SELECT grade_value, raw_text FROM quarter_grades
-            WHERE student_id = %s AND subject = %s AND quarter = %s
-        ''', (student_id, subject, quarter))
+            WHERE student_id = %s AND academic_year = %s AND subject = %s AND quarter = %s
+        ''', (student_id, year, subject, quarter))
         existing = cursor.fetchone()
 
         if existing and existing['raw_text'] == raw_text:
             return False
 
         cursor.execute('''
-            INSERT INTO quarter_grades (student_id, subject, quarter, grade_value, raw_text)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (student_id, subject, quarter)
+            INSERT INTO quarter_grades
+                (student_id, academic_year, subject, quarter, grade_value, raw_text)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (student_id, academic_year, subject, quarter)
             DO UPDATE SET grade_value = EXCLUDED.grade_value,
                           raw_text = EXCLUDED.raw_text,
                           updated_at = (now() at time zone 'utc')
-        ''', (student_id, subject, quarter, grade_value, raw_text))
+        ''', (student_id, year, subject, quarter, grade_value, raw_text))
         return True
 
 
-def get_quarter_grades(student_id: int) -> List[Dict[str, Any]]:
-    """Все четвертные оценки студента, sorted by subject, quarter."""
+def get_quarter_grades(student_id: int,
+                       academic_year: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Четвертные оценки студента за учебный год, sorted by subject, quarter.
+
+    По умолчанию — год привязанной таблицы (`students.academic_year`): показывать
+    вперемешку четверти разных лет нельзя, родитель читает их как текущие.
+    `academic_year=ALL_ACADEMIC_YEARS` возвращает все годы (для экспорта/истории).
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if academic_year is ALL_ACADEMIC_YEARS:
+            cursor.execute('''
+                SELECT subject, quarter, grade_value, raw_text, academic_year
+                FROM quarter_grades
+                WHERE student_id = %s
+                ORDER BY academic_year, subject, quarter
+            ''', (student_id,))
+        else:
+            year = _resolve_academic_year(student_id, academic_year, cursor)
+            cursor.execute('''
+                SELECT subject, quarter, grade_value, raw_text, academic_year
+                FROM quarter_grades
+                WHERE student_id = %s AND academic_year = %s
+                ORDER BY subject, quarter
+            ''', (student_id, year))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_quarter_academic_years(student_id: int) -> List[int]:
+    """Учебные годы, за которые у ученика есть четвертные — свежие первыми."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT subject, quarter, grade_value, raw_text
-            FROM quarter_grades
-            WHERE student_id = %s
-            ORDER BY subject, quarter
+            SELECT DISTINCT academic_year FROM quarter_grades
+            WHERE student_id = %s ORDER BY academic_year DESC
         ''', (student_id,))
-        return [dict(row) for row in cursor.fetchall()]
+        return [row["academic_year"] for row in cursor.fetchall()]
 
 
 # ─── История за период (дашборд / AI) ───────────────────────────────
@@ -468,6 +524,8 @@ __all__ = [
     "get_unnotified_grades",
     "upsert_quarter_grade",
     "get_quarter_grades",
+    "get_quarter_academic_years",
+    "ALL_ACADEMIC_YEARS",
     "get_grade_history_for_student",
     "get_grade_history_for_student_all",
     "get_today_grades_for_student",

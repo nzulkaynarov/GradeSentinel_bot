@@ -107,6 +107,8 @@ from src.db.grades import (  # noqa: E402, F401
     get_unnotified_grades,
     upsert_quarter_grade,
     get_quarter_grades,
+    get_quarter_academic_years,
+    ALL_ACADEMIC_YEARS,
     get_grade_history_for_student,
     get_grade_history_for_student_all,
     get_weakest_subject,

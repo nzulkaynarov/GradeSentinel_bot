@@ -394,6 +394,14 @@ body {
     margin: 0 0 var(--space-3) 0;
 }
 
+/* Учебный год рядом с подзаголовком блока четвертных: цифры четвертей
+   одинаковы для любого года, поэтому год должен быть виден всегда. */
+.year-badge {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--tg-text);
+}
+
 .card-header {
     display: flex;
     justify-content: space-between;

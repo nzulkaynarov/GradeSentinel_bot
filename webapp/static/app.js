@@ -258,6 +258,14 @@ function renderDashboard() {
         d.by_subject || [],
         d.trend_by_subject || [],
     );
+    // Учебный год четвертных подписан явно: карточка «1ч 3 · 2ч 4 · Год 3»
+    // выглядит одинаково для текущего и прошлого года, а разница принципиальна.
+    const yearBadge = document.getElementById("quarters-year-badge");
+    if (yearBadge) {
+        const label = d.quarters_academic_year_label;
+        yearBadge.textContent = label ? ` · ${label}` : "";
+        yearBadge.classList.toggle("hidden", !label);
+    }
     // Снимок «когда родитель смотрел в прошлый раз» берём ДО рендера списка и
     // только один раз за загрузку дашборда — иначе бейдж «новое» гас сразу же.
     if (!state.lastSeenAt) {

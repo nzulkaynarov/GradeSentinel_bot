@@ -818,7 +818,11 @@ def api_dashboard(student_id):
     kpis = compute_dashboard_kpis(summary, by_subject, len(grades_current))
     # Четвертные с прогнозом годовой — primary блок (не collapsible).
     from src.database_manager import get_quarter_grades
-    quarter_grades = get_quarter_grades(student_id)
+    # Четвертные — строго за учебный год привязанной таблицы. Иначе на экране
+    # оказывалась смесь лет без единой пометки, и родитель читал прошлогодние
+    # четверти как текущие (аудит 2026-09-03).
+    quarter_year = get_student_academic_year(student_id) or current_academic_year()
+    quarter_grades = get_quarter_grades(student_id, academic_year=quarter_year)
     quarters_with_forecast = compute_quarters_with_forecast(quarter_grades)
     # trend_by_day удалён 2026-09-03: поле отдавалось «на пару дней» с 21 мая,
     # во фронте не используется ни разу (grep по app.js), но считалось на каждый
@@ -845,6 +849,8 @@ def api_dashboard(student_id):
         "trend_by_subject": trend_by_subject,
         "by_subject": by_subject,
         "quarters_with_forecast": quarters_with_forecast,
+        "quarters_academic_year": quarter_year,
+        "quarters_academic_year_label": f"{quarter_year}/{str(quarter_year + 1)[-2:]}",
         # Даты нормализуем в ISO ЯВНО. Flask 3 сериализует date/datetime через
         # http_date() → «Wed, 02 Sep 2026 00:00:00 GMT», а фронт сравнивает и
         # режет эти строки как 'YYYY-MM-DD'. Из-за этого группы дат сортировались
@@ -994,7 +1000,10 @@ def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
 
     summary = compute_summary(grades_current, grades_previous, days)
     by_subject = compute_by_subject(grades_current)
-    quarter_grades = get_quarter_grades(student_id)
+    # PDF позиционируется как proof-документ для учителя — четвертные в нём
+    # должны быть за тот же учебный год, а не за прошлый.
+    pdf_quarter_year = get_student_academic_year(student_id) or current_academic_year()
+    quarter_grades = get_quarter_grades(student_id, academic_year=pdf_quarter_year)
     quarters = compute_quarters_with_forecast(quarter_grades)
 
     # 'teacher_talk' — оставляем только problem subjects + четверти по ним
@@ -1415,9 +1424,26 @@ def api_grades(student_id):
 
 @app.route("/api/quarters/<int:student_id>")
 def api_quarters(student_id):
-    """Четвертные оценки (lazy-loaded когда юзер раскрывает секцию)."""
+    """Четвертные оценки (lazy-loaded когда юзер раскрывает секцию).
+
+    ?year=YYYY — конкретный учебный год, ?year=all — все. По умолчанию год
+    привязанной таблицы."""
+    from src.database_manager import ALL_ACADEMIC_YEARS, get_quarter_academic_years
+
     _authorize_student_access(student_id)
-    return jsonify(get_quarter_grades(student_id))
+    requested = request.args.get("year", "").strip().lower()
+    if requested == "all":
+        rows = get_quarter_grades(student_id, academic_year=ALL_ACADEMIC_YEARS)
+        year = None
+    else:
+        year = int(requested) if requested.isdigit() else (
+            get_student_academic_year(student_id) or current_academic_year())
+        rows = get_quarter_grades(student_id, academic_year=year)
+    return jsonify({
+        "quarters": rows,
+        "academic_year": year,
+        "available_years": get_quarter_academic_years(student_id),
+    })
 
 
 @app.route("/health")

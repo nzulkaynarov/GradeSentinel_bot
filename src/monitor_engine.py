@@ -910,7 +910,7 @@ def check_for_quarter_changes():
     logger.info(f"Checking quarter grades for {len(students)} students.")
 
     RANGE_NAME = "Четверти!A1:G50"
-    from src.history_importer import is_sheet_stale
+    from src.history_importer import is_sheet_stale, current_academic_year
 
     for student in students:
         student_id = student['student_id']
@@ -920,6 +920,13 @@ def check_for_quarter_changes():
 
         if is_sheet_stale(student.get('academic_year')):
             continue  # прошлогодняя таблица — не опрашиваем (см. _handle_stale_sheet)
+
+        # Год таблицы — часть ключа четвертных (миграция 0006). Если он ещё не
+        # определён (свежая привязка), берём текущий: до первого импорта
+        # четверти всё равно относятся к идущему учебному году.
+        sheet_year = student.get('academic_year')
+        if sheet_year is None:
+            sheet_year = current_academic_year()
 
         try:
             data = get_sheet_data(spreadsheet_id, RANGE_NAME)
@@ -954,18 +961,21 @@ def check_for_quarter_changes():
                 if clean_text is None:
                     continue
 
-                # Получаем текущее значение ДО upsert
+                # Получаем текущее значение ДО upsert — тем же ключом, что и
+                # запись: с миграции 0006 в него входит учебный год.
                 with get_db_connection() as conn:
                     cursor = conn.cursor()
                     cursor.execute('''
                         SELECT raw_text FROM quarter_grades
-                        WHERE student_id = %s AND subject = %s AND quarter = %s
-                    ''', (student_id, subject, quarter))
+                        WHERE student_id = %s AND academic_year = %s
+                          AND subject = %s AND quarter = %s
+                    ''', (student_id, sheet_year, subject, quarter))
                     existing = cursor.fetchone()
 
                 old_text = existing['raw_text'] if existing else None
 
-                changed = upsert_quarter_grade(student_id, subject, quarter, grade_value, clean_text)
+                changed = upsert_quarter_grade(student_id, subject, quarter, grade_value,
+                                               clean_text, academic_year=sheet_year)
 
                 if not changed:
                     continue
