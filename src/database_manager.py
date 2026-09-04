@@ -285,6 +285,7 @@ from src.db.groups import (  # noqa: E402, F401
 from src.db.maintenance import (  # noqa: E402, F401
     archive_old_grades,
     cleanup_old_notification_queue,
+    cleanup_old_group_notification_queue,
     cleanup_expired_invites,
     delete_family_cascade,
 )

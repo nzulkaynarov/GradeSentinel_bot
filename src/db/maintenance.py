@@ -93,6 +93,28 @@ def cleanup_old_notification_queue(hours: Optional[int] = None) -> int:
         return cursor.rowcount
 
 
+def cleanup_old_group_notification_queue(hours: Optional[int] = None) -> int:
+    """То же для очереди групповых чатов.
+
+    Она не чистилась вообще: сообщение, которое не удалось отправить в группу
+    (бота исключили из чата, тема удалена), оставалось там навсегда и каждое
+    утро уходило в новую попытку (аудит 2026-07-13, находка B-H1).
+    """
+    if hours is None:
+        from src.config import NOTIFICATION_QUEUE_TTL_HOURS
+        hours = NOTIFICATION_QUEUE_TTL_HOURS
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM group_notification_queue
+            WHERE created_at < (now() at time zone 'utc') - %s * interval '1 hour'
+        ''', (int(hours),))
+        if cursor.rowcount > 0:
+            logger.info(
+                f"Cleaned {cursor.rowcount} stale group notifications older than {hours}h")
+        return cursor.rowcount
+
+
 def cleanup_expired_invites(days: Optional[int] = None) -> int:
     """Удаляет инвайты, истёкшие более N дней назад.
     days по умолчанию из config.EXPIRED_INVITE_TTL_DAYS."""
@@ -160,6 +182,7 @@ def delete_family_cascade(family_id: int) -> bool:
 __all__ = [
     "archive_old_grades",
     "cleanup_old_notification_queue",
+    "cleanup_old_group_notification_queue",
     "cleanup_expired_invites",
     "delete_family_cascade",
 ]

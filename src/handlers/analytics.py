@@ -1,8 +1,6 @@
 import os
 import logging
-import threading
 import time
-from datetime import datetime
 from telebot import types
 
 from src.bot_instance import bot
@@ -81,23 +79,17 @@ def start_weekly_scheduler():
         return
 
     _scheduler_running = True
-    thread = threading.Thread(target=_weekly_loop, daemon=True)
-    thread.start()
-    logger.info("Weekly AI report scheduler started.")
+    logger.info("Weekly AI reports enabled (scheduled by src/schedulers.py).")
 
 
-def _weekly_loop():
-    while True:
-        now = datetime.now()
-        if now.weekday() == 6 and now.hour == 19 and now.minute < 5:
-            logger.info("Triggering weekly AI reports...")
-            try:
-                _send_weekly_reports()
-            except Exception as e:
-                logger.error(f"Error in weekly AI reports: {e}")
-            time.sleep(3600)
-        else:
-            time.sleep(300)
+def send_weekly_reports():
+    """Публичная точка входа для планировщика (`schedulers._send_weekly_ai_reports`).
+
+    Расписание живёт в общем планировщике: у него ташкентское время, per-job лок
+    и персистентный маркер в settings. Свой поток здесь считал время по серверу
+    и маркера не вёл, поэтому рестарт бота в воскресенье около 19:00 рассылал
+    отчёт повторно всем (аудит 2026-07-13, находка B-H2/H3)."""
+    return _send_weekly_reports()
 
 
 def _send_weekly_reports():

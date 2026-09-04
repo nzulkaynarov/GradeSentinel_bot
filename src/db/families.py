@@ -56,7 +56,11 @@ def get_active_spreadsheets_with_subscription() -> List[Dict[str, Any]]:
 
 # ─── Lookup: семьи по студенту / пользователю ───────────────────────
 def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
-    """Все семьи, к которым привязан ученик."""
+    """Все семьи, к которым привязан ученик, в стабильном порядке (по id).
+
+    Без ORDER BY порядок задавал планировщик, а вызывающий брал `[0]` — у
+    ребёнка в двух семьях история AI-чата скакала между ними от запроса к
+    запросу (аудит 2026-07-13, находка A-H1)."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -64,6 +68,7 @@ def get_families_for_student(student_id: int) -> List[Dict[str, Any]]:
             FROM families f
             JOIN family_links fl ON fl.family_id = f.id
             WHERE fl.student_id = %s
+            ORDER BY f.id
         ''', (student_id,))
         return [dict(row) for row in cursor.fetchall()]
 
