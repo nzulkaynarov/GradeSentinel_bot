@@ -183,6 +183,9 @@ GRADE_PROBLEM_THRESHOLD = 3.5   # avg <= → проблемная тема
 GRADE_GOOD_THRESHOLD = 4.5      # avg >= → топ
 DELTA_SIGNIFICANT = 0.2         # |delta| >= → заметное изменение
 MIN_SAMPLE = 3
+# Сколько оценок отдаём в список «все оценки за период». Список нужен для
+# чтения и drill-down фильтра, а не для полной выгрузки — она в PDF.
+_RECENT_LIMIT = 100
 # Меньше этого числа оценок — это шум, а не сигнал. Один и тот же порог для
 # дельты периода и для «проблемных предметов»: раньше KPI-карточки честно писали
 # «недостаточно данных» (KPI_MIN_SAMPLE=3), а статус-строка рядом уже тревожила
@@ -604,7 +607,12 @@ def compute_year_report(grades):
         month = int(ym[5:7])
         monthly_trend.append({
             "month": ym,
+            # label оставлен для обратной совместимости, но фронт должен брать
+            # month/year и форматировать сам: подпись «Сентябрь 2026» уезжала
+            # в узбекский и английский интерфейс как есть (аудит 2026-09-03).
             "label": f"{_RU_MONTH_NAMES[month]} {year}",
+            "month_num": month,
+            "year": year,
             "avg": round(sum(vals) / len(vals), 2),
             "count": len(vals),
         })
@@ -864,7 +872,12 @@ def api_dashboard(student_id):
         # по названию дня недели, «Сегодня» оказывалось над вчерашними оценками,
         # а подписи оси графика выглядели как «02 Se» (аудит 2026-09-03).
         # cell_reference — debug-метаданные, фронту не нужны.
-        "recent_grades": _serialize_grades(grades_current[:100]),
+        "recent_grades": _serialize_grades(grades_current[:_RECENT_LIMIT]),
+        # Список урезан до _RECENT_LIMIT, а KPI считает все оценки периода.
+        # Без этих двух чисел заголовок «Все оценки за период (100)» спорил с
+        # KPI «525» на том же экране (аудит 2026-09-03).
+        "recent_total": len(grades_current),
+        "recent_limit": _RECENT_LIMIT,
         "user": {
             "lang": lang,
             "first_name": first_name,
@@ -882,15 +895,34 @@ def api_dashboard(student_id):
 
 
 _BOT_USERNAME_CACHE = None
+# Момент последней НЕУДАЧНОЙ попытки: успех кэшировался, а провал — нет, и пока
+# Telegram отвечал 5xx, каждое открытие дашборда делало свежий get_me() с
+# 25-секундным таймаутом telebot. Восемь параллельных открытий занимали все
+# слоты gunicorn, включая /health (аудит 2026-09-03).
+_BOT_USERNAME_FAILED_AT = 0.0
+_BOT_USERNAME_RETRY_SECONDS = 300
 
 
 def _get_bot_username():
     """Lazy-cached bot username для AI deep-link'ов в frontend.
     Один get_me() при первом вызове, потом из памяти. Fallback на None
-    если бот недоступен — frontend проверяет и не показывает deep-link."""
-    global _BOT_USERNAME_CACHE
+    если бот недоступен — frontend проверяет и не показывает deep-link.
+
+    Имя бота не меняется, поэтому его можно задать переменной BOT_USERNAME и
+    вовсе не ходить в Telegram."""
+    global _BOT_USERNAME_CACHE, _BOT_USERNAME_FAILED_AT
     if _BOT_USERNAME_CACHE is not None:
         return _BOT_USERNAME_CACHE
+
+    from_env = os.environ.get("BOT_USERNAME", "").strip().lstrip("@")
+    if from_env:
+        _BOT_USERNAME_CACHE = from_env
+        return _BOT_USERNAME_CACHE
+
+    # Недавняя неудача — не долбим Telegram на каждом запросе.
+    if time.monotonic() - _BOT_USERNAME_FAILED_AT < _BOT_USERNAME_RETRY_SECONDS:
+        return None
+
     bot = _get_webapp_bot()
     if not bot:
         return None
@@ -898,6 +930,7 @@ def _get_bot_username():
         _BOT_USERNAME_CACHE = bot.get_me().username
         logger.info(f"Cached bot username: {_BOT_USERNAME_CACHE}")
     except Exception as e:
+        _BOT_USERNAME_FAILED_AT = time.monotonic()
         logger.warning(f"Failed to fetch bot username: {e}")
         return None
     return _BOT_USERNAME_CACHE
@@ -960,6 +993,24 @@ def api_dashboard_init():
 # ════════════════════════════════════════════════════════════
 #  ROUTES — end-of-year отчёт (учебный год 2025-09 → 2026-05)
 # ════════════════════════════════════════════════════════════
+
+def _resolve_chat_family(telegram_id: int, student_id: int):
+    """Семья, в контексте которой ведётся чат про этого ученика.
+
+    История чата хранится по паре (родитель, семья), поэтому брать «первую
+    попавшуюся» семью ученика нельзя: у ребёнка в двух семьях родитель видел бы
+    то одну ветку переписки, то другую. Берём семью, где состоят и ученик, и
+    сам родитель; при нескольких таких — с наименьшим id (стабильность важнее
+    выбора). Если общей нет — первую семью ученика, тоже детерминированно."""
+    from src.database_manager import get_families_for_student, get_families_for_user
+
+    fams = get_families_for_student(student_id)
+    if not fams:
+        return None
+    mine = {f["id"] for f in get_families_for_user(telegram_id)}
+    shared = [f for f in fams if f["id"] in mine]
+    return (shared or fams)[0]
+
 
 def _generate_dashboard_pdf(student_id: int, telegram_id: int, days: int,
                               report_type: str = 'full', subject_filter: str = '',
@@ -1408,10 +1459,10 @@ def api_chat():
         get_families_for_student, get_family_students,
         get_recent_family_chat_history, save_family_chat_message,
     )
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         abort(403)
-    family_id = fams[0]['id']
+    family_id = fam['id']
     family_students = get_family_students(family_id)
 
     # Собираем grades всех детей семьи с annotation
@@ -1467,10 +1518,10 @@ def api_chat_history(student_id):
     URL контракт остался для backward compat фронта."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, get_recent_family_chat_history
-    fams = get_families_for_student(student_id)
-    if not fams:
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if not fam:
         return jsonify({"messages": []})
-    history = get_recent_family_chat_history(telegram_id, fams[0]['id'])
+    history = get_recent_family_chat_history(telegram_id, fam['id'])
     return jsonify({"messages": history})
 
 
@@ -1479,9 +1530,9 @@ def api_chat_clear(student_id):
     """Очищает family-scoped историю чата (NAV-001: pivot на family_id)."""
     telegram_id = _authorize_student_access(student_id)
     from src.database_manager import get_families_for_student, clear_family_chat_history
-    fams = get_families_for_student(student_id)
-    if fams:
-        clear_family_chat_history(telegram_id, fams[0]['id'])
+    fam = _resolve_chat_family(telegram_id, student_id)
+    if fam:
+        clear_family_chat_history(telegram_id, fam['id'])
     return jsonify({"ok": True})
 
 
@@ -1576,10 +1627,33 @@ def api_quarters(student_id):
     })
 
 
+_HEALTH_CACHE = {"at": 0.0, "ok": True}
+_HEALTH_TTL_SECONDS = 5
+
+
 @app.route("/health")
 def health():
-    """Health check для Caddy/мониторинга."""
-    return jsonify({"status": "ok"})
+    """Health check для Caddy/мониторинга.
+
+    Проверяет БД: раньше эндпоинт не трогал её вовсе и отдавал 200 даже когда
+    база лежала, а дашборд возвращал 500 — мониторинг видел «здоров».
+    Результат кэшируется на несколько секунд, чтобы healthcheck сам не стал
+    нагрузкой и не занимал слоты при недоступной базе."""
+    now = time.monotonic()
+    if now - _HEALTH_CACHE["at"] < _HEALTH_TTL_SECONDS:
+        ok = _HEALTH_CACHE["ok"]
+    else:
+        try:
+            with get_db_connection() as conn:
+                conn.cursor().execute("SELECT 1")
+            ok = True
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            ok = False
+        _HEALTH_CACHE.update(at=now, ok=ok)
+    if ok:
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "degraded", "reason": "database unavailable"}), 503
 
 
 # ════════════════════════════════════════════════════════════

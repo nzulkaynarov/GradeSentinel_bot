@@ -447,6 +447,50 @@ def _maybe_alert_admin_stale(student_id: int, display_name: str,
         set_setting(marker_key, str(current_year))
 
 
+def _drop_removed_grades(student_id: int, display_name: str, grade_date: str,
+                         subjects_in_sheet: set) -> int:
+    """Убирает из истории сегодняшние оценки, которых больше нет в листе.
+
+    Учитель ошибся ячейкой и стёр оценку — раньше она оставалась в БД навсегда
+    и продолжала влиять на средний балл, тренды, PDF и контекст AI-чата: монитор
+    умеет только добавлять и менять (аудит 2026-09-03).
+
+    Осторожность важнее полноты, поэтому чистим ТОЛЬКО за сегодня:
+      • сегодняшнюю колонку пишет исключительно монитор — importer пропускает
+        всё, что `>= today`, так что чужих записей за этот день не бывает;
+      • вызывается только когда в колонке что-то есть (пустой список приводит к
+        `continue` выше), иначе сбой чтения листа стёр бы день целиком.
+    Оценка, стёртая вместе со всей колонкой, останется — это осознанный предел.
+    Уведомление не шлём: «оценку убрали» — шум, важен лишь корректный расчёт.
+    """
+    try:
+        existing = _grades_on_date(student_id, grade_date)
+    except Exception as e:
+        logger.debug(f"Removed-grades check skipped for student {student_id}: {e}")
+        return 0
+
+    stale_subjects = {subject for subject, _ in existing} - subjects_in_sheet
+    if not stale_subjects:
+        return 0
+
+    removed = 0
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        for subject in stale_subjects:
+            cursor.execute(
+                "DELETE FROM grade_history "
+                "WHERE student_id = %s AND grade_date = %s AND subject = %s",
+                (student_id, grade_date, subject),
+            )
+            removed += cursor.rowcount
+    if removed:
+        logger.info(
+            f"[GRADE REMOVED] {display_name} (id={student_id}): {removed} grade(s) "
+            f"gone from the sheet for {grade_date} — {', '.join(sorted(stale_subjects))}"
+        )
+    return removed
+
+
 def _grades_on_date(student_id: int, grade_date) -> set:
     """{(subject, raw_text)} оценок ученика за дату (по grade_date)."""
     with get_db_connection() as conn:
@@ -869,6 +913,12 @@ def _check_for_new_grades_impl():
             }
             for tg_id in get_parents_for_student(student_id):
                 parent_grades[tg_id].append(grade_entry)
+
+        # ── Оценки, стёртые учителем ─────────────────────────────────────
+        _drop_removed_grades(
+            student_id, display_name, tashkent_today,
+            {subject for subject, raw in today_grades_pairs if raw},
+        )
 
         # ── Отправка ПО ЭТОМУ студенту сразу (PR-F1 outbox) ──────────────
         # Раньше все уведомления копились в глобальный batch и слались двумя

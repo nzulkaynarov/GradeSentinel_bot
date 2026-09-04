@@ -53,6 +53,11 @@ _job_locks = {
     'subscription': threading.Lock(),
     'cleanup': threading.Lock(),
     'weekly_text_digest': threading.Lock(),
+    # AI-версия еженедельного отчёта. Раньше жила отдельным потоком в
+    # handlers/analytics.py: своё `while True`, серверное время вместо
+    # ташкентского и НИ ОДНОГО маркера — рестарт бота в воскресенье около 19:00
+    # рассылал отчёт повторно всем.
+    'weekly_ai_report': threading.Lock(),
     # PR_H5 proactive-alerts: джоб запускается из _scheduler_loop в 17:00, но
     # лок не был зарегистрирован → _run_job_safe падал с KeyError каждый день,
     # фича никогда не отрабатывала в проде. (fix prod-stability)
@@ -261,15 +266,27 @@ def _scheduler_loop():
                 _run_job_safe('cleanup', today_str, _run_weekly_cleanup)
 
             # Бесплатный текстовый weekly digest для всех (воскресенье, 18:00).
-            # AI-версия (премиум) идёт отдельным scheduler'ом в 19:00 в analytics.py.
             if now.weekday() == 6 and now.hour == 18 and now.minute < 6:
                 _run_job_safe('weekly_text_digest', today_str, _send_weekly_text_digest)
+
+            # AI-версия еженедельного отчёта (премиум), воскресенье 19:00.
+            # Здесь же, а не отдельным потоком: тот считал время по серверу и не
+            # вёл маркер, поэтому рестарт в окне рассылки дублировал отчёты.
+            if now.weekday() == 6 and now.hour == 19 and now.minute < 6:
+                _run_job_safe('weekly_ai_report', today_str, _send_weekly_ai_reports)
 
         except Exception as e:
             from src.error_reporter import report
             report("scheduler.loop", e)
 
         time.sleep(180)
+
+
+def _send_weekly_ai_reports():
+    """Еженедельный AI-отчёт. Логика осталась в handlers/analytics.py, сюда
+    вынесено только расписание — чтобы у джоба были общий лок и маркер."""
+    from src.handlers.analytics import send_weekly_reports
+    send_weekly_reports()
 
 
 def _dedup_preserve_order(messages):
@@ -302,7 +319,12 @@ def _flush_quiet_hours_queue():
 
     tg_ids = get_all_queued_telegram_ids()
     if not tg_ids:
-        logger.info("No queued notifications to flush.")
+        # Раньше здесь стоял return, и групповая очередь не выливалась НИКОГДА
+        # у семей, которые получают уведомления только в общий чат (личных
+        # сообщений в очереди нет → выходили сразу). Накопленное за ночь висело
+        # до следующей ночи и дальше (аудит 2026-07-13, находка B-H1).
+        logger.info("No personal queued notifications; checking group queue.")
+        _flush_group_queue()
         return
 
     logger.info(f"Flushing quiet hours queue for {len(tg_ids)} users.")
@@ -418,10 +440,22 @@ def _flush_quiet_hours_queue():
             delete_queued_notifications(queued_ids)
             _mark_recipient_sent('morning', tg_id, day)
 
-    # Параллельный flush для групповых чатов. Inline-markup не сохраняли —
-    # шлём plain HTML, и без агрегации по предметам (текст уже отформатирован
-    # monitor'ом при queue). Это «дамп всё что накопилось» — допустимый UX
-    # для семейного чата (там и так шумно), цель — не потерять сообщения.
+    _flush_group_queue()
+
+
+def _flush_group_queue():
+    """Flush накопленного для групповых чатов.
+
+    Вынесено из `_flush_quiet_hours_queue`, чтобы вызываться и когда личная
+    очередь пуста: у семьи с уведомлениями только в общий чат ранний выход
+    оставлял групповую очередь неразобранной навсегда.
+
+    Inline-markup не сохраняли — шлём plain HTML, без агрегации по предметам
+    (текст уже отформатирован monitor'ом при queue). Это «дамп всё что
+    накопилось» — допустимый UX для семейного чата, цель не потерять сообщения.
+    """
+    if not _bot:
+        return
     from src.database_manager import (
         get_all_queued_group_targets, get_queued_group_notifications,
         delete_group_notification,
@@ -960,11 +994,13 @@ def _run_weekly_cleanup():
     """Архивирование старых оценок и чистка истёкших инвайтов/очередей.
     Безопасно вызывать в любое время. Параметры по умолчанию из src/config.py."""
     from src.db.maintenance import (
-        archive_old_grades, cleanup_old_notification_queue, cleanup_expired_invites
+        archive_old_grades, cleanup_old_notification_queue, cleanup_expired_invites,
+        cleanup_old_group_notification_queue,
     )
     try:
         archive_old_grades()
         cleanup_old_notification_queue()
+        cleanup_old_group_notification_queue()
         cleanup_expired_invites()
     except Exception as e:
         from src.error_reporter import report

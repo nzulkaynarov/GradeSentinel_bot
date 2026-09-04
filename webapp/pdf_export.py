@@ -148,6 +148,7 @@ def _localize(key: str, lang: str) -> str:
             'col_year_class': "Класс",
             'col_year_avg': "Средний",
             'col_year_count': "Оценок",
+            'history_truncated': 'Показаны последние {shown} из {total} оценок за период',
             'title': 'Отчёт об успеваемости',
             'student': 'Ученик',
             'class': 'Класс',
@@ -196,6 +197,7 @@ def _localize(key: str, lang: str) -> str:
             'col_year_class': "Sinf",
             'col_year_avg': "O'rtacha",
             'col_year_count': "Baholar",
+            'history_truncated': "Davr uchun {total} bahodan oxirgi {shown} tasi ko'rsatilgan",
             'title': "O'qish hisoboti",
             'student': "O'quvchi",
             'class': 'Sinf',
@@ -242,6 +244,7 @@ def _localize(key: str, lang: str) -> str:
             'col_year_class': "Class",
             'col_year_avg': "Average",
             'col_year_count': "Grades",
+            'history_truncated': 'Showing the latest {shown} of {total} grades for the period',
             'title': 'Academic performance report',
             'student': 'Student',
             'class': 'Class',
@@ -468,11 +471,23 @@ def _quarters_table(quarters: List[Dict[str, Any]], lang: str,
     return tbl
 
 
+# Потолок строк в таблице полной истории. 1500 строк — это ~4 года оценок
+# одного ученика; выше начинается риск OOM при MemoryMax=200M.
+_MAX_HISTORY_ROWS = 1500
+
+
 def _full_history_table(grades: List[Dict[str, Any]], lang: str,
                          styles: Dict[str, Any]) -> Table:
-    """РАЗДЕЛ 4 PDF — полная история оценок за период. Хронологически,
-    БЕЗ лимита (главный proof-документ). На многостраничных report'ах
-    Platypus автоматически разбивает на страницы."""
+    """РАЗДЕЛ 4 PDF — история оценок за период, хронологически.
+
+    Главный proof-документ, поэтому режем как можно позже: до
+    `_MAX_HISTORY_ROWS` строк идут все оценки, свыше — оставляем самые свежие и
+    честно подписываем, сколько показано из скольких.
+
+    Раньше лимита не было вовсе. Platypus держит все флоу в памяти, а у сервиса
+    `MemoryMax=200M` при 60 МБ свободных: отчёт на несколько тысяч строк (год
+    истории на ученика в школе на сотню детей) убил бы cgroup-OOM'ом ОБА
+    воркера, а не только тот, что генерирует PDF (аудит 2026-09-03)."""
     header = [
         _localize('col_date', lang),
         _localize('col_subject', lang),
@@ -480,6 +495,10 @@ def _full_history_table(grades: List[Dict[str, Any]], lang: str,
     ]
     # ASC по дате — для чтения сверху-вниз как timeline
     sorted_grades = sorted(grades, key=_grade_date_str)
+    total = len(sorted_grades)
+    truncated = total > _MAX_HISTORY_ROWS
+    if truncated:
+        sorted_grades = sorted_grades[-_MAX_HISTORY_ROWS:]   # самые свежие
     rows = [header]
     for g in sorted_grades:
         date_str = _grade_date_str(g)
@@ -488,6 +507,10 @@ def _full_history_table(grades: List[Dict[str, Any]], lang: str,
             g.get('subject', '?'),
             str(g.get('raw_text', '?')),
         ])
+
+    if truncated:
+        rows.append([_localize('history_truncated', lang).format(
+            shown=len(sorted_grades), total=total), '', ''])
 
     tbl = Table(rows, colWidths=[30 * mm, 100 * mm, 30 * mm], repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -504,6 +527,14 @@ def _full_history_table(grades: List[Dict[str, Any]], lang: str,
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
     ]))
+    if truncated:
+        # Примечание об усечении — одной строкой во всю ширину, курсивом.
+        tbl.setStyle(TableStyle([
+            ('SPAN', (0, -1), (-1, -1)),
+            ('ALIGN', (0, -1), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, -1), (-1, -1), _FONT_BOLD),
+            ('TEXTCOLOR', (0, -1), (-1, -1), colors.HexColor('#64748B')),
+        ]))
     return tbl
 
 
