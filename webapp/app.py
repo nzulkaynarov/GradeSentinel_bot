@@ -183,6 +183,9 @@ GRADE_PROBLEM_THRESHOLD = 3.5   # avg <= → проблемная тема
 GRADE_GOOD_THRESHOLD = 4.5      # avg >= → топ
 DELTA_SIGNIFICANT = 0.2         # |delta| >= → заметное изменение
 MIN_SAMPLE = 3
+# Сколько оценок отдаём в список «все оценки за период». Список нужен для
+# чтения и drill-down фильтра, а не для полной выгрузки — она в PDF.
+_RECENT_LIMIT = 100
 # Меньше этого числа оценок — это шум, а не сигнал. Один и тот же порог для
 # дельты периода и для «проблемных предметов»: раньше KPI-карточки честно писали
 # «недостаточно данных» (KPI_MIN_SAMPLE=3), а статус-строка рядом уже тревожила
@@ -604,7 +607,12 @@ def compute_year_report(grades):
         month = int(ym[5:7])
         monthly_trend.append({
             "month": ym,
+            # label оставлен для обратной совместимости, но фронт должен брать
+            # month/year и форматировать сам: подпись «Сентябрь 2026» уезжала
+            # в узбекский и английский интерфейс как есть (аудит 2026-09-03).
             "label": f"{_RU_MONTH_NAMES[month]} {year}",
+            "month_num": month,
+            "year": year,
             "avg": round(sum(vals) / len(vals), 2),
             "count": len(vals),
         })
@@ -851,7 +859,12 @@ def api_dashboard(student_id):
         # по названию дня недели, «Сегодня» оказывалось над вчерашними оценками,
         # а подписи оси графика выглядели как «02 Se» (аудит 2026-09-03).
         # cell_reference — debug-метаданные, фронту не нужны.
-        "recent_grades": _serialize_grades(grades_current[:100]),
+        "recent_grades": _serialize_grades(grades_current[:_RECENT_LIMIT]),
+        # Список урезан до _RECENT_LIMIT, а KPI считает все оценки периода.
+        # Без этих двух чисел заголовок «Все оценки за период (100)» спорил с
+        # KPI «525» на том же экране (аудит 2026-09-03).
+        "recent_total": len(grades_current),
+        "recent_limit": _RECENT_LIMIT,
         "user": {
             "lang": lang,
             "first_name": first_name,
