@@ -64,10 +64,10 @@ def test_health_result_is_cached(client):
 @pytest.fixture(autouse=True)
 def _reset_bot_cache():
     wa._BOT_USERNAME_CACHE = None
-    wa._BOT_USERNAME_FAILED_AT = 0.0
+    wa._BOT_USERNAME_FAILED_AT = None
     yield
     wa._BOT_USERNAME_CACHE = None
-    wa._BOT_USERNAME_FAILED_AT = 0.0
+    wa._BOT_USERNAME_FAILED_AT = None
 
 
 def test_bot_username_failure_is_cached(monkeypatch):
@@ -81,6 +81,20 @@ def test_bot_username_failure_is_cached(monkeypatch):
         assert wa._get_bot_username() is None
         assert wa._get_bot_username() is None
         assert wa._get_bot_username() is None
+
+    assert bot.get_me.call_count == 1
+
+
+def test_bot_username_no_failure_means_no_cooldown(monkeypatch):
+    """Регрессия: отсчёт «последней неудачи» от нуля на свежезагруженной машине
+    блокировал самый первый вызов (time.monotonic() там близок к нулю)."""
+    monkeypatch.delenv("BOT_USERNAME", raising=False)
+    bot = MagicMock()
+    bot.get_me.return_value = MagicMock(username="GradeSentinelBot")
+
+    with patch.object(wa, "_get_webapp_bot", return_value=bot), \
+         patch.object(wa.time, "monotonic", return_value=1.0):
+        assert wa._get_bot_username() == "GradeSentinelBot"
 
     assert bot.get_me.call_count == 1
 

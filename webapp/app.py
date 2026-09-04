@@ -899,7 +899,10 @@ _BOT_USERNAME_CACHE = None
 # Telegram отвечал 5xx, каждое открытие дашборда делало свежий get_me() с
 # 25-секундным таймаутом telebot. Восемь параллельных открытий занимали все
 # слоты gunicorn, включая /health (аудит 2026-09-03).
-_BOT_USERNAME_FAILED_AT = 0.0
+# None — неудач не было. Ноль тут не годится: time.monotonic() отсчитывается от
+# загрузки машины, и на свежезагруженном хосте «0.0» означал бы «только что
+# провалились», из-за чего первый же запрос не пошёл бы в Telegram вовсе.
+_BOT_USERNAME_FAILED_AT = None
 _BOT_USERNAME_RETRY_SECONDS = 300
 
 
@@ -920,7 +923,8 @@ def _get_bot_username():
         return _BOT_USERNAME_CACHE
 
     # Недавняя неудача — не долбим Telegram на каждом запросе.
-    if time.monotonic() - _BOT_USERNAME_FAILED_AT < _BOT_USERNAME_RETRY_SECONDS:
+    if (_BOT_USERNAME_FAILED_AT is not None
+            and time.monotonic() - _BOT_USERNAME_FAILED_AT < _BOT_USERNAME_RETRY_SECONDS):
         return None
 
     bot = _get_webapp_bot()
