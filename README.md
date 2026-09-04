@@ -144,11 +144,12 @@ Makefile                     # make help — тесты, миграции, read-
 | Таблица | Назначение |
 |---------|-----------|
 | `parents` | Пользователи: fio, phone, telegram_id, role, lang |
-| `students` | Ученики: fio, spreadsheet_id, display_name |
+| `students` | Ученики: fio, spreadsheet_id, display_name, academic_year |
 | `families` | Семьи: family_name, head_id, subscription_end |
 | `family_links` | M2M связи: family↔parent, family↔student |
 | `grade_history` | История оценок: subject, raw_text, grade_value, cell_reference |
-| `quarter_grades` | Четвертные оценки |
+| `quarter_grades` | Четвертные оценки (с привязкой к учебному году) |
+| `student_years` | Класс и ссылка на таблицу по учебным годам |
 | `notification_queue` | Очередь тихих часов |
 | `family_invites` | Инвайт-ссылки: invite_code, expires_at, is_used |
 | `payments` | История платежей: amount, currency, plan, charge IDs |
