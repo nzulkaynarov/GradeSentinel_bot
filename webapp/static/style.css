@@ -465,6 +465,23 @@ body {
     margin: 0 var(--space-2);
 }
 
+/* Заголовок раздела на «Итогах»: «Четверти» + «и годовая оценка» */
+.results-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 var(--space-2) var(--space-2);
+}
+.results-heading-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--tg-text);
+}
+.results-heading-sub {
+    font-size: 12px;
+    color: var(--tg-hint);
+}
+
 /* Шапка списка: сколько предметов и на скольких оценках это посчитано */
 .subjects-summary {
     display: flex;
@@ -1313,6 +1330,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* Карточной обёртки у раздела больше нет — поля задаёт сам список. */
+    margin: 0 var(--space-2);
 }
 .quarter-card {
     background: var(--tg-bg-secondary, #1c2733);
@@ -1334,7 +1353,8 @@ body {
     font-size: 14px;
     color: var(--tg-text);
 }
-.qc-trend { font-size: 18px; line-height: 1; }
+/* Тренд словом («растёт»), а не стрелкой — отсюда мелкий кегль вместо 18px */
+.qc-trend { font-size: 12px; font-weight: 600; line-height: 1; }
 .qc-trend.trend-up { color: #10B981; }
 .qc-trend.trend-down { color: #EF4444; }
 .qc-trend.trend-flat { color: var(--tg-hint); }
@@ -1401,35 +1421,8 @@ body {
 }
 
 /* Enriched quarter card footer (current period stats + sparkline) */
-.qc-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    margin-top: 10px;
-    padding-top: 8px;
-    border-top: 1px solid rgba(127,127,127,0.10);
-}
-.qc-footer-stats {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-}
-.qc-stat-avg {
-    font-size: 18px;
-    font-weight: 700;
-}
-.qc-stat-count {
-    font-size: 11px;
-    color: var(--tg-hint);
-}
-.qc-footer-spark {
-    height: 22px;
-    line-height: 0;
-}
-.qc-footer-spark.trend-up { color: #10B981; }
-.qc-footer-spark.trend-down { color: #EF4444; }
-.qc-footer-spark.trend-flat { color: var(--tg-hint); }
+/* Подвал карточки (средний за период + спарклайн) удалён: ровно эти числа
+   лежат строкой во вкладке «Предметы». */
 .qc-quarters-empty {
     color: var(--tg-hint);
     font-size: 12px;

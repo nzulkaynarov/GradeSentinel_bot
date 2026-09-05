@@ -293,11 +293,7 @@ function renderDashboard() {
     renderSubjectsList(d.by_subject || [], d.trend_by_subject || []);
     // Четвертные с прогнозом годовой — вкладка «Итоги». Карточки по-прежнему
     // обогащены current-period статистикой, поэтому получают те же массивы.
-    renderQuartersBlock(
-        d.quarters_with_forecast || [],
-        d.by_subject || [],
-        d.trend_by_subject || [],
-    );
+    renderQuartersBlock(d.quarters_with_forecast || [], d.by_subject || []);
     state.availableYears = d.available_years || [];
     renderStaleBanner(d);
 
@@ -560,16 +556,13 @@ function _openBotRelink() {
     }
 }
 
-function renderQuartersBlock(quarters, bySubject, trendBySubject) {
+// trendBySubject больше не нужен: спарклайны переехали во вкладку «Предметы».
+// bySubject остался — по нему добираются предметы с текущими оценками, но без
+// четвертных, иначе они пропали бы из итогов года совсем.
+function renderQuartersBlock(quarters, bySubject) {
     const wrap = document.getElementById("quarters-table-wrap");
     const empty = document.getElementById("quarters-empty");
     if (!wrap) return;
-
-    // Карты: subject → current period stats (avg, count) и sparkline points
-    const statsMap = new Map();
-    (bySubject || []).forEach(s => statsMap.set(s.name, s));
-    const trendMap = new Map();
-    (trendBySubject || []).forEach(line => trendMap.set(line.subject, line.points));
 
     // Cards: сначала квартирные subjects, потом current-only (новые предметы
     // у которых есть текущие оценки но нет четвертных)
@@ -593,9 +586,11 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
     };
 
     const cards = allCards.map(q => {
-        const stats = statsMap.get(q.subject);
-        const sparkPoints = trendMap.get(q.subject);
-        const trendSym = q.trend === 'up' ? '↑' : q.trend === 'down' ? '↓' : '→';
+        // Тренд словом, а не стрелкой: «↓» родитель читает как «плохо вообще»,
+        // а «снижается» — как «от четверти к четверти», что и имеется в виду.
+        const trendKey = q.trend === 'up' ? 'quarters_trend_up'
+            : q.trend === 'down' ? 'quarters_trend_down' : 'quarters_trend_flat';
+        const trendLabel = t(trendKey) || '';
         const trendCls = q.trend === 'up' ? 'trend-up' : q.trend === 'down' ? 'trend-down' : 'trend-flat';
         // Honesty: для прогноза показываем число + явный badge «прогноз»,
         // не маскируем под точное значение «~3.2».
@@ -629,28 +624,18 @@ function renderQuartersBlock(quarters, bySubject, trendBySubject) {
             ${yearBadge}
         </div>`;
 
-        // Footer: current-period stats + sparkline
-        let footerHtml = '';
-        if (stats || sparkPoints) {
-            const sparkSvg = sparkPoints ? _sparklineSvg(sparkPoints, 80, 22) : '';
-            const statsAvg = stats ? `<span class="qc-stat-avg ${gradeColorClass(stats.avg)}">${stats.avg.toFixed(2)}</span>` : '';
-            const statsCount = stats ? `<span class="qc-stat-count">${stats.count} ${t("qc_stat_count_label") || "за период"}</span>` : '';
-            footerHtml = `<div class="qc-footer">
-                <div class="qc-footer-stats">${statsAvg}${statsCount}</div>
-                <div class="qc-footer-spark ${trendCls}">${sparkSvg}</div>
-            </div>`;
-        }
-
+        // Средний за период и спарклайн из подвала убраны: ровно это лежит
+        // строкой во вкладке «Предметы», и на двух вкладках одно и то же число
+        // расходилось бы при разных периодах.
         return `<div class="quarter-card" data-subject="${escapeHtml(q.subject)}">
             <div class="qc-header">
                 <span class="qc-subject">${escapeHtml(q.subject)}</span>
-                <span class="qc-trend ${trendCls}">${trendSym}</span>
+                <span class="qc-trend ${trendCls}">${escapeHtml(trendLabel)}</span>
             </div>
             <div class="qc-body">
                 ${quartersHtml}
                 ${yearHtml}
             </div>
-            ${footerHtml}
         </div>`;
     }).join("");
 

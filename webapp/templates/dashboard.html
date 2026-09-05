@@ -144,21 +144,22 @@
                 <label class="year-picker-label" for="year-select" data-i18n="year_picker_label">Учебный год</label>
                 <select id="year-select" class="year-picker-select"></select>
             </div>
-            <!-- Четвертные с прогнозом годовой: переехали сюда из «Предметов».
-                 Не зависят от выбранного периода — это итоги учебного года. -->
-            <section class="card" id="quarters-section">
-                <header class="card-header">
-                    <h2 class="card-title">
-                        <span data-i18n="section_quarters">Четвертные оценки</span>
-                    </h2>
-                    <p class="card-subtitle"><span data-i18n="section_quarters_subtitle">с прогнозом годовой</span><span id="quarters-year-badge" class="year-badge hidden"></span></p>
-                </header>
-                <div class="card-body">
-                    <div id="quarters-table-wrap"></div>
-                    <p class="empty-hint hidden" id="quarters-empty" data-i18n="quarters_empty">
-                        Четвертных оценок пока нет
-                    </p>
+            <!-- Четвертные с прогнозом годовой. Не зависят от выбранного
+                 периода — это итоги учебного года, а не скользящее окно.
+                 Карточной обёртки нет: на вкладке и так один раздел. -->
+            <section id="quarters-section">
+                <div class="results-heading">
+                    <!-- Подзаголовок оставлен «с прогнозом годовой», а не «и
+                         годовая оценка» как в макете: часть значений — прогноз,
+                         и об этом честнее сказать в самом заголовке. -->
+                    <span class="results-heading-title" data-i18n="section_quarters">Четвертные оценки</span>
+                    <span class="results-heading-sub" data-i18n="section_quarters_subtitle">с прогнозом годовой</span>
+                    <span id="quarters-year-badge" class="year-badge hidden"></span>
                 </div>
+                <div id="quarters-table-wrap"></div>
+                <p class="empty-hint hidden" id="quarters-empty" data-i18n="quarters_empty">
+                    Четвертных оценок пока нет
+                </p>
             </section>
 
             <div id="year-loading" class="empty-hint hidden" data-i18n="year_loading">Загружаю…</div>

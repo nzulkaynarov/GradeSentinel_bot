@@ -164,6 +164,44 @@ def test_subjects_sorted_by_average(app_js):
     assert "sort((a, b) => b.avg - a.avg)" in body
 
 
+def test_quarter_trend_is_a_word_not_an_arrow(app_js):
+    """Тренд четвертей подписан словом.
+
+    «↓» родитель читает как «плохо вообще», а «снижается» — как «от четверти
+    к четверти», что и имеется в виду.
+    """
+    # Только тело функции: в drill-down стрелка «Тренд» остаётся законно.
+    body = app_js.split("function renderQuartersBlock")[1].split("\nfunction ")[0]
+    assert "quarters_trend_up" in body and "quarters_trend_down" in body
+    assert "'↑'" not in body and "'↓'" not in body
+    for lang in LANGS:
+        data = json.loads((LOCALES_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+        for key in ("quarters_trend_up", "quarters_trend_down", "quarters_trend_flat"):
+            assert data.get(key), f"{lang}: нет перевода {key}"
+
+
+def test_forecast_stays_labelled(app_js, html):
+    """Прогноз годовой остаётся помеченным как прогноз.
+
+    Число без пометки читается как выставленная оценка — это ровно та ложь,
+    ради которой badge и вводили.
+    """
+    body = app_js.split("function renderQuartersBlock")[1].split("\nfunction ")[0]
+    assert "quarters_forecast_badge" in body
+    assert "year_is_forecast" in body
+    assert 'data-i18n="quarters_empty"' in html
+
+
+def test_period_stats_not_duplicated_on_two_tabs(app_js):
+    """Средний за период живёт только во вкладке «Предметы».
+
+    На двух вкладках одно и то же число расходилось бы при разных периодах.
+    """
+    body = app_js.split("function renderQuartersBlock")[1].split("function ")[0]
+    assert "qc-footer" not in body
+    assert "_sparklineSvg" not in body
+
+
 def test_tabbar_accounts_for_safe_area():
     """Бар закреплён внизу — контент и сам бар обязаны учитывать safe area.
 
