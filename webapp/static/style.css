@@ -161,6 +161,10 @@ body {
 
 .header {
     margin-bottom: var(--space-4);
+    /* В полноэкранном режиме шапки Telegram нет: без этого отступа приветствие
+       уезжает под статус-бар и вырез камеры. Значение проставляет app.js из
+       safeAreaInset; вне полного экрана оно нулевое. */
+    padding-top: var(--gs-safe-top, 0px);
 }
 
 .greeting {
@@ -883,14 +887,41 @@ body {
     margin-bottom: var(--space-3);
 }
 
+/* Вкладка отдана переписке целиком: лента занимает свободную высоту, а не
+   320px внутри карточки, как было, когда чат жил внизу общего экрана. */
+#chat-section {
+    display: flex;
+    flex-direction: column;
+    margin: 0 var(--space-2);
+}
+
 .chat-history {
-    max-height: 320px;
+    flex: 1;
+    min-height: 40vh;
     overflow-y: auto;
     margin-bottom: var(--space-3);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
 }
+
+/* Быстрые вопросы над полем ввода */
+.chat-prompts {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: var(--space-2);
+}
+.chat-prompt {
+    padding: 7px 12px;
+    background: var(--tg-section-bg);
+    border: 1px solid var(--tg-section-separator);
+    border-radius: var(--radius-pill);
+    color: var(--tg-text);
+    font-size: 13px;
+    cursor: pointer;
+}
+.chat-prompt:active { opacity: 0.7; }
 
 .chat-msg {
     padding: var(--space-2) var(--space-3);
@@ -916,7 +947,9 @@ body {
 .chat-thinking { opacity: 0.6; font-style: italic; }
 .chat-error-msg { background: rgba(231, 76, 60, 0.12); color: #c0392b; }
 
-.chat-input-wrap { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+/* Поле и кнопка всегда в одну строку: кнопка теперь иконка шириной 44px,
+   переносить её на второй ряд (как делал старый flex-wrap) незачем. */
+.chat-input-wrap { display: flex; gap: var(--space-2); align-items: stretch; }
 
 .chat-input {
     flex: 1 1 200px;
@@ -929,12 +962,22 @@ body {
     font-size: 14px;
 }
 
-.chat-send { padding: var(--space-2) var(--space-4); white-space: nowrap; flex: 0 0 auto; }
-
-@media (max-width: 420px) {
-    .chat-input { flex: 1 1 100%; }
-    .chat-send { flex: 1 1 100%; }
+/* Кнопка отправки — иконка. Подпись живёт в aria-label (переводится через
+   data-i18n-aria), поэтому для скринридера кнопка осталась названной. */
+.chat-send-btn {
+    flex: 0 0 auto;
+    width: 44px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--tg-button);
+    color: var(--tg-button-text);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
+.chat-send-btn svg { width: 20px; height: 20px; }
+.chat-send-btn:disabled { opacity: 0.5; cursor: default; }
 .chat-error { color: #c0392b; font-size: 13px; margin-top: var(--space-2); }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1278,6 +1321,7 @@ body {
 :root {
     --gs-tabbar-h: 58px;
     --gs-safe-bottom: 0px;
+    --gs-safe-top: 0px;
 }
 .tabbar {
     position: fixed;

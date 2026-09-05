@@ -37,14 +37,65 @@ const state = {
     currentView: "today",       // активная вкладка нижней навигации
 };
 
-// localStorage ключ для last-seen timestamp (подсветка "новое")
+// Ключ last-seen timestamp (подсветка «новое»)
 const LAST_SEEN_KEY = (studentId) => `gs_lastseen_${studentId}`;
+
+// «Что родитель уже видел» хранится в CloudStorage Telegram (Bot API 6.9):
+// значение привязано к аккаунту, а не к устройству. На localStorage второй
+// телефон или планшет подсвечивал новыми все оценки подряд. localStorage
+// остаётся синхронным кэшом: первый рендер не ждёт ответа облака, а на старом
+// клиенте или при заблокированном хранилище всё работает как раньше.
+function _readLastSeenLocal(studentId) {
+    let stored = null;
+    try {
+        stored = localStorage.getItem(LAST_SEEN_KEY(studentId));
+    } catch (e) {
+        stored = null;   // приватный режим / заблокированное хранилище
+    }
+    return stored ? new Date(stored) : new Date(0);
+}
+
+// Облако отвечает асинхронно. Берём более раннюю из двух отметок: если на этом
+// устройстве родитель заходил позже, чем на другом, «новое» с другого устройства
+// не должно пропасть.
+function _syncLastSeenFromCloud(studentId) {
+    if (!tg?.isVersionAtLeast?.("6.9") || !tg.CloudStorage) return;
+    try {
+        tg.CloudStorage.getItem(LAST_SEEN_KEY(studentId), (err, value) => {
+            if (err || !value) return;
+            const cloud = new Date(value);
+            if (isNaN(cloud)) return;
+            if (!state.lastSeenAt || cloud < state.lastSeenAt) {
+                state.lastSeenAt = cloud;
+                if (state.dashboard) renderAllGrades(state.dashboard.recent_grades || []);
+            }
+        });
+    } catch (e) {
+        console.warn("CloudStorage getItem failed", e);
+    }
+}
+
+function _writeLastSeen(studentId) {
+    const now = new Date().toISOString();
+    try {
+        localStorage.setItem(LAST_SEEN_KEY(studentId), now);
+    } catch (e) {
+        // Telegram WebView может блокировать хранилище — подсветка не критична.
+    }
+    if (!tg?.isVersionAtLeast?.("6.9") || !tg.CloudStorage) return;
+    try {
+        tg.CloudStorage.setItem(LAST_SEEN_KEY(studentId), now);
+    } catch (e) {
+        console.warn("CloudStorage setItem failed", e);
+    }
+}
 
 // ============ INIT ============
 
 if (tg) {
     tg.ready();
     tg.expand();
+    _requestFullscreen();
     _applySafeArea();
     _setupSwipeGuard();
 }
@@ -58,13 +109,34 @@ function _applySafeArea() {
     const apply = () => {
         const bottom = tg.safeAreaInset?.bottom ?? 0;
         document.documentElement.style.setProperty("--gs-safe-bottom", `${bottom}px`);
+        // В полноэкранном режиме шапки Telegram нет, и приветствие уезжает под
+        // вырез камеры. contentSafeAreaInset — отступ уже под системный статус-бар.
+        const top = (tg.safeAreaInset?.top ?? 0) + (tg.contentSafeAreaInset?.top ?? 0);
+        document.documentElement.style.setProperty("--gs-safe-top", `${top}px`);
     };
     apply();
-    // Поворот экрана меняет отступы — Telegram присылает событие.
+    // Поворот экрана и вход в полноэкранный режим меняют отступы — Telegram
+    // присылает события.
     try {
         tg.onEvent?.("safeAreaChanged", apply);
+        tg.onEvent?.("contentSafeAreaChanged", apply);
+        tg.onEvent?.("fullscreenChanged", apply);
     } catch (e) {
-        console.warn("safeAreaChanged subscribe failed", e);
+        console.warn("safe area subscribe failed", e);
+    }
+}
+
+// Полноэкранный режим (Bot API 8.0): дашборд — основной экран, а не всплывающее
+// окно поверх переписки. Только на телефоне: на десктопе полноэкранное Mini App
+// растягивается на весь монитор, чего родитель не просил.
+function _requestFullscreen() {
+    if (!tg?.isVersionAtLeast?.("8.0")) return;
+    const mobile = ["android", "ios"].includes(String(tg.platform || "").toLowerCase());
+    if (!mobile) return;
+    try {
+        tg.requestFullscreen?.();
+    } catch (e) {
+        console.warn("requestFullscreen failed", e);
     }
 }
 
@@ -200,6 +272,12 @@ function applyTranslations(root) {
         const text = state.translations[el.getAttribute("data-i18n-placeholder")];
         if (text) el.setAttribute("placeholder", text);
     });
+    // Кнопки без подписи (например «отправить» иконкой) остаются доступными
+    // только через aria-label — его тоже нужно переводить.
+    root.querySelectorAll("[data-i18n-aria]").forEach(el => {
+        const text = state.translations[el.getAttribute("data-i18n-aria")];
+        if (text) el.setAttribute("aria-label", text);
+    });
     // Title тэг
     if (root === document) {
         document.title = t("app_title");
@@ -308,23 +386,14 @@ function renderDashboard() {
     // Снимок «когда родитель смотрел в прошлый раз» берём ДО рендера списка и
     // только один раз за загрузку дашборда — иначе бейдж «новое» гас сразу же.
     if (!state.lastSeenAt) {
-        let stored = null;
-        try {
-            stored = localStorage.getItem(LAST_SEEN_KEY(state.currentStudentId));
-        } catch (e) {
-            stored = null;   // приватный режим / заблокированное хранилище
-        }
-        state.lastSeenAt = stored ? new Date(stored) : new Date(0);
+        state.lastSeenAt = _readLastSeenLocal(state.currentStudentId);
+        _syncLastSeenFromCloud(state.currentStudentId);
     }
 
     renderAllGrades(d.recent_grades || []);
 
     // Отмечаем студента просмотренным — для подсветки «новое» в следующий заход.
-    try {
-        localStorage.setItem(LAST_SEEN_KEY(state.currentStudentId), new Date().toISOString());
-    } catch (e) {
-        // Telegram WebView может блокировать хранилище — подсветка не критична.
-    }
+    _writeLastSeen(state.currentStudentId);
 
     // Year report — теперь в отдельной tab (view-year), load lazy при switch.
     setupViewTabs();
@@ -1161,7 +1230,24 @@ function setupInlineChat() {
 
     if (clearBtn) clearBtn.onclick = _clearChatHistory;
 
+    _renderChatPrompts();
     _loadChatHistory();
+}
+
+// Быстрые вопросы. Пустой чат не подсказывает, о чём вообще можно спросить, —
+// родитель открывает вкладку, не понимает, что писать, и закрывает её.
+const _CHAT_PROMPT_KEYS = ["chat_prompt_weak", "chat_prompt_quarters", "chat_prompt_month"];
+
+function _renderChatPrompts() {
+    const wrap = document.getElementById("chat-prompts");
+    if (!wrap) return;
+    wrap.innerHTML = _CHAT_PROMPT_KEYS.map(key => {
+        const text = t(key);
+        return text ? `<button class="chat-prompt" type="button">${escapeHtml(text)}</button>` : "";
+    }).join("");
+    wrap.querySelectorAll(".chat-prompt").forEach(btn => {
+        btn.addEventListener("click", () => _sendChatMessage(btn.textContent));
+    });
 }
 
 async function _loadChatHistory() {

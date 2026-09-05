@@ -202,6 +202,60 @@ def test_period_stats_not_duplicated_on_two_tabs(app_js):
     assert "_sparklineSvg" not in body
 
 
+def test_chat_offers_starting_questions(html, app_js):
+    """Пустой чат подсказывает, о чём спросить.
+
+    Без подсказок родитель открывает вкладку, не понимает, что писать, и
+    закрывает её.
+    """
+    assert 'id="chat-prompts"' in html
+    keys = re.search(r"_CHAT_PROMPT_KEYS = \[(.*?)\]", app_js, re.S)
+    assert keys, "_CHAT_PROMPT_KEYS не найден"
+    names = re.findall(r'"([\w_]+)"', keys.group(1))
+    assert len(names) >= 3
+    for lang in LANGS:
+        data = json.loads((LOCALES_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+        for key in names:
+            assert data.get(key), f"{lang}: нет перевода подсказки {key}"
+
+
+def test_icon_send_button_keeps_a_name(html, app_js):
+    """Кнопка-иконка остаётся названной для скринридера, и её подпись переводится."""
+    assert 'data-i18n-aria="chat_send"' in html
+    assert "data-i18n-aria" in app_js, "рантайм не переводит aria-label"
+
+
+def test_new_bot_api_calls_are_version_gated(app_js):
+    """Каждый новый вызов SDK — за проверкой версии клиента.
+
+    На старом Telegram обращение к отсутствующему методу роняет инициализацию
+    дашборда целиком, а не только свою фичу.
+    """
+    for fn, version in [
+        ("_requestFullscreen", "8.0"),
+        ("_applySafeArea", "8.0"),
+        ("_setupSwipeGuard", "7.7"),
+        ("_syncLastSeenFromCloud", "6.9"),
+        ("_writeLastSeen", "6.9"),
+    ]:
+        body = app_js.split(f"function {fn}(")[1].split("\nfunction ")[0]
+        assert f'isVersionAtLeast?.("{version}")' in body, f"{fn}: нет гейта версии"
+
+
+def test_last_seen_survives_second_device(app_js):
+    """«Что уже видел» синхронизируется через CloudStorage, а не только локально.
+
+    На localStorage второй телефон родителя подсвечивал новыми все оценки.
+    Берём более раннюю из отметок, иначе «новое» с другого устройства пропадёт.
+    """
+    body = app_js.split("function _syncLastSeenFromCloud(")[1].split("\nfunction ")[0]
+    assert "CloudStorage.getItem" in body
+    assert "cloud < state.lastSeenAt" in body
+    write = app_js.split("function _writeLastSeen(")[1].split("\nfunction ")[0]
+    assert "CloudStorage.setItem" in write
+    assert "localStorage.setItem" in write, "локальный кэш нужен для первого рендера"
+
+
 def test_tabbar_accounts_for_safe_area():
     """Бар закреплён внизу — контент и сам бар обязаны учитывать safe area.
 
