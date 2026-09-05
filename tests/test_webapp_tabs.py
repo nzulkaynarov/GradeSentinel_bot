@@ -129,6 +129,41 @@ def test_truncation_is_disclosed(html, app_js):
         assert "{n}" in tpl and "{total}" in tpl, f"{lang}: потерян плейсхолдер"
 
 
+def test_quarters_moved_to_results_tab(html):
+    """Четвертные лежат в «Итогах», а не поверх текущей успеваемости."""
+    subjects_panel = html.split('id="view-subjects"')[1].split('id="view-year"')[0]
+    results_panel = html.split('id="view-year"')[1].split('id="view-chat"')[0]
+    assert 'id="quarters-section"' not in subjects_panel
+    assert 'id="quarters-section"' in results_panel
+
+
+def test_subjects_list_is_rendered_not_dead_code(app_js, html):
+    """renderSubjectsList вызывается: до редизайна функция висела мёртвой."""
+    assert 'id="subjects-list"' in html
+    calls = re.findall(r"^\s*renderSubjectsList\(", app_js, re.M)
+    assert calls, "renderSubjectsList не вызывается ниоткуда"
+
+
+def test_subjects_header_states_sample_size(html, app_js):
+    """Список предметов подписан числом предметов и размером выборки.
+
+    Средний по двум оценкам и по двадцати читается одинаково, если не
+    написать, сколько их было.
+    """
+    assert 'id="subjects-count"' in html and 'id="subjects-sample"' in html
+    assert 'subjects_count_tpl' in app_js and 'today_sample_tpl' in app_js
+    for lang in LANGS:
+        data = json.loads((LOCALES_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+        assert "{n}" in data["subjects_count_tpl"], f"{lang}: потерян плейсхолдер"
+        assert "{n}" in data["subjects_grades_tpl"], f"{lang}: потерян плейсхолдер"
+
+
+def test_subjects_sorted_by_average(app_js):
+    """Список идёт от сильного предмета к слабому — как в макете."""
+    body = app_js.split("function renderSubjectsList")[1]
+    assert "sort((a, b) => b.avg - a.avg)" in body
+
+
 def test_tabbar_accounts_for_safe_area():
     """Бар закреплён внизу — контент и сам бар обязаны учитывать safe area.
 

@@ -122,6 +122,30 @@
                 </div>
             </section>
 
+            <!-- Список предметов: сколько оценок, куда идёт динамика, средний.
+                 Тап по строке — drill-down по предмету. Четвертные переехали
+                 в «Итоги»: там они рядом с годовой оценкой, а не поверх
+                 текущей успеваемости. -->
+            <div class="subjects-summary">
+                <span class="subjects-summary-count" id="subjects-count"></span>
+                <span class="subjects-summary-sample" id="subjects-sample"></span>
+            </div>
+            <div id="subjects-list" class="subjects-list"></div>
+            <p class="empty-hint hidden" id="subjects-empty" data-i18n="subjects_empty">
+                Оценок за период нет
+            </p>
+        </div><!-- end #view-subjects -->
+
+        <!-- ════════ ВКЛАДКА: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
+        <div id="view-year" class="tab-view hidden">
+            <!-- Селектор учебного года: оценки за прошлый класс остаются
+                 доступными и подписываются классом ТОГО года. -->
+            <div class="year-picker" id="year-picker">
+                <label class="year-picker-label" for="year-select" data-i18n="year_picker_label">Учебный год</label>
+                <select id="year-select" class="year-picker-select"></select>
+            </div>
+            <!-- Четвертные с прогнозом годовой: переехали сюда из «Предметов».
+                 Не зависят от выбранного периода — это итоги учебного года. -->
             <section class="card" id="quarters-section">
                 <header class="card-header">
                     <h2 class="card-title">
@@ -136,16 +160,7 @@
                     </p>
                 </div>
             </section>
-        </div><!-- end #view-subjects -->
 
-        <!-- ════════ ВКЛАДКА: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
-        <div id="view-year" class="tab-view hidden">
-            <!-- Селектор учебного года: оценки за прошлый класс остаются
-                 доступными и подписываются классом ТОГО года. -->
-            <div class="year-picker" id="year-picker">
-                <label class="year-picker-label" for="year-select" data-i18n="year_picker_label">Учебный год</label>
-                <select id="year-select" class="year-picker-select"></select>
-            </div>
             <div id="year-loading" class="empty-hint hidden" data-i18n="year_loading">Загружаю…</div>
             <div id="year-empty" class="empty-hint hidden" data-i18n="year_empty">Недостаточно данных за год</div>
             <div id="year-content" class="hidden">
