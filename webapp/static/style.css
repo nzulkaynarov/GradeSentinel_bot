@@ -431,12 +431,8 @@ body {
     margin-top: var(--space-3);
 }
 
-.count-badge {
-    font-size: 13px;
-    color: var(--tg-hint);
-    margin-left: 4px;
-    font-weight: 400;
-}
+/* .count-badge удалён вместе с заголовком «Все оценки за период»: про
+   урезанный срез теперь говорит .truncation-note под лентой. */
 
 /* ═══════════════════════════════════════════════════════════
    CHART
@@ -523,6 +519,12 @@ body {
 .recent-list {
     display: flex;
     flex-direction: column;
+}
+/* Лента на «Сегодня» больше не лежит внутри .card-body — свои поля по краям.
+   Тот же класс используется в drill-down внутри карточки, поэтому отступ
+   задан по id, а не по классу. */
+#recent-list {
+    margin: var(--space-3) var(--space-2) 0;
 }
 
 .recent-row {
@@ -1045,6 +1047,12 @@ body {
 @media (min-width: 720px) {
     .kpi-row { grid-template-columns: repeat(4, 1fr); }
 }
+/* Пара «лучший / слабее всего» во вкладке «Предметы»: две карточки в ряд
+   на любой ширине — на широком экране растягивать их вчетверо незачем. */
+.kpi-row-pair { grid-template-columns: repeat(2, 1fr); }
+@media (min-width: 720px) {
+    .kpi-row-pair { grid-template-columns: repeat(2, 1fr); }
+}
 .kpi-card {
     background: var(--tg-bg-secondary, #f8fafc);
     border: 1px solid rgba(127,127,127,0.10);
@@ -1093,12 +1101,58 @@ body {
     color: var(--tg-hint);
     margin-top: 2px;
 }
-.kpi-period-hint {
+/* ═════════ «СЕГОДНЯ»: карточка-ответ ═════════
+   Один ответ на «как дела»: балл крупно, рядом изменение и размер выборки.
+   Заменила плитку из четырёх KPI — крайние предметы уехали в «Предметы». */
+.today-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     margin: var(--space-3) var(--space-2) 0;
+    padding: 16px;
+    background: var(--tg-section-bg);
+    border: 1px solid var(--tg-section-separator);
+    border-radius: 14px;
+}
+.today-hero-avg {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.today-hero-value {
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.today-hero-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--tg-hint);
+}
+.today-hero-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+.today-hero-sample {
     font-size: 12px;
     color: var(--tg-hint);
-    text-align: center;
 }
+
+/* Подсказка-развязка внизу вкладки и строка про урезанный срез */
+.tab-hint,
+.truncation-note {
+    margin: var(--space-3) var(--space-2);
+    text-align: center;
+    font-size: 13px;
+    color: var(--tg-hint);
+}
+.truncation-note { font-size: 12px; }
 
 /* Quarter forecast badge — заменяет «~3.2» на честное «3.2 [прогноз]» */
 .qc-forecast-badge {
@@ -1339,13 +1393,22 @@ body {
 /* Grades grouped by date */
 .g-group { margin-bottom: 12px; }
 .g-group-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
     color: var(--tg-hint);
     padding: 4px 0;
     border-bottom: 1px solid rgba(127,127,127,0.10);
     margin-bottom: 6px;
+}
+.g-group-label {
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.g-group-date {
+    font-variant-numeric: tabular-nums;
 }
 .g-group-rows { display: flex; flex-direction: column; gap: 4px; }
 .g-row {
@@ -1420,24 +1483,8 @@ body {
 .subj-table .trend-flat { color: var(--tg-hint); }
 .subj-table .small { font-size: 11px; }
 
-/* Recent grades filter */
-.recent-filter {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: var(--space-2);
-    font-size: 13px;
-}
-.recent-filter label { color: var(--tg-hint); }
-.recent-filter select {
-    flex: 1;
-    padding: 6px 10px;
-    border: 1px solid rgba(127,127,127,0.20);
-    border-radius: 8px;
-    background: var(--tg-bg);
-    color: var(--tg-text);
-    font-size: 13px;
-}
+/* Стили фильтра по предмету удалены вместе с самим фильтром: разрез по
+   предметам живёт во вкладке «Предметы» и в drill-down по карточке. */
 
 /* Drill-down screen */
 .drilldown-header {

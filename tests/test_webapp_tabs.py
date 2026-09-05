@@ -97,6 +97,38 @@ def test_every_template_i18n_key_is_translated(html):
         assert not missing, f"{lang}.json не хватает ключей: {sorted(missing)}"
 
 
+def test_today_hero_states_period_and_sample_size(html, app_js):
+    """Средний балл на «Сегодня» подписан числом оценок и периодом.
+
+    Балл без размера выборки и срока выглядит точнее, чем он есть, — это
+    правило дашборда, а не косметика.
+    """
+    assert 'id="kpi-period-hint"' in html, "нет подписи под средним баллом"
+    tpl_use = re.search(r't\("today_sample_tpl"\)(.*?);', app_js, re.S)
+    assert tpl_use, "подпись не собирается из today_sample_tpl"
+    for lang in LANGS:
+        data = json.loads((LOCALES_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+        tpl = data["today_sample_tpl"]
+        assert "{n}" in tpl and "{days}" in tpl, f"{lang}: в подписи потерялся плейсхолдер"
+
+
+def test_extreme_subjects_moved_to_subjects_tab(html):
+    """«Лучший» и «слабее всего» лежат в «Предметах», а не в ленте дня."""
+    subjects_panel = html.split('id="view-subjects"')[1].split('id="view-year"')[0]
+    assert 'id="kpi-top-name"' in subjects_panel
+    assert 'id="kpi-worst-name"' in subjects_panel
+
+
+def test_truncation_is_disclosed(html, app_js):
+    """Урезанный сервером срез не выдаётся за полную историю."""
+    assert 'id="recent-truncated"' in html
+    assert 'grades_truncated_tpl' in app_js
+    for lang in LANGS:
+        data = json.loads((LOCALES_DIR / f"{lang}.json").read_text(encoding="utf-8"))
+        tpl = data["grades_truncated_tpl"]
+        assert "{n}" in tpl and "{total}" in tpl, f"{lang}: потерян плейсхолдер"
+
+
 def test_tabbar_accounts_for_safe_area():
     """Бар закреплён внизу — контент и сам бар обязаны учитывать safe area.
 

@@ -6,6 +6,7 @@
     влиять на средний балл, тренды, PDF и контекст AI-чата: монитор умел
     только добавлять и менять.
 """
+import json
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -123,9 +124,27 @@ def test_dashboard_reports_total_and_limit():
 
 
 def test_frontend_shows_both_numbers_when_truncated():
+    """Урезанный срез подписан обоими числами.
+
+    Раньше это была строка «100 / 525» в заголовке секции. После редизайна
+    заголовок убран, и про срез говорит отдельная строка под лентой —
+    механизм другой, требование то же: видны и показанное, и целое.
+    """
     js = open(os.path.join(ROOT, "webapp", "static", "app.js"), encoding="utf-8").read()
     assert "recent_total" in js
-    assert "${shown} / ${total}" in js
+    assert 'grades_truncated_tpl' in js
+    assert '.replace("{n}", String(shown))' in js
+    assert '.replace("{total}", String(total))' in js
+
+    # Строка обязана прятаться, когда срез равен целому: «показаны последние
+    # 12 из 12» — шум, из которого родитель делает неверный вывод.
+    assert "const isTruncated = total > shown;" in js
+
+    locales = os.path.join(ROOT, "webapp", "static", "locales")
+    for lang in ("ru", "uz", "en"):
+        with open(os.path.join(locales, f"{lang}.json"), encoding="utf-8") as f:
+            tpl = json.load(f)["grades_truncated_tpl"]
+        assert "{n}" in tpl and "{total}" in tpl, f"{lang}: потерян плейсхолдер"
 
 
 # ─── i18n: подписи больше не захардкожены ────────────────────────────
