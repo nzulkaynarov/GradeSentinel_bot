@@ -289,8 +289,10 @@ function renderDashboard() {
 
     renderKpis(d.kpis || {}, d.summary || {});
     renderStatusLine(d.summary || {});
-    // Quarter cards enriched: current-period avg+count+sparkline для каждого
-    // предмета. Это единственный listing — старая «Все предметы» удалена.
+    // Вкладка «Предметы»: список за выбранный период.
+    renderSubjectsList(d.by_subject || [], d.trend_by_subject || []);
+    // Четвертные с прогнозом годовой — вкладка «Итоги». Карточки по-прежнему
+    // обогащены current-period статистикой, поэтому получают те же массивы.
     renderQuartersBlock(
         d.quarters_with_forecast || [],
         d.by_subject || [],
@@ -1012,15 +1014,62 @@ function renderYearReport() {
     }
 }
 
-function renderSubjectsList(subjects) {
-    if (!subjects || subjects.length === 0) return `<p class="empty-hint">—</p>`;
-    return subjects.map(s => `
-        <div class="subject-row">
-            <span class="subject-name">${escapeHtml(s.name)}</span>
-            <span class="${gradeColorClass(s.avg)}">${s.avg.toFixed(2)}</span>
-            <span class="subject-count muted">${s.count}</span>
-        </div>
-    `).join("");
+// ═════════ ВКЛАДКА «ПРЕДМЕТЫ»: список за выбранный период ═════════
+// Раньше эта функция существовала, но не вызывалась ниоткуда (мёртвый код с
+// прошлого рефакторинга) — теперь она и есть содержимое вкладки.
+function renderSubjectsList(bySubject, trendBySubject) {
+    const list = document.getElementById("subjects-list");
+    const empty = document.getElementById("subjects-empty");
+    const countEl = document.getElementById("subjects-count");
+    const sampleEl = document.getElementById("subjects-sample");
+    if (!list) return;
+
+    const subjects = [...(bySubject || [])].sort((a, b) => b.avg - a.avg);
+
+    if (subjects.length === 0) {
+        list.innerHTML = "";
+        if (empty) empty.classList.remove("hidden");
+        if (countEl) countEl.textContent = "";
+        if (sampleEl) sampleEl.textContent = "";
+        return;
+    }
+    if (empty) empty.classList.add("hidden");
+
+    // Шапка списка: сколько предметов и на скольких оценках это посчитано.
+    const totalGrades = subjects.reduce((sum, s) => sum + (s.count || 0), 0);
+    const days = state.currentDays;
+    if (countEl) {
+        countEl.textContent = (t("subjects_count_tpl") || "{n} предметов")
+            .replace("{n}", String(subjects.length));
+    }
+    if (sampleEl) {
+        sampleEl.textContent = (t("today_sample_tpl") || "{n} оценок за {days} дн.")
+            .replace("{n}", String(totalGrades))
+            .replace("{days}", String(days));
+    }
+
+    const trendMap = new Map();
+    (trendBySubject || []).forEach(line => trendMap.set(line.subject, line.points));
+
+    list.innerHTML = subjects.map(s => {
+        const spark = _sparklineSvg(trendMap.get(s.name), 64, 22);
+        // Счётчик оценок — не украшение: средний по двум оценкам и по двадцати
+        // читается одинаково, если не написать, сколько их было.
+        const count = (t("subjects_grades_tpl") || "{n} оц.").replace("{n}", String(s.count || 0));
+        return `<button class="subject-row" type="button" data-subject="${escapeHtml(s.name)}">
+            <span class="subject-row-main">
+                <span class="subject-name">${escapeHtml(s.name)}</span>
+                <span class="subject-count">${escapeHtml(count)}</span>
+            </span>
+            <span class="subject-spark ${gradeColorClass(s.avg)}">${spark}</span>
+            <span class="subject-avg ${gradeColorClass(s.avg)}">${s.avg.toFixed(2)}</span>
+            <span class="subject-chevron" aria-hidden="true">›</span>
+        </button>`;
+    }).join("");
+
+    list.querySelectorAll(".subject-row").forEach(row => {
+        row.addEventListener("click", () => openDrilldown(row.dataset.subject));
+    });
 }
 
 // ============ COLLAPSIBLE ============
