@@ -633,6 +633,10 @@ body {
 
 #content {
     animation: fadeInUp 0.4s ease-out;
+    /* Нижняя навигация закреплена поверх контента — резервируем под неё место,
+       иначе последняя карточка прячется за баром. Переменные объявлены рядом
+       со стилями .tabbar. */
+    padding-bottom: calc(var(--gs-tabbar-h) + max(var(--gs-safe-bottom), env(safe-area-inset-bottom, 0px)));
 }
 
 @keyframes fadeInUp {
@@ -1125,30 +1129,53 @@ body {
 .status-line.status-declining { color: #EF4444; font-weight: 500; }
 .status-line.status-improving { color: #10B981; font-weight: 500; }
 
-/* View tabs (Дашборд / Итоги года) — наверху над period toggle */
-.view-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(127,127,127,0.20);
-    margin: 0 var(--space-2);
+/* ═════════ НИЖНЯЯ НАВИГАЦИЯ (Сегодня / Предметы / Итоги / Чат) ═════════
+   Заменила верхние вкладки «Дашборд / Итоги года». Закреплена внизу экрана,
+   поэтому контенту нужен нижний отступ — иначе последняя карточка уезжает
+   под бар. --gs-safe-bottom проставляет app.js из Telegram safeAreaInset;
+   env(safe-area-inset-bottom) — фолбэк для браузера вне Telegram. */
+:root {
+    --gs-tabbar-h: 58px;
+    --gs-safe-bottom: 0px;
 }
-.view-tab {
-    flex: 1;
-    padding: 12px 8px;
+.tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    background: var(--tg-section-bg);
+    border-top: 1px solid var(--tg-section-separator);
+    padding: 8px 4px calc(8px + max(var(--gs-safe-bottom), env(safe-area-inset-bottom, 0px)));
+}
+.tabbar-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
     background: transparent;
     border: 0;
-    border-bottom: 2px solid transparent;
-    color: var(--tg-hint);
-    font-size: 14px;
-    font-weight: 600;
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    color: var(--tg-hint);
+    transition: color 0.15s;
 }
-.view-tab.active {
-    color: var(--tg-text);
-    border-bottom-color: #6366F1;
+.tabbar-btn svg {
+    width: 24px;
+    height: 24px;
 }
-.view-tab:hover { color: var(--tg-text); }
+.tabbar-btn span {
+    font-size: 10px;
+    font-weight: 500;
+}
+.tabbar-btn.active { color: var(--tg-button); }
+
+/* Панель вкладки. Скрытие — общим классом .hidden, как во всём дашборде. */
+.tab-view { padding-bottom: var(--space-2); }
+
+/* Отступ под бар задан в правиле #content выше — вторым селектором не дублируем. */
 
 /* Subjects table — wrap (quarters перешли на card layout) */
 #subjects-table-wrap {

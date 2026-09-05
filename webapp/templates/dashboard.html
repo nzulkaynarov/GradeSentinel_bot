@@ -54,13 +54,9 @@
             <button class="stale-banner-btn" id="stale-banner-btn" data-i18n="stale_banner_action">Обновить ссылку в боте</button>
         </div>
 
-        <!-- Main tabs: Dashboard / Year Summary -->
-        <div class="view-tabs" id="view-tabs" role="tablist">
-            <button class="view-tab active" data-view="dashboard" data-i18n="tab_dashboard">📊 Дашборд</button>
-            <button class="view-tab" data-view="year" data-i18n="tab_year">🎓 Итоги года</button>
-        </div>
-
-        <!-- Period toggle — только для dashboard view -->
+        <!-- Period toggle — общий для вкладок «Сегодня» и «Предметы»: обе
+             показывают числа за один и тот же загруженный период. На «Итогах»
+             и в «Чате» скрыт (там разрез по учебным годам, а не по дням). -->
         <div class="period-toggle" id="period-toggle" role="tablist">
             <button class="period-btn" data-days="7" data-i18n="period_week">Неделя</button>
             <button class="period-btn" data-days="30" data-i18n="period_month">Месяц</button>
@@ -68,8 +64,8 @@
             <button class="period-btn" data-days="365" data-i18n="period_year">Год</button>
         </div>
 
-        <!-- ════════ VIEW: DASHBOARD ════════ -->
-        <div id="view-dashboard">
+        <!-- ════════ ВКЛАДКА: СЕГОДНЯ ════════ -->
+        <div id="view-today" class="tab-view">
 
         <!-- KPI row — все 4 числа подписаны периодом, без лукавства -->
         <p class="kpi-period-hint" id="kpi-period-hint" data-i18n="kpi_period_hint">Данные за последние 30 дней</p>
@@ -100,25 +96,6 @@
         <!-- Status line: одна строка summary вместо traffic light -->
         <p class="status-line" id="status-line"></p>
 
-        <!-- РАЗДЕЛ: Четвертные с прогнозом годовой (primary, не collapsible) -->
-        <section class="card" id="quarters-section">
-            <header class="card-header">
-                <h2 class="card-title">
-                    <span data-i18n="section_quarters">Четвертные оценки</span>
-                </h2>
-                <p class="card-subtitle"><span data-i18n="section_quarters_subtitle">с прогнозом годовой</span><span id="quarters-year-badge" class="year-badge hidden"></span></p>
-            </header>
-            <div class="card-body">
-                <div id="quarters-table-wrap"></div>
-                <p class="empty-hint hidden" id="quarters-empty" data-i18n="quarters_empty">
-                    Четвертных оценок пока нет
-                </p>
-            </div>
-        </section>
-
-        <!-- «Все предметы» секция удалена — quarter cards теперь обогащены
-             current-period avg + count + sparkline. Один listing предметов. -->
-
         <!-- РАЗДЕЛ: Все оценки за период с фильтром -->
         <section class="card" id="recent-section">
             <header class="card-header">
@@ -138,10 +115,31 @@
             </div>
         </section>
 
-        </div><!-- end #view-dashboard -->
+        </div><!-- end #view-today -->
 
-        <!-- ════════ VIEW: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
-        <div id="view-year" class="hidden">
+        <!-- ════════ ВКЛАДКА: ПРЕДМЕТЫ ════════
+             quarter cards обогащены current-period avg + count + sparkline —
+             это и есть единый listing предметов, отдельной секции «Все
+             предметы» намеренно нет. -->
+        <div id="view-subjects" class="tab-view hidden">
+            <section class="card" id="quarters-section">
+                <header class="card-header">
+                    <h2 class="card-title">
+                        <span data-i18n="section_quarters">Четвертные оценки</span>
+                    </h2>
+                    <p class="card-subtitle"><span data-i18n="section_quarters_subtitle">с прогнозом годовой</span><span id="quarters-year-badge" class="year-badge hidden"></span></p>
+                </header>
+                <div class="card-body">
+                    <div id="quarters-table-wrap"></div>
+                    <p class="empty-hint hidden" id="quarters-empty" data-i18n="quarters_empty">
+                        Четвертных оценок пока нет
+                    </p>
+                </div>
+            </section>
+        </div><!-- end #view-subjects -->
+
+        <!-- ════════ ВКЛАДКА: ИТОГИ УЧЕБНОГО ГОДА ════════ -->
+        <div id="view-year" class="tab-view hidden">
             <!-- Селектор учебного года: оценки за прошлый класс остаются
                  доступными и подписываются классом ТОГО года. -->
             <div class="year-picker" id="year-picker">
@@ -189,20 +187,21 @@
                     </div>
                 </section>
             </div>
-        </div><!-- end #view-year -->
+            <!-- Отчёт в PDF — часть «Итогов», а не общей панели: по макету
+                 кнопка стоит под годовой таблицей. Кнопку «Спросить AI»
+                 убрали — её роль забрала вкладка «Чат» в нижней навигации. -->
+            <section class="action-bar" id="action-bar">
+                <button id="btn-export-pdf" class="btn-action btn-action-primary" type="button"
+                        data-i18n="action_export_pdf">📄 Экспорт PDF</button>
+            </section>
 
-        <!-- Action bar — PDF (Share убран). AI кнопка отдельно для toggle chat. -->
-        <section class="action-bar" id="action-bar">
-            <button id="btn-export-pdf" class="btn-action btn-action-primary" type="button"
-                    data-i18n="action_export_pdf">📄 Экспорт PDF</button>
-            <button id="btn-open-ai" class="btn-action" type="button"
-                    data-i18n="action_open_ai">💬 Спросить AI</button>
-        </section>
+        </div><!-- end #view-year -->
 
         <!-- ════════ INLINE AI CHAT (revert удаления — теперь inline в Mini App) ════════
              Раньше отдельный bot чат через deep-link. User feedback: «не работает,
              выбрасывает». Возвращаем chat прямо в дашборд — backend /api/chat уже
              family-scoped и shared с bot chat history. -->
+        <div id="view-chat" class="tab-view hidden">
         <section class="card" id="chat-section">
             <header class="card-header">
                 <h2 class="card-title">
@@ -222,6 +221,7 @@
                 </div>
             </div>
         </section>
+        </div><!-- end #view-chat -->
 
         <!-- PDF Export Modal -->
         <div id="pdf-modal" class="modal-backdrop hidden">
@@ -266,6 +266,29 @@
                 </footer>
             </div>
         </div>
+
+        <!-- ════════════ НИЖНЯЯ НАВИГАЦИЯ ════════════
+             Закреплена внизу; отступ снизу — safe-area устройства, иначе на
+             iPhone бар уезжает под системную полосу. Иконки inline-SVG: CSP
+             в Caddyfile разрешает только 'self', внешних спрайтов быть не может. -->
+        <nav class="tabbar" id="tabbar" role="tablist">
+            <button class="tabbar-btn active" data-view="today" role="tab" aria-selected="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                <span data-i18n="tab_today">Сегодня</span>
+            </button>
+            <button class="tabbar-btn" data-view="subjects" role="tab" aria-selected="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <span data-i18n="tab_subjects">Предметы</span>
+            </button>
+            <button class="tabbar-btn" data-view="year" role="tab" aria-selected="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10v6M2 10l10-5 10 5-10 5z"></path><path d="M6 12v5c3 3 9 3 12 0v-5"></path></svg>
+                <span data-i18n="tab_results">Итоги</span>
+            </button>
+            <button class="tabbar-btn" data-view="chat" role="tab" aria-selected="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                <span data-i18n="tab_chat">Чат</span>
+            </button>
+        </nav>
 
     </div>
 

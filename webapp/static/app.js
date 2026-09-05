@@ -34,6 +34,7 @@ const state = {
     quartersLoading: false,
     yearReport: null,           // lazy-loaded, end-of-year отчёт
     yearLoading: false,
+    currentView: "today",       // активная вкладка нижней навигации
 };
 
 // localStorage ключ для last-seen timestamp (подсветка "новое")
@@ -44,6 +45,38 @@ const LAST_SEEN_KEY = (studentId) => `gs_lastseen_${studentId}`;
 if (tg) {
     tg.ready();
     tg.expand();
+    _applySafeArea();
+    _setupSwipeGuard();
+}
+
+// Нижняя навигация закреплена у края экрана и на iPhone попадает под системную
+// полосу. Telegram отдаёт отступы в safeAreaInset (Bot API 8.0) — прокидываем
+// их в CSS-переменную. Всё за проверкой версии: на старом клиенте поля просто
+// нет, и обращение к нему уронило бы инициализацию дашборда целиком.
+function _applySafeArea() {
+    if (!tg?.isVersionAtLeast?.("8.0")) return;
+    const apply = () => {
+        const bottom = tg.safeAreaInset?.bottom ?? 0;
+        document.documentElement.style.setProperty("--gs-safe-bottom", `${bottom}px`);
+    };
+    apply();
+    // Поворот экрана меняет отступы — Telegram присылает событие.
+    try {
+        tg.onEvent?.("safeAreaChanged", apply);
+    } catch (e) {
+        console.warn("safeAreaChanged subscribe failed", e);
+    }
+}
+
+// Вертикальный свайп по длинному списку оценок сворачивал Mini App вместо
+// прокрутки (Bot API 7.7 позволяет это отключить).
+function _setupSwipeGuard() {
+    if (!tg?.isVersionAtLeast?.("7.7")) return;
+    try {
+        tg.disableVerticalSwipes?.();
+    } catch (e) {
+        console.warn("disableVerticalSwipes failed", e);
+    }
 }
 
 document.addEventListener("DOMContentLoaded", boot);
@@ -195,8 +228,7 @@ function onPeriodChange(btn) {
     loadDashboard();
     // Если открыта вкладка «Итоги года» — перезагрузить и её, иначе на экране
     // остались бы цифры предыдущего ребёнка под именем текущего.
-    const yearTab = document.querySelector('.view-tab[data-view="year"]');
-    if (yearTab && yearTab.classList.contains("active")) {
+    if (state.currentView === "year") {
         _loadYearReportIfNeeded();
     }
 }
@@ -300,33 +332,52 @@ function renderDashboard() {
     setupViewTabs();
 }
 
-// ═════════ VIEW TABS (Дашборд / Итоги года) ═════════
+// ═════════ ВКЛАДКИ (Сегодня / Предметы / Итоги / Чат) ═════════
+
+// data-view кнопки нижней навигации → id панели.
+const TAB_VIEWS = {
+    today: "view-today",
+    subjects: "view-subjects",
+    year: "view-year",
+    chat: "view-chat",
+};
+
+// Период (Неделя/Месяц/Четверть/Год) осмыслен только там, где числа считаются
+// за скользящее окно. «Итоги» разрезаны по учебным годам, «Чат» — не про цифры.
+const VIEWS_WITH_PERIOD = new Set(["today", "subjects"]);
+
 function setupViewTabs() {
     // onclick вместо addEventListener: функция зовётся из каждого рендера
     // дашборда, и слушатели накапливались — после пяти перерисовок один клик
     // вызывал switchView пять раз (аудит 2026-09-03).
-    document.querySelectorAll(".view-tab").forEach(tab => {
+    document.querySelectorAll(".tabbar-btn").forEach(tab => {
         tab.onclick = () => switchView(tab.dataset.view);
     });
 }
 
 function switchView(view) {
-    document.querySelectorAll(".view-tab").forEach(t => {
-        t.classList.toggle("active", t.dataset.view === view);
+    if (!TAB_VIEWS[view]) return;
+    state.currentView = view;
+
+    document.querySelectorAll(".tabbar-btn").forEach(t => {
+        const isActive = t.dataset.view === view;
+        t.classList.toggle("active", isActive);
+        t.setAttribute("aria-selected", isActive ? "true" : "false");
     });
-    const dashboardView = document.getElementById("view-dashboard");
-    const yearView = document.getElementById("view-year");
+
+    Object.entries(TAB_VIEWS).forEach(([key, id]) => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle("hidden", key !== view);
+    });
+
     const periodToggle = document.getElementById("period-toggle");
-    if (view === "year") {
-        if (dashboardView) dashboardView.classList.add("hidden");
-        if (yearView) yearView.classList.remove("hidden");
-        if (periodToggle) periodToggle.classList.add("hidden");  // year — без period
-        _loadYearReportIfNeeded();
-    } else {
-        if (dashboardView) dashboardView.classList.remove("hidden");
-        if (yearView) yearView.classList.add("hidden");
-        if (periodToggle) periodToggle.classList.remove("hidden");
-    }
+    if (periodToggle) periodToggle.classList.toggle("hidden", !VIEWS_WITH_PERIOD.has(view));
+
+    // Смена вкладки — это смена экрана: пользователь ждёт его начало, а не
+    // прокрутку, оставшуюся от предыдущей вкладки.
+    window.scrollTo({ top: 0, behavior: "instant" });
+
+    if (view === "year") _loadYearReportIfNeeded();
 }
 
 async function _loadYearReportIfNeeded(year) {
@@ -1048,19 +1099,16 @@ function escapeHtml(text) {
 function setupActionBar() {
     const pdfBtn = document.getElementById("btn-export-pdf");
     if (pdfBtn) pdfBtn.addEventListener("click", handleExportPdf);
-    // AI кнопка теперь scroll'ит к inline chat-section + focus input.
-    // Раньше deep-link к bot — не работало на mobile.
-    const aiBtn = document.getElementById("btn-open-ai");
-    if (aiBtn) aiBtn.addEventListener("click", _scrollToChat);
+    // Кнопки «Спросить AI» больше нет — чат стал вкладкой нижней навигации.
     setupInlineChat();
 }
 
+// Открыть чат. Раньше это был скролл к секции внутри одного длинного экрана,
+// теперь чат — отдельная вкладка, поэтому переключаем её.
 function _scrollToChat() {
-    const section = document.getElementById("chat-section");
-    if (!section) return;
-    section.scrollIntoView({ behavior: "smooth", block: "start" });
+    switchView("chat");
     const input = document.getElementById("chat-input");
-    if (input) setTimeout(() => input.focus(), 400);
+    if (input) setTimeout(() => input.focus(), 200);
 }
 
 // ═════════ INLINE AI CHAT (revert удаления — теперь в Mini App) ═════════
