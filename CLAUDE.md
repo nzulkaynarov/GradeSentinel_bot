@@ -78,12 +78,12 @@ webapp/
 │                        #   (unit-tested в tests/test_webapp_dashboard.py)
 │                        #   Авторизация: HMAC-SHA256(BOT_TOKEN) валидирует Telegram initData,
 │                        #   `signature` поле включается в data_check_string, значения — URL-decoded
-├── templates/dashboard.html   # data-i18n атрибуты, skeleton loading, hero/cards layout
+├── templates/dashboard.html   # 4 панели вкладок + нижняя навигация, data-i18n, skeleton
 └── static/
-    ├── app.js          # i18n runtime + single-call flow + last_seen для подсветки нового
+    ├── app.js          # i18n runtime (+aria) + single-call flow + вкладки + last_seen (CloudStorage)
     ├── style.css       # Tg theme variables, light/dark, skeleton shimmer, smooth animations
     ├── vendor/chart.umd.min.js  # Chart.js 4.4.0 bundled (нет CDN)
-    └── locales/{ru,uz,en}.json  # 46 ключей синхронных (тест проверяет)
+    └── locales/{ru,uz,en}.json  # 161 ключ, синхронны (тест проверяет)
 
 deploy/                  # bare-metal деплой (см. deploy/README.md)
 ├── install.sh                       # one-shot bootstrap VPS
@@ -234,6 +234,23 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 26j. **Разрез по учебным годам, а не по дням.** `get_grades_for_academic_years(student_id, years)` отдаёт оценки за сентябрь N — август N+1 из `grade_history` и архива. Дашборд ограничен 365 днями, поэтому история выпускника в «дни» не помещается. PDF принимает `academic_year` (год или `all`) и печатает раздел «Итоги по учебным годам» с классом каждого года.
 
+26k. **Mini App — четыре вкладки и своя нижняя навигация** (редизайн 06.09.2026,
+PR #128-#132). Панели `#view-today` / `#view-subjects` / `#view-year` / `#view-chat`,
+переключение — `switchView()` по карте `TAB_VIEWS` в `app.js`; `tests/test_webapp_tabs.py`
+падает, если разметка и карта разъехались. Переключатель периода показывается только на
+вкладках со скользящим окном (`VIEWS_WITH_PERIOD`) — «Итоги» разрезаны по учебным годам.
+Средний за период живёт ТОЛЬКО в «Предметах», четвертные — ТОЛЬКО в «Итогах»: одно и то же
+число на двух вкладках расходилось бы при смене периода. **`MainButton`/`SecondaryButton`
+Telegram использовать нельзя** — они рисуются там же, где наш таб-бар.
+
+26l. **Любой вызов Telegram WebApp SDK — за `tg.isVersionAtLeast()`.** На старом клиенте
+обращение к отсутствующему методу роняет инициализацию дашборда целиком, а не только свою
+фичу. Сейчас гейтятся: `requestFullscreen` + safe area (8.0), `disableVerticalSwipes` (7.7),
+`CloudStorage` (6.9). Fullscreen включается только на `platform` android/ios. Отступы
+`--gs-safe-top` / `--gs-safe-bottom` проставляет `_applySafeArea()`: без них в полноэкранном
+режиме шапка уезжает под вырез, а таб-бар — под системную полосу. Тест на гейты — в
+`tests/test_webapp_tabs.py`.
+
 ### Мониторинг и полнота данных
 
 27. **`_polling_lock`** в monitor_engine — если предыдущий цикл не завершился за 300с, новый не стартует (skip).
@@ -248,7 +265,7 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 31. **Pure-функции агрегации** в `webapp/app.py`: `compute_summary`, `compute_trend_by_day`, `compute_by_subject`. Они не трогают БД, легко тестируются. Все в `tests/test_webapp_dashboard.py` (19 тестов покрывают edge-cases).
 
-32. **i18n дашборда** — отдельные локали `webapp/static/locales/{ru,uz,en}.json` (46 ключей, синхронны через `tests/test_webapp_locales_sync.py`). НЕ дублируют `src/locales/` — у бота и webapp разные UI-ключи.
+32. **i18n дашборда** — отдельные локали `webapp/static/locales/{ru,uz,en}.json` (161 ключ, синхронны через `tests/test_webapp_locales_sync.py`; `tests/test_webapp_tabs.py` дополнительно требует, чтобы каждый `data-i18n` шаблона существовал во всех трёх). Кроме `data-i18n` и `data-i18n-placeholder` рантайм переводит `data-i18n-aria` — для кнопок-иконок без подписи. НЕ дублируют `src/locales/` — у бота и webapp разные UI-ключи.
 
 33. **Lang определяется backend'ом**: `parents.lang` (БД) → дефолт `ru`. Возвращается в `/api/dashboard/init.user.lang`. Фронт подгружает `/static/locales/<lang>.json` после bootstrap.
 
