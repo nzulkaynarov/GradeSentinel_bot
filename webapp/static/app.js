@@ -433,7 +433,6 @@ function renderYearPicker(report) {
 function renderKpis(kpis, summary) {
     const avgEl = document.getElementById("kpi-avg");
     const deltaEl = document.getElementById("kpi-delta");
-    const countEl = document.getElementById("kpi-count");
     const topNameEl = document.getElementById("kpi-top-name");
     const topAvgEl = document.getElementById("kpi-top-avg");
     const topCountEl = document.getElementById("kpi-top-count");
@@ -442,22 +441,26 @@ function renderKpis(kpis, summary) {
     const worstCountEl = document.getElementById("kpi-worst-count");
     const periodHintEl = document.getElementById("kpi-period-hint");
 
-    // Period hint — заменяем «30 дней» на реальный days из payload
+    // Подпись под средним баллом: сколько оценок и за какой срок он посчитан.
+    // Оба числа в одной строке — балл без размера выборки и без периода
+    // выглядит точнее, чем он есть. Плитка «Оценок за период» уехала сюда же.
     const days = kpis.period_days || summary.period_days || 30;
     if (periodHintEl) {
-        const tpl = t("kpi_period_hint_tpl") || "Данные за последние {days} дн.";
-        periodHintEl.textContent = tpl.replace("{days}", String(days));
+        const tpl = t("today_sample_tpl") || "{n} оценок за {days} дн.";
+        periodHintEl.textContent = tpl
+            .replace("{n}", String(kpis.total_grades ?? 0))
+            .replace("{days}", String(days));
     }
 
     // Avg
     const avg = kpis.current_avg ?? summary.current_avg;
     if (avg == null) {
         avgEl.textContent = "—";
-        avgEl.className = "kpi-value muted";
+        avgEl.className = "today-hero-value muted";
         deltaEl.classList.add("hidden");
     } else {
         avgEl.textContent = avg.toFixed(2);
-        avgEl.className = "kpi-value " + gradeColorClass(avg);
+        avgEl.className = "today-hero-value " + gradeColorClass(avg);
         const delta = kpis.delta ?? summary.delta;
         if (delta != null && Math.abs(delta) >= 0.05) {
             deltaEl.classList.remove("hidden");
@@ -468,9 +471,6 @@ function renderKpis(kpis, summary) {
             deltaEl.classList.add("hidden");
         }
     }
-
-    // Count
-    countEl.textContent = kpis.total_grades ?? "—";
 
     const fmtCount = (n) => {
         const tpl = t("kpi_subject_count_tpl") || "{n} оц.";
@@ -739,43 +739,36 @@ function _formatDateGroupLabel(dateStr) {
     return `${d.getDate()}.${String(d.getMonth()+1).padStart(2,'0')}`;
 }
 
+// «04.09» — дата группы, которую метка («Сегодня», «Вчера», «Вт») не называет.
+function _formatDayNumeric(dateStr) {
+    if (!dateStr) return "";
+    const [, m, d] = dateStr.split("-").map(Number);
+    if (!m || !d) return "";
+    return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}`;
+}
+
 function renderAllGrades(grades) {
     const list = document.getElementById("recent-list");
-    const countBadge = document.getElementById("recent-count");
-    const filter = document.getElementById("recent-filter");
+    const truncatedEl = document.getElementById("recent-truncated");
     if (!list) return;
 
-    // Если список урезан сервером — показываем оба числа. Иначе заголовок
-    // «(100)» спорил с KPI «525» на том же экране.
+    // Сервер отдаёт срез. Молчать об этом нельзя — иначе родитель решит, что
+    // оценок ровно столько, сколько он видит. Строка появляется только когда
+    // срез действительно меньше целого.
     const shown = grades.length;
     const total = (state.dashboard && state.dashboard.recent_total) || shown;
-    countBadge.textContent = total > shown ? `(${shown} / ${total})` : `(${shown})`;
-
-    if (filter) {
-        // Список предметов пересобираем на каждый рендер, сохраняя выбор: раньше
-        // опции строились один раз, а обработчик навсегда замыкался на первый
-        // массив — после смены ребёнка или периода фильтр показывал предметы и
-        // оценки предыдущего ученика (аудит 2026-09-03).
-        const subjects = Array.from(new Set(grades.map(g => g.subject))).sort();
-        const previous = filter.value;
-        const placeholder = filter.options.length ? filter.options[0] : null;
-        filter.innerHTML = "";
-        if (placeholder) filter.appendChild(placeholder);
-        subjects.forEach(s => {
-            const opt = document.createElement("option");
-            opt.value = s; opt.textContent = s;
-            filter.appendChild(opt);
-        });
-        filter.value = subjects.includes(previous) ? previous : "";
-        // onchange (а не addEventListener) — переустановка не копит слушателей.
-        filter.onchange = () => {
-            state._gradesGroupsShown = _GRADES_INITIAL_GROUPS;  // reset
-            renderAllGrades(grades);
-        };
+    if (truncatedEl) {
+        const isTruncated = total > shown;
+        truncatedEl.classList.toggle("hidden", !isTruncated);
+        if (isTruncated) {
+            const tpl = t("grades_truncated_tpl") || "Показаны последние {n} из {total}";
+            truncatedEl.textContent = tpl
+                .replace("{n}", String(shown))
+                .replace("{total}", String(total));
+        }
     }
 
-    const selected = filter ? filter.value : "";
-    const filtered = selected ? grades.filter(g => g.subject === selected) : grades;
+    const filtered = grades;
 
     if (filtered.length === 0) {
         list.innerHTML = `<p class="empty-hint">${t("hero_no_grades")}</p>`;
@@ -812,8 +805,14 @@ function renderAllGrades(grades) {
                 <span class="g-grade ${colorClass}">${escapeHtml(String(value))}</span>
             </div>`;
         }).join("");
+        // Метка слева («Сегодня», «Вчера», день недели), дата справа. Дата
+        // числовая: названия месяцев в локалях именительные, и «4 Сентябрь»
+        // было бы безграмотно во всех трёх языках.
         return `<div class="g-group">
-            <div class="g-group-header">${escapeHtml(_formatDateGroupLabel(date))}</div>
+            <div class="g-group-header">
+                <span class="g-group-label">${escapeHtml(_formatDateGroupLabel(date))}</span>
+                <span class="g-group-date">${escapeHtml(_formatDayNumeric(date))}</span>
+            </div>
             <div class="g-group-rows">${rows}</div>
         </div>`;
     }).join("");

@@ -67,53 +67,35 @@
         <!-- ════════ ВКЛАДКА: СЕГОДНЯ ════════ -->
         <div id="view-today" class="tab-view">
 
-        <!-- KPI row — все 4 числа подписаны периодом, без лукавства -->
-        <p class="kpi-period-hint" id="kpi-period-hint" data-i18n="kpi_period_hint">Данные за последние 30 дней</p>
-        <section class="kpi-row" id="kpi-row">
-            <div class="kpi-card kpi-primary">
-                <div class="kpi-value" id="kpi-avg">—</div>
-                <div class="kpi-label" data-i18n="kpi_avg">Средний</div>
-                <div class="kpi-delta hidden" id="kpi-delta"></div>
+        <!-- Один ответ на «как дела»: средний балл, изменение и размер выборки
+             в одной карточке. Раньше здесь была плитка из четырёх KPI —
+             «лучший» и «слабее всего» переехали во вкладку «Предметы», где
+             рядом лежит сам список предметов. -->
+        <section class="today-hero">
+            <div class="today-hero-avg">
+                <span class="today-hero-value" id="kpi-avg">—</span>
+                <span class="today-hero-label" data-i18n="kpi_avg">Средний</span>
             </div>
-            <div class="kpi-card">
-                <div class="kpi-value" id="kpi-count">—</div>
-                <div class="kpi-label" data-i18n="kpi_grades_count">Оценок за период</div>
-            </div>
-            <div class="kpi-card kpi-good">
-                <div class="kpi-value-small" id="kpi-top-name">—</div>
-                <div class="kpi-value-secondary" id="kpi-top-avg"></div>
-                <div class="kpi-sub" id="kpi-top-count"></div>
-                <div class="kpi-label" data-i18n="kpi_top">Лучший предмет</div>
-            </div>
-            <div class="kpi-card kpi-bad">
-                <div class="kpi-value-small" id="kpi-worst-name">—</div>
-                <div class="kpi-value-secondary" id="kpi-worst-avg"></div>
-                <div class="kpi-sub" id="kpi-worst-count"></div>
-                <div class="kpi-label" data-i18n="kpi_worst">Слабее всего</div>
+            <div class="today-hero-meta">
+                <span class="kpi-delta hidden" id="kpi-delta"></span>
+                <!-- Цифра без периода и размера выборки — это ложь -->
+                <span class="today-hero-sample" id="kpi-period-hint"></span>
             </div>
         </section>
 
         <!-- Status line: одна строка summary вместо traffic light -->
         <p class="status-line" id="status-line"></p>
 
-        <!-- РАЗДЕЛ: Все оценки за период с фильтром -->
-        <section class="card" id="recent-section">
-            <header class="card-header">
-                <h2 class="card-title">
-                    <span data-i18n="section_all_grades">Все оценки за период</span>
-                    <span id="recent-count" class="count-badge"></span>
-                </h2>
-            </header>
-            <div class="card-body">
-                <div class="recent-filter">
-                    <label for="recent-filter" data-i18n="filter_by_subject">Фильтр:</label>
-                    <select id="recent-filter">
-                        <option value="" data-i18n="filter_all_subjects">Все предметы</option>
-                    </select>
-                </div>
-                <div id="recent-list" class="recent-list"></div>
-            </div>
-        </section>
+        <!-- Лента событий: главный ответ на «что случилось», по дням.
+             Фильтр по предмету убран — разрез по предметам живёт во вкладке
+             «Предметы» и в drill-down по карточке предмета. -->
+        <div id="recent-list" class="recent-list"></div>
+
+        <!-- Сервер отдаёт срез, а не всё. Молчать об этом нельзя: родитель
+             решит, что оценок ровно столько, сколько он видит. -->
+        <p class="truncation-note hidden" id="recent-truncated"></p>
+
+        <p class="tab-hint" data-i18n="today_older_hint">Раньше — во вкладке «Предметы»</p>
 
         </div><!-- end #view-today -->
 
@@ -122,6 +104,24 @@
              это и есть единый listing предметов, отдельной секции «Все
              предметы» намеренно нет. -->
         <div id="view-subjects" class="tab-view hidden">
+            <!-- Переехали из «Сегодня»: крайние предметы осмысленны рядом со
+                 списком всех предметов, а не в ленте событий дня. Счётчик
+                 оценок под каждым — размер выборки, по которому посчитан балл. -->
+            <section class="kpi-row kpi-row-pair" id="kpi-row">
+                <div class="kpi-card kpi-good">
+                    <div class="kpi-value-small" id="kpi-top-name">—</div>
+                    <div class="kpi-value-secondary" id="kpi-top-avg"></div>
+                    <div class="kpi-sub" id="kpi-top-count"></div>
+                    <div class="kpi-label" data-i18n="kpi_top">Лучший предмет</div>
+                </div>
+                <div class="kpi-card kpi-bad">
+                    <div class="kpi-value-small" id="kpi-worst-name">—</div>
+                    <div class="kpi-value-secondary" id="kpi-worst-avg"></div>
+                    <div class="kpi-sub" id="kpi-worst-count"></div>
+                    <div class="kpi-label" data-i18n="kpi_worst">Слабее всего</div>
+                </div>
+            </section>
+
             <section class="card" id="quarters-section">
                 <header class="card-header">
                     <h2 class="card-title">
