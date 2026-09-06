@@ -1,6 +1,7 @@
 /* GradeSentinel design tokens — v2 (paper editorial)
- * Source of truth: frontend/assets/theme-v2.css (HTML mockups)
- * Используется в Hugo landing/docs и в Next.js (portal route group).
+ * Происхождение: frontend/assets/theme-v2.css (HTML-макеты). Каталог frontend/
+ * удалён 06.09.2026 — source of truth токенов теперь этот файл, история в git.
+ * Используется в Hugo landing/docs. (Next.js portal-каркас web/ удалён 06.09.2026.)
  */
 
 :root {
