@@ -72,7 +72,7 @@ webapp/
 │                        #   /api/dashboard/init        — bootstrap (студенты + lang + first_name)
 │                        #   /api/dashboard/<id>?days=N — главный: summary, trend_by_day, by_subject, recent
 │                        #   /api/quarters/<id>         — четверти (lazy)
-│                        #   /api/students, /api/grades — legacy, оставлены для обратной совместимости
+│                        #   (legacy /api/students и /api/grades удалены 06.09.2026 — их никто не звал)
 │                        #   /health                    — для Caddy/мониторинга
 │                        #   Pure functions: compute_summary, compute_trend_by_day, compute_by_subject
 │                        #   (unit-tested в tests/test_webapp_dashboard.py)

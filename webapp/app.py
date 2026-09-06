@@ -5,8 +5,9 @@ GradeSentinel WebApp — Telegram Mini App для родителей.
 нужно дашборду за один roundtrip: сводные метрики, тренд по дням, разбивка
 по предметам, последние оценки, информацию о юзере (язык, роль, имя).
 
-Старые endpoints (`/api/students`, `/api/grades`, `/api/quarters`) сохранены
-для обратной совместимости и для четвертных оценок (lazy-load).
+`/api/quarters/<id>` остался отдельным — четвертные грузятся лениво, когда
+пользователь открывает вкладку «Итоги». Legacy-эндпоинты `/api/students` и
+`/api/grades` удалены 06.09.2026: их не звал ни дашборд, ни бот.
 """
 
 import os
@@ -1580,31 +1581,9 @@ def api_chat_feedback():
 #  ROUTES — legacy (обратная совместимость)
 # ════════════════════════════════════════════════════════════
 
-@app.route("/api/students")
-def api_students():
-    """[Legacy] Список учеников. Новый код использует /api/dashboard/init."""
-    auth = _get_authenticated_user()
-    students = get_students_for_parent(auth["telegram_id"])
-    return jsonify([
-        {"id": s["id"], "fio": s["fio"], "display_name": s.get("display_name") or s["fio"]}
-        for s in students
-    ])
-
-
-@app.route("/api/grades/<int:student_id>")
-def api_grades(student_id):
-    """[Legacy] Сырые оценки. Новый код использует /api/dashboard."""
-    _authorize_student_access(student_id)
-
-    days = request.args.get("days", 30, type=int)
-    days = min(days, 365)
-
-    subject = request.args.get("subject", "").strip()
-    grades = get_grade_history_for_student_all(student_id, days=days)
-    if subject:
-        grades = [g for g in grades if g['subject'] == subject]
-
-    return jsonify(grades)
+# Legacy-эндпоинты /api/students и /api/grades/<id> удалены 06.09.2026.
+# Их не звал ни дашборд, ни бот; за неделю прод-логов — ноль обращений.
+# Замена: /api/dashboard/init (список учеников) и /api/dashboard/<id> (оценки).
 
 
 @app.route("/api/quarters/<int:student_id>")
