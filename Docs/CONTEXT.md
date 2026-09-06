@@ -2,9 +2,12 @@
 
 Цель: возобновить работу с проектом на другом устройстве без потери контекста.
 
-При старте сессии: `Claude, прочитай CLAUDE.md и Docs/CONTEXT.md`.
+При старте сессии читать НЕ этот файл, а самый свежий `Docs/plans/*-SESSION-HANDOFF.md`
+(`ls Docs/plans/ | grep HANDOFF | tail -1`) и `CLAUDE.md`. Этот snapshot обновляется реже
+handoff'ов и местами отстаёт — сверяйся с ними, если факты расходятся.
 
-**Последнее обновление:** 2026-05-21 (ночь — финальный role-toggle PR #60 после серии 6 PR навигации).
+**Последнее обновление:** 2026-09-06 (точечная правка §4 про дедупликацию; тело документа в
+основном от 2026-05-21 с более поздними вставками про PostgreSQL).
 
 ---
 
@@ -56,7 +59,7 @@ Mini App дашборд + admin/landing/portal стек. В продакшене
 
 3. **Cycle protection в database_manager.py:** re-export модулей идёт в порядке `families → payments → auth` потому что auth.py делает обратный re-export `get_families_for_student` / `is_subscription_active`. Меняй порядок осторожно — protected ImportError'ом.
 
-4. **`grade_history.grade_date NOT NULL` + UNIQUE по содержимому** (после этапа 1C RFC, в проде с 14.05.2026 14:45 TST). Старый UNIQUE по `cell_reference` снят. Дубликат ловится в `add_grade` → `IntegrityError` → False.
+4. **`grade_history.grade_date NOT NULL` + UNIQUE по содержимому** (после этапа 1C RFC, в проде с 14.05.2026 14:45 TST). Старый UNIQUE по `cell_reference` снят — на проде у таблицы ровно два ограничения: `PRIMARY KEY (id)` и `UNIQUE(student_id, subject, grade_date, raw_text)`. **Дубликат НЕ ловится через `IntegrityError`:** в PostgreSQL пойманное нарушение constraint'а отравляет транзакцию, и всё последующее в ней падает. `add_grade` вставляет с `ON CONFLICT DO NOTHING` и считает дубликатом `cursor.rowcount == 0`. Это горячий путь, а не редкая авария: монитор каждые 300 с перечитывает лист и переставляет те же оценки.
 
 5. **Ячейка может содержать MULTI-grade `2/5`** (Узбекистан-специфично). `sanitize_cell(raw)` → `list[(value, text)]`. `sanitize_grade(raw)` только для четвертных (single-grade).
 

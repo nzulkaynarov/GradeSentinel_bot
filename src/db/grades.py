@@ -50,8 +50,10 @@ def add_grade(student_id: int, subject: str, grade_value: Optional[float],
         grade_date = (datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date().isoformat()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # ON CONFLICT DO NOTHING (bare, без target) покрывает оба UNIQUE:
-        # (student, subject, grade_date, raw_text) и legacy (student, cell_reference).
+        # ON CONFLICT DO NOTHING (bare, без target) — покрывает любой UNIQUE таблицы.
+        # Фактически он один: UNIQUE(student_id, subject, grade_date, raw_text).
+        # Legacy-ограничения по cell_reference на проде НЕТ (снято на этапе 1C),
+        # хотя этот комментарий утверждал обратное до 06.09.2026.
         # В PG нельзя ловить IntegrityError внутри транзакции и продолжать (tx aborts),
         # поэтому дубликат определяем по cursor.rowcount == 0.
         if notify_pending:
