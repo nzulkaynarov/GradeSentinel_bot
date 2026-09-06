@@ -1,4 +1,5 @@
-# English i18n bundle. Источник переводов — JS dict в frontend/index.html.
+# English i18n bundle. Источник переводов — JS dict из frontend/index.html
+# (каталог удалён 06.09.2026 после завершения Phase 1; см. git history).
 
 nav_how: { other: "How it works" }
 nav_features: { other: "Features" }

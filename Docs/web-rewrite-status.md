@@ -2,8 +2,22 @@
 
 **Назначение этого документа:** живой статус миграции для всех агентов и людей, работающих удалённо. Обновляется в конце каждой фазы. Архитектурные решения и обоснования — в [`web-rewrite-rfc.md`](web-rewrite-rfc.md).
 
-**Последнее обновление:** 2026-05-14
-**Текущее состояние:** Phase 0+1 в проде, Phase 2 NEXT (ждёт стартового сигнала)
+**Последнее обновление:** 2026-09-06
+**Текущее состояние:** Phase 0+1 в проде, Phase 2 не начата (лежит без движения с мая)
+
+> **06.09.2026 — каталоги `frontend/`, `web/` и `api/` удалены из репозитория.** Аудит по графу
+> знаний (`Docs/plans/2026-09-06-graph-audit.md`) показал, что на них не ссылается ни деплой, ни
+> workflow, ни код: `frontend/` — статический прототип с выдуманными детьми и нулём вызовов API,
+> его содержимое давно перенесено в Hugo-лендинг (Phase 1 в проде); `web/` — скаффолд Next.js,
+> где страница сама писала «Скаффолд готов, это пустая страница»; `api/` — скелет FastAPI, чьи
+> тесты CI никогда не запускал (`pytest tests/`, не `api/tests/`), а докстринга обещала выход
+> через `api.grades.railtech.uz` — поддомен, запрещённый решением про single domain в этом же
+> документе.
+>
+> **Решения это не отменяет.** RFC и фазовый план остаются в силе, дизайн-токены живут в
+> `landing/assets/css/tokens-v2.css`. Когда Phase 3 стартует, каркас восстанавливается за минуту
+> (`npx create-next-app`) или достаётся из git-истории до коммита удаления. Держать мёртвый
+> скаффолд в дереве ради этого не нужно.
 
 ---
 
@@ -42,11 +56,11 @@
 Фундамент:
 
 - `Docs/web-rewrite-rfc.md` — этот RFC.
-- `frontend/` — 4 HTML-мокапа от пользователя (design source, read-only).
-- `landing/` — Hugo skeleton (hugo.toml с 3 языками, layouts, partials, i18n YAML).
-- `web/` — Next.js 15 skeleton (package.json, tsconfig, app/, Tailwind v4 globals.css).
-- `api/` — FastAPI skeleton (pyproject.toml, main.py с CORS, `/health`, pytest).
-- Дизайн-токены извлечены в `landing/assets/css/tokens-v2.css` и `web/app/globals.css` (Tailwind v4 `@theme` блоки с обеими темами).
+- ~~`frontend/`~~ — 4 HTML-мокапа от пользователя (design source). **Удалён 06.09.2026**, см. врезку выше.
+- `landing/` — Hugo skeleton (hugo.toml с 3 языками, layouts, partials, i18n YAML). **Живёт в проде.**
+- ~~`web/`~~ — Next.js 15 skeleton. **Удалён 06.09.2026.**
+- ~~`api/`~~ — FastAPI skeleton. **Удалён 06.09.2026.**
+- Дизайн-токены извлечены в `landing/assets/css/tokens-v2.css` (копия в `web/app/globals.css` удалена вместе с каркасом; актуальный источник — файл в `landing/`).
 
 ### Phase 1 — PR #38 merged + fix #39 merged 2026-05-14
 
