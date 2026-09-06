@@ -18,7 +18,7 @@ description: "Как добавить Alembic-миграцию в GradeSentinel 
    - Новые колонки — nullable или с безопасным DEFAULT; подумать, что означает DEFAULT для СТАРЫХ строк
      (пример: `notified_at DEFAULT now()` = «уже доставлено», иначе первый импорт стал бы спамом).
    - Backfill — одним `UPDATE ... FROM (...)`, детерминированно; «сегодня по Ташкенту» =
-     `((now() AT TIME ZONE 'utc') + interval '5 hours')::date`.
+     `((now() AT TIME ZONE 'utc') + interval '5 hours')::date` (канон — CLAUDE.md §16a).
    - Индексы — частичные там, где выборка почти всегда пустая (`WHERE notified_at IS NULL`).
    - Не менять `families` / `parents` / `family_links` без явного согласования (живые пользователи).
 4. Код: SELECT'ы, которые должны видеть новую колонку, — обновить (`src/db/*.py`), плейсхолдеры `%s`,
