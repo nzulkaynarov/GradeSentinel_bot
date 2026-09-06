@@ -69,14 +69,6 @@ def send_menu_safe(chat_id: int, text: str, reply_markup=None, inline_markup=Non
     msg = bot.send_message(chat_id, text, reply_markup=final_markup, parse_mode='HTML')
     update_last_menu_id(chat_id, msg.message_id)
 
-def get_back_to_panel_markup(lang: str = 'ru') -> types.InlineKeyboardMarkup:
-    """Возвращает inline-кнопку 'Назад в меню' для дочерних экранов."""
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(
-        t("user_panel_back", lang), callback_data="up_back"
-    ))
-    return markup
-
 
 def send_content(chat_id: int, text: str, reply_markup=None):
     """

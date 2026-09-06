@@ -991,39 +991,6 @@ function _handleHashChange() {
     }
 }
 
-function _openBotChatWithQuestion(question) {
-    // Real deep-link через t.me/<bot>?start=ai_<base64(question)>.
-    // Bot handler /start ai_X декодирует и сразу шлёт question в AI.
-    // bot_username priority: server-injected window.GS_BOT_USERNAME (всегда
-    // current при reload) → state.botUsername (cached из /api/init).
-    // Раньше state.botUsername мог быть null из-за init race → fallback
-    // popup без deep-link → AI "не работала".
-    const tg = window.Telegram && window.Telegram.WebApp;
-    const botUsername = window.GS_BOT_USERNAME || state.botUsername;
-
-    if (!botUsername) {
-        const hint = t("ai_popup_general") || "Откройте бот и нажмите 💬 Чат";
-        if (tg && typeof tg.showAlert === "function") {
-            tg.showAlert(hint, () => { if (tg.close) tg.close(); });
-        } else {
-            alert(hint);
-        }
-        return;
-    }
-
-    const payload = question
-        ? btoa(unescape(encodeURIComponent(question)))
-            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-        : '';
-    const url = `https://t.me/${botUsername}?start=ai_${payload}`;
-
-    if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-    if (tg && typeof tg.openTelegramLink === "function") {
-        tg.openTelegramLink(url);
-    } else {
-        window.open(url, "_blank");
-    }
-}
 
 // ============ YEAR REPORT — LAZY ============
 
@@ -1157,38 +1124,9 @@ function gradeColorClass(avg) {
     return "grade-bad";
 }
 
-function getThemeColor(varName, fallback) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-    return v || fallback;
-}
 
-function hexToRgba(hex, alpha) {
-    // Поддерживаем #abc, #abcdef и rgb()-строки
-    if (hex.startsWith("rgb")) return hex.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
-    let h = hex.replace("#", "");
-    if (h.length === 3) h = h.split("").map(c => c + c).join("");
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
-function formatDateShort(dateStr) {
-    if (!dateStr) return "";
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const locale = state.lang === "uz" ? "uz-UZ" : state.lang === "en" ? "en-GB" : "ru-RU";
-    return d.toLocaleDateString(locale, { day: "2-digit", month: "short" });
-}
 
-function formatPeriod(startStr, endStr) {
-    if (!startStr || !endStr) return "";
-    const s = new Date(startStr);
-    const e = new Date(endStr);
-    const locale = state.lang === "uz" ? "uz-UZ" : state.lang === "en" ? "en-GB" : "ru-RU";
-    const fmt = (d) => d.toLocaleDateString(locale, { day: "numeric", month: "short" });
-    return `${fmt(s)} – ${fmt(e)}`;
-}
 
 function escapeHtml(text) {
     const div = document.createElement("div");

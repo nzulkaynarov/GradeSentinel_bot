@@ -380,55 +380,6 @@ def _subjects_table(subjects: List[Dict[str, Any]], lang: str,
     return tbl
 
 
-def _recent_table(grades: List[Dict[str, Any]], lang: str,
-                  styles: Dict[str, Any], max_rows: int = 30) -> Table:
-    header = [
-        _localize('col_date', lang),
-        _localize('col_subject', lang),
-        _localize('col_grade', lang),
-    ]
-    rows = [header]
-    for g in grades[:max_rows]:
-        date_str = _grade_date_str(g)
-        rows.append([
-            date_str,
-            g.get('subject', '?'),
-            str(g.get('raw_text', '?')),
-        ])
-    tbl = Table(rows, colWidths=[35 * mm, 95 * mm, 30 * mm])
-    tbl.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F1F5F9')),
-        ('FONTNAME', (0, 1), (-1, -1), _FONT_NAME),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
-        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#CBD5E1')),
-        ('ALIGN', (2, 0), (2, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-    ]))
-    return tbl
-
-
-def _short_list(items: List[Dict[str, Any]], styles: Dict[str, Any],
-                lang: str) -> List[Any]:
-    """«Проблемные / сильные» предметы — компактный список с avg."""
-    if not items:
-        return [Paragraph(_localize('no_data', lang), styles['muted'])]
-    out = []
-    for s in items[:5]:
-        avg = s.get('avg')
-        avg_str = f"{avg:.2f}" if isinstance(avg, (int, float)) else '—'
-        out.append(Paragraph(
-            f"<font name=\"{_FONT_BOLD}\">{s.get('name', '?')}</font> · {avg_str}",
-            styles['body'],
-        ))
-    return out
-
-
 def _quarters_table(quarters: List[Dict[str, Any]], lang: str,
                     styles: Dict[str, Any]) -> Table:
     """Таблица четвертных оценок: предмет × 1ч-4ч + год (или прогноз)."""
