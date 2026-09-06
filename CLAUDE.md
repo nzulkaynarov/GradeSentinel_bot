@@ -190,6 +190,20 @@ config/credentials.json  # Google Service Account ЛОКАЛЬНО (НЕ в ре
 
 16. **Тихие часы 22:00–07:00 Ташкент** (UTC+5). `is_quiet_hours()` в notification_helpers.py. Сообщения копятся в `notification_queue`, утренний flush через scheduler.
 
+16a. **«Сегодня по Ташкенту» — канонические формулы. Это место источник, остальные на него ссылаются.**
+    Сервер живёт в Asia/Tashkent (+05), в БД лежит naive-UTC (`date_added`, `grade_date`) и
+    timestamptz (`notified_at`). Ученик, школа и таблица — тоже в Ташкенте, поэтому «сегодня»
+    считается со сдвигом, а не по UTC:
+
+    - Python: `(datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5)).date()`
+    - SQL: `((now() AT TIME ZONE 'utc') + interval '5 hours')::date`
+
+    Правило держит ~48 мест в коде (`grep -rn "hours=5\|interval '5 hours'" src webapp migrations`).
+    Ошибка на этом сдвиге не падает, а тихо сдвигает день: оценка уезжает во «вчера», ночной
+    монитор считает её новой, родитель получает дубль. Раньше формулировка жила в трёх местах
+    без ссылок друг на друга (`gs-prod-ops`, `gs-migration`, оценка миграции 2026-06-29) — теперь
+    обе живые копии указывают сюда (аудит графа 06.09.2026).
+
 17. **Broadcast** в отдельном `threading.Thread` (communication.py). Использует `send_with_retry` из telegram_utils — корректно обрабатывает 429 RetryAfter и 5xx. Базовая пауза 0.04с между сообщениями (~25/sec).
 
 18. **Notification format** — всегда HTML (`parse_mode='HTML'`). НЕ Markdown — экранирование разное.

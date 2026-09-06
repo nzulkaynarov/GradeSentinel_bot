@@ -12,7 +12,8 @@ description: "Безопасная работа с продом GradeSentinel: �
 | `vps-db` | DB-VPS `170.168.6.209` (= `10.0.0.2` по WireGuard) | PostgreSQL 17, `sudo -u postgres psql gradesentinel`. Там же суточные pg_dump + off-site rclone. |
 
 Серверная TZ — **Asia/Tashkent (+05)**: `journalctl` и python-логи в местном времени; в БД naive-UTC
-(`date_added`) и timestamptz (`notified_at`). «Сегодня по Ташкенту» в коде = naive UTC + 5h.
+(`date_added`) и timestamptz (`notified_at`). «Сегодня по Ташкенту» = naive UTC + 5h —
+**канонические формулы и цена ошибки: CLAUDE.md §16a**, сверяться с ним, а не с этой строкой.
 
 ## Правила
 - **Read-only по умолчанию.** `SELECT`, `journalctl`, `systemctl status/is-active`. Любой `DELETE/UPDATE`
