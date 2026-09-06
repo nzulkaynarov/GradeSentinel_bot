@@ -96,9 +96,3 @@ def t(key: str, lang: str = DEFAULT_LANG, **kwargs) -> str:
         except (KeyError, IndexError):
             pass
     return text
-
-
-def get_lang_name(lang: str) -> str:
-    """Возвращает название языка на нём самом."""
-    names = {'ru': 'Русский', 'uz': "O'zbek", 'en': 'English'}
-    return names.get(lang, lang)
