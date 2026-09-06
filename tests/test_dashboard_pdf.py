@@ -273,10 +273,15 @@ def test_pdf_endpoint_404_for_other_student(client, seeded_student, temp_db):
 # ─── locales sync проверка (наши новые ключи в 3 языках) ──────
 
 def test_new_locale_keys_in_all_languages():
-    """Новые ключи для action-bar должны быть в ru, uz, en."""
+    """Ключи action-bar должны быть в ru, uz, en.
+
+    `action_share` и `dashboard_ai_hint` из списка убраны: кнопки «Поделиться»
+    в action-bar давно нет (см. комментарий «Share убран» в app.js), а
+    AI-подсказка ушла вместе с переездом AI в чат. Их переводы удалены как
+    мёртвые — тест сторожил UI, которого больше не существует.
+    """
     import json
-    new_keys = ['action_share', 'action_export_pdf', 'action_export_loading',
-                'action_export_error', 'dashboard_ai_hint']
+    new_keys = ['action_export_pdf', 'action_export_loading', 'action_export_error']
     for lang in ['ru', 'uz', 'en']:
         with open(f'webapp/static/locales/{lang}.json') as f:
             data = json.load(f)
